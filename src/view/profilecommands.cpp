@@ -12,7 +12,7 @@
 #include <sstream>
 
 // The profiler's commands: its history written as a Chrome trace, and its records (src/profile/rpc, shared with the asset server); and the
-// job system's record, whose workers fill the profiler's worker lanes.
+// job system's record, whose workers fill the profiler's worker tracks.
 
 namespace {
 

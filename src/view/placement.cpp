@@ -905,14 +905,14 @@ auto drawnLevelOf(const LodRoot& lod, uint32_t desired, const std::vector<const 
 auto ViewScene::syncPlacement(const std::shared_ptr<Placement>& node, const PlacementSpec& spec, bool mine) -> std::shared_ptr<Placement> {
     // The stage, each LOD level and each point instancer are zones of their own, following the World's structure (an instancer's value: its
     // points placed); prototype instances, tens of thousands in a full pass, count toward the level or instancer that holds them.
-    static const uint32_t syncStageSite = profile::registerSite("SyncStage", profile::Group::Scene, profile::Level::Detail);
-    static const uint32_t syncLevelSite = profile::registerSite("SyncLevel", profile::Group::Scene, profile::Level::Detail);
-    static const uint32_t syncInstancerSite = profile::registerSite("SyncInstancer", profile::Group::Scene, profile::Level::Detail);
-    static const uint32_t syncChildrenSite = profile::registerSite("SyncChildren", profile::Group::Scene, profile::Level::Detail);
-    static const uint32_t syncKeptRootsSite = profile::registerSite("SyncRoots", profile::Group::Scene, profile::Level::Detail);
+    static const uint32_t syncStageLocation = profile::registerSourceLocation("SyncStage", profile::Group::Scene, profile::Level::Detail);
+    static const uint32_t syncLevelLocation = profile::registerSourceLocation("SyncLevel", profile::Group::Scene, profile::Level::Detail);
+    static const uint32_t syncInstancerLocation = profile::registerSourceLocation("SyncInstancer", profile::Group::Scene, profile::Level::Detail);
+    static const uint32_t syncChildrenLocation = profile::registerSourceLocation("SyncChildren", profile::Group::Scene, profile::Level::Detail);
+    static const uint32_t syncKeptRootsLocation = profile::registerSourceLocation("SyncRoots", profile::Group::Scene, profile::Level::Detail);
     bool zoned = spec.kind == Placement::Kind::Stage || spec.kind == Placement::Kind::Level;
-    profile::ScopedZone zone(spec.kind == Placement::Kind::Stage ? syncStageSite : syncLevelSite, zoned);
-    profile::ScopedZone instancerZone(syncInstancerSite, spec.kind == Placement::Kind::Instancer);
+    profile::ScopedZone zone(spec.kind == Placement::Kind::Stage ? syncStageLocation : syncLevelLocation, zoned);
+    profile::ScopedZone instancerZone(syncInstancerLocation, spec.kind == Placement::Kind::Instancer);
     // The scene thread's alone when no published tree holds it: then it changes in place, else as a copy.
     mine = mine && node && node.use_count() == 1;
     const auto& w = composer->world();
@@ -943,8 +943,8 @@ auto ViewScene::syncPlacement(const std::shared_ptr<Placement>& node, const Plac
                  !std::ranges::any_of(node->waiting, [this](const std::string& asset) { return arrived.contains(asset); });
     }
     if (undraw) {
-        static const uint32_t undrawSite = profile::registerSite("Undraw", profile::Group::Scene, profile::Level::Detail);
-        profile::ScopedZone undrawZone(undrawSite, zoned);
+        static const uint32_t undrawLocation = profile::registerSourceLocation("Undraw", profile::Group::Scene, profile::Level::Detail);
+        profile::ScopedZone undrawZone(undrawLocation, zoned);
         return undrawPlacement(node, mine);
     }
     if (rebuild) {
@@ -960,7 +960,7 @@ auto ViewScene::syncPlacement(const std::shared_ptr<Placement>& node, const Plac
     };
     // A child that waits for nothing, with no root changed and no gizmo move under it, stays as it is.
     {
-        profile::ScopedZone childrenZone(syncChildrenSite, zoned);
+        profile::ScopedZone childrenZone(syncChildrenLocation, zoned);
         for (size_t i = 0; i < node->children.size(); i++) {
             const auto& child = node->children[i];
             if (!fullPass && child->pending == 0 && !touched(child->path)) {
@@ -988,7 +988,7 @@ auto ViewScene::syncPlacement(const std::shared_ptr<Placement>& node, const Plac
         }
     }
     {
-        profile::ScopedZone rootsZone(syncKeptRootsSite, zoned);
+        profile::ScopedZone rootsZone(syncKeptRootsLocation, zoned);
         syncRoots(*node, edit, mine, false);
     }
     const auto& now = out ? *out : *node;
@@ -1075,8 +1075,8 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
     // A stage or level placement's build in its stages; the tens of thousands of instance placements count toward their level.
     bool zoned = spec.kind == Placement::Kind::Stage || spec.kind == Placement::Kind::Level;
     if (old) {
-        static const uint32_t unuseSite = profile::registerSite("UnuseOld", profile::Group::Scene, profile::Level::Detail);
-        profile::ScopedZone unuseZone(unuseSite, zoned);
+        static const uint32_t unuseLocation = profile::registerSourceLocation("UnuseOld", profile::Group::Scene, profile::Level::Detail);
+        profile::ScopedZone unuseZone(unuseLocation, zoned);
         oldSlots = old->slots;
         oldPrims = old->prims;
         oldGroups = old->lodGroups;
@@ -1155,15 +1155,15 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
         return allocPrim(path);
     };
 
-    static const uint32_t walksSite = profile::registerSite("PlacementWalks", profile::Group::Scene, profile::Level::Detail);
-    static const uint32_t segmentsSite = profile::registerSite("PlaceSegments", profile::Group::Scene, profile::Level::Detail);
-    static const uint32_t leftoversSite = profile::registerSite("FreeLeftovers", profile::Group::Scene, profile::Level::Detail);
-    static const uint32_t useSite = profile::registerSite("UseNode", profile::Group::Scene, profile::Level::Detail);
-    static const uint32_t rootsSite = profile::registerSite("SyncRoots", profile::Group::Scene, profile::Level::Detail);
-    static const uint32_t indexSite = profile::registerSite("IndexPrevious", profile::Group::Scene, profile::Level::Detail);
-    static const uint32_t rowsSite = profile::registerSite("PlaceRows", profile::Group::Scene, profile::Level::Detail);
+    static const uint32_t walksLocation = profile::registerSourceLocation("PlacementWalks", profile::Group::Scene, profile::Level::Detail);
+    static const uint32_t segmentsLocation = profile::registerSourceLocation("PlaceSegments", profile::Group::Scene, profile::Level::Detail);
+    static const uint32_t leftoversLocation = profile::registerSourceLocation("FreeLeftovers", profile::Group::Scene, profile::Level::Detail);
+    static const uint32_t useLocation = profile::registerSourceLocation("UseNode", profile::Group::Scene, profile::Level::Detail);
+    static const uint32_t rootsLocation = profile::registerSourceLocation("SyncRoots", profile::Group::Scene, profile::Level::Detail);
+    static const uint32_t indexLocation = profile::registerSourceLocation("IndexPrevious", profile::Group::Scene, profile::Level::Detail);
+    static const uint32_t rowsLocation = profile::registerSourceLocation("PlaceRows", profile::Group::Scene, profile::Level::Detail);
     if (zoned) {
-        profile::beginZone(walksSite);
+        profile::beginZone(walksLocation);
     }
     auto contentKind = placedContentKind(*node);
     const auto& content = contentOf(w, contentKind, spec.content);
@@ -1205,7 +1205,7 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
 
     std::unordered_map<std::string, size_t> previousByPath;
     {
-        profile::ScopedZone indexZone(indexSite, zoned);
+        profile::ScopedZone indexZone(indexLocation, zoned);
         for (size_t i = 0; i < previousChildren.size(); i++) {
             previousByPath[previousChildren[i]->path] = i;
         }
@@ -1221,7 +1221,7 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
     };
 
     {
-        profile::ScopedZone stageZone(segmentsSite, zoned);
+        profile::ScopedZone stageZone(segmentsLocation, zoned);
         // The value: the walk items placed, over every segment.
         uint64_t itemsPlaced = 0;
         for (uint32_t s = 0; s < node->segments.size(); s++) {
@@ -1231,7 +1231,7 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
             // The group slot + 1 of each render-LOD root item in this segment, as its item is reached (before its levels' items).
             std::unordered_map<int32_t, uint32_t> groupOfItem;
             {
-                profile::ScopedZone rowsZone(rowsSite, zoned && spec.drawn);
+                profile::ScopedZone rowsZone(rowsLocation, zoned && spec.drawn);
                 if (spec.drawn) {
                     for (auto index : segment.walk->rowItems) {
                         const auto& item = items[index];
@@ -1494,7 +1494,7 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
         }
     }
     {
-        profile::ScopedZone stageZone(leftoversSite, zoned);
+        profile::ScopedZone stageZone(leftoversLocation, zoned);
         for (; slotCursor < oldSlots.size(); slotCursor++) {
             freeSlot(oldSlots[slotCursor]);
         }
@@ -1521,14 +1521,14 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
         }
     }
     {
-        profile::ScopedZone stageZone(useSite, zoned);
+        profile::ScopedZone stageZone(useLocation, zoned);
         useNode(*node, 1);
     }
     auto edit = [&]() -> Placement& {
         return *node;
     };
     {
-        profile::ScopedZone stageZone(rootsSite, zoned);
+        profile::ScopedZone stageZone(rootsLocation, zoned);
         syncRoots(*node, edit, mine, true);
     }
     node->pending = pendingOf(*node);
@@ -1740,8 +1740,8 @@ auto ViewScene::place() -> void {
     PROFILE_ZONE("PlaceChanges", Scene);
     SceneChanges changes;
     if (changed) {
-        static const uint32_t dropStaleWalksSite = profile::registerSite("DropStaleWalks", profile::Group::Scene, profile::Level::Detail);
-        profile::beginZone(dropStaleWalksSite);
+        static const uint32_t dropStaleWalksLocation = profile::registerSourceLocation("DropStaleWalks", profile::Group::Scene, profile::Level::Detail);
+        profile::beginZone(dropStaleWalksLocation);
         profile::zoneValue(walks.size());
         // Kept walks of contents composed again since are dropped.
         std::erase_if(walks, [&](const auto& entry) {
@@ -1777,8 +1777,8 @@ auto ViewScene::place() -> void {
             }
         }
     }
-    static const uint32_t libraryInUseSite = profile::registerSite("LibraryInUse", profile::Group::Scene, profile::Level::Detail);
-    profile::beginZone(libraryInUseSite);
+    static const uint32_t libraryInUseLocation = profile::registerSourceLocation("LibraryInUse", profile::Group::Scene, profile::Level::Detail);
+    profile::beginZone(libraryInUseLocation);
     // Library entries first, so the draws below name only what the renderer has been told about.
     std::set<uint32_t> meshesNow;
     std::set<uint32_t> materialsNow;
@@ -1806,8 +1806,8 @@ auto ViewScene::place() -> void {
     }
     profile::endZone();
     collectChanges(meshesNow, materialsNow, texturesNow, changes);
-    static const uint32_t releaseUnusedPacksSite = profile::registerSite("ReleaseUnusedPacks", profile::Group::Scene, profile::Level::Detail);
-    profile::beginZone(releaseUnusedPacksSite);
+    static const uint32_t releaseUnusedPacksLocation = profile::registerSourceLocation("ReleaseUnusedPacks", profile::Group::Scene, profile::Level::Detail);
+    profile::beginZone(releaseUnusedPacksLocation);
     // A pack no placement names and no library entry holds any more (its level unloaded after its entry went) is released.
     for (auto pack = meshPacks.begin(); pack != meshPacks.end();) {
         if (meshNames.contains(pack->first) || meshLibrary.find(pack->first)) {
@@ -1819,13 +1819,13 @@ auto ViewScene::place() -> void {
     }
     profile::endZone();
 
-    static const uint32_t slotChangesSite = profile::registerSite("SlotChanges", profile::Group::Scene, profile::Level::Detail);
-    profile::beginZone(slotChangesSite);
+    static const uint32_t slotChangesLocation = profile::registerSourceLocation("SlotChanges", profile::Group::Scene, profile::Level::Detail);
+    profile::beginZone(slotChangesLocation);
     uint32_t added = 0;
     uint32_t removed = 0;
     uint32_t updated = 0;
-    static const uint32_t changedSlotsSite = profile::registerSite("ChangedSlots", profile::Group::Scene, profile::Level::Detail);
-    profile::beginZone(changedSlotsSite);
+    static const uint32_t changedSlotsLocation = profile::registerSourceLocation("ChangedSlots", profile::Group::Scene, profile::Level::Detail);
+    profile::beginZone(changedSlotsLocation);
     profile::zoneValue(slotsBefore.entries().size());
     for (const auto& [slot, before] : slotsBefore.entries()) {
         const auto& now = drawn.meshInstances[slot];
@@ -1842,8 +1842,8 @@ auto ViewScene::place() -> void {
         }
     }
     profile::endZone();
-    static const uint32_t newSlotsSite = profile::registerSite("NewSlots", profile::Group::Scene, profile::Level::Detail);
-    profile::beginZone(newSlotsSite);
+    static const uint32_t newSlotsLocation = profile::registerSourceLocation("NewSlots", profile::Group::Scene, profile::Level::Detail);
+    profile::beginZone(newSlotsLocation);
     profile::zoneValue(drawn.meshInstances.size() - std::min<size_t>(slotCountBefore, drawn.meshInstances.size()));
     for (auto slot = slotCountBefore; slot < drawn.meshInstances.size(); slot++) {
         changes.instances.emplace_back(slot, drawn.meshInstances[slot]);
@@ -1852,15 +1852,15 @@ auto ViewScene::place() -> void {
         }
     }
     profile::endZone();
-    static const uint32_t clearSlotsSite = profile::registerSite("ClearSlotsBefore", profile::Group::Scene, profile::Level::Detail);
-    profile::beginZone(clearSlotsSite);
+    static const uint32_t clearSlotsLocation = profile::registerSourceLocation("ClearSlotsBefore", profile::Group::Scene, profile::Level::Detail);
+    profile::beginZone(clearSlotsLocation);
     slotsBefore.clear();
     profile::endZone();
     slotCountBefore = (uint32_t) drawn.meshInstances.size();
     changes.slotCount = slotCountBefore;
     profile::endZone();
-    static const uint32_t lodGroupChangesSite = profile::registerSite("LodGroupChanges", profile::Group::Scene, profile::Level::Detail);
-    profile::beginZone(lodGroupChangesSite);
+    static const uint32_t lodGroupChangesLocation = profile::registerSourceLocation("LodGroupChanges", profile::Group::Scene, profile::Level::Detail);
+    profile::beginZone(lodGroupChangesLocation);
     // The groups touched, against what they held, and the new ones.
     auto groupChanges = changes.lodGroups.size();
     for (const auto& [group, before] : lodGroupsBefore.entries()) {
@@ -1876,8 +1876,8 @@ auto ViewScene::place() -> void {
     changes.lodGroupCount = lodGroupCountBefore;
     auto groupsChanged = (uint32_t) (changes.lodGroups.size() - groupChanges);
     profile::endZone();
-    static const uint32_t addChangesSite = profile::registerSite("AddChanges", profile::Group::Scene, profile::Level::Detail);
-    profile::beginZone(addChangesSite);
+    static const uint32_t addChangesLocation = profile::registerSourceLocation("AddChanges", profile::Group::Scene, profile::Level::Detail);
+    profile::beginZone(addChangesLocation);
     addChanges(std::move(changes));
     profile::endZone();
     if (!changed) {
@@ -1894,8 +1894,8 @@ auto ViewScene::place() -> void {
         it = streamRootSlots.erase(it);
     }
 
-    static const uint32_t shareDrawsSite = profile::registerSite("ShareDraws", profile::Group::Scene, profile::Level::Detail);
-    profile::beginZone(shareDrawsSite);
+    static const uint32_t shareDrawsLocation = profile::registerSourceLocation("ShareDraws", profile::Group::Scene, profile::Level::Detail);
+    profile::beginZone(shareDrawsLocation);
     // What the snapshots read: the lists are shared in chunks, so this copies only their chunk pointers.
     auto built = std::make_shared<SceneDraws>();
     built->drawn = drawn;

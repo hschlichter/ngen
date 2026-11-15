@@ -129,7 +129,7 @@ auto drawBudgetOverlay(const RenderFrameCommands& commands) -> void {
     // Groups in the order the frame runs their first pass.
     groups.clear();
     for (const auto& pass : times.passes) {
-        auto group = profile::groupOf(pass.siteId);
+        auto group = profile::groupOf(pass.locationId);
         auto row = std::ranges::find_if(groups, [group](const GroupRow& r) { return r.group == group; });
         if (row == groups.end()) {
             groups.push_back({.group = group});
@@ -157,7 +157,7 @@ auto drawBudgetOverlay(const RenderFrameCommands& commands) -> void {
     for (const auto& row : groups) {
         labelWidth = std::max(labelWidth, ImGui::CalcTextSize(groupLabel(row.group)).x);
         for (const auto& pass : row.passes) {
-            labelWidth = std::max(labelWidth, passIndent + ImGui::CalcTextSize(profile::nameOf(pass.siteId)).x);
+            labelWidth = std::max(labelWidth, passIndent + ImGui::CalcTextSize(profile::nameOf(pass.locationId)).x);
         }
     }
     labelWidth += labelGap;
@@ -175,7 +175,7 @@ auto drawBudgetOverlay(const RenderFrameCommands& commands) -> void {
         auto groupRgb = profile::groupColor(row.group, 0);
         barRow(groupLabel(row.group), labelWidth, row.ms, budgetMs, rgbToImGui(groupRgb, 230), groupBarHeight, 0.0f, false);
         for (const auto& pass : row.passes) {
-            barRow(profile::nameOf(pass.siteId), labelWidth, pass.msPerFrame, budgetMs, rgbToImGui(groupRgb, 140), passBarHeight, passIndent, true);
+            barRow(profile::nameOf(pass.locationId), labelWidth, pass.msPerFrame, budgetMs, rgbToImGui(groupRgb, 140), passBarHeight, passIndent, true);
         }
     }
     ImGui::Separator();

@@ -15,7 +15,7 @@ auto startStallWatch() -> void;
 auto stopStallWatch() -> void;
 
 struct StallInfo {
-    std::string lane;
+    std::string track;
     std::string zone;  // the innermost zone open longer than the threshold
     std::string stack; // every open zone, outermost first: "Name 6.2 s > Name 5.1 s > Name 0.3 s"
     double seconds = 0.0;

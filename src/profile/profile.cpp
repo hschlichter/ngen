@@ -26,8 +26,8 @@ namespace profile {
 
 namespace {
 
-// A lane's zones live in blocks. The owning thread appends to the newest block without a lock and publishes each entry by
-// advancing `count`; readers copy entries below it. A block leaves the lane once its newest zone is older than the history
+// A track's zones live in blocks. The owning thread appends to the newest block without a lock and publishes each entry by
+// advancing `count`; readers copy entries below it. A block leaves the track once its newest zone is older than the history
 // window, checked when the writer starts the next block.
 constexpr uint32_t blockZones = 4096;
 
@@ -37,10 +37,10 @@ struct ZoneBlock {
     std::atomic<uint64_t> newestEndNs = 0;
 };
 
-struct Lane {
+struct Track {
     std::atomic<bool> used = false;
-    // A thread writes the lane. When it exits the lane is free, and a thread registering the same name takes it over: threads started
-    // again and again (a pool per call) keep one lane per name instead of using up maxLanes.
+    // A thread writes the track. When it exits the track is free, and a thread registering the same name takes it over: threads started
+    // again and again (a pool per call) keep one track per name instead of using up maxTracks.
     std::atomic<bool> owned = false;
     // Taken by the writer when it starts a block, by readers to copy the block list, and around the name.
     std::mutex mutex;
@@ -49,19 +49,19 @@ struct Lane {
     ZoneBlock* current = nullptr;                   // the owning thread only
     // The owning thread's open zones, outermost first, published as they begin and end so another thread can see where this one is
     // (openZones, the stall watch). A reader may catch an entry while it is rewritten; a thread that stays in one zone reads exactly.
-    std::array<std::atomic<uint32_t>, maxDepth> openSites;
+    std::array<std::atomic<uint32_t>, maxDepth> openLocations;
     std::array<std::atomic<uint64_t>, maxDepth> openStarts;
     std::atomic<uint32_t> openDepth = 0;
-    // The lane's frames over budget (overBudget), under the mutex: written once a frame by a thread that marks frames.
+    // The track's frames over budget (overBudget), under the mutex: written once a frame by a thread that marks frames.
     bool marksFrames = false;
-    LaneOverBudget overBudget;
+    TrackOverBudget overBudget;
 };
 
 struct ThreadState {
-    Lane* lane = nullptr;
-    const char* pendingName = nullptr; // from registerThread, applied when the lane is taken
+    Track* track = nullptr;
+    const char* pendingName = nullptr; // from registerThread, applied when the track is taken
     uint32_t depth = 0;
-    std::array<uint32_t, maxDepth> siteIds;
+    std::array<uint32_t, maxDepth> locationIds;
     std::array<uint64_t, maxDepth> starts;
     std::array<uint64_t, maxDepth> values;
     std::array<bool, maxDepth> hasValues;
@@ -79,14 +79,14 @@ struct ThreadState {
     ThreadState(const ThreadState&) = delete;
     auto operator=(const ThreadState&) -> ThreadState& = delete;
     ~ThreadState() {
-        if (lane != nullptr) {
-            lane->openDepth.store(0, std::memory_order_release);
-            lane->owned.store(false, std::memory_order_release);
+        if (track != nullptr) {
+            track->openDepth.store(0, std::memory_order_release);
+            track->owned.store(false, std::memory_order_release);
         }
     }
 };
 
-std::array<Lane, maxLanes> g_lanes;
+std::array<Track, maxTracks> g_lanes;
 std::atomic<uint32_t> g_laneCount = 0;
 std::atomic<bool> g_paused = false;
 std::atomic<uint64_t> g_historyNs = 10'000'000'000ull;
@@ -96,13 +96,13 @@ std::atomic<uint64_t> g_frameBudgetNs = 16'667'000ull;
 std::atomic<uint64_t> g_overBudgetResetNs = 0;
 thread_local ThreadState t_state;
 
-// Sites: one per (file, line, name). The name is copied (a deque keeps every string where it is); the location's strings are static.
-// A site's info is written before the count that publishes its id, so readers and beginZone read it without the lock. Id 0 is no site.
-std::mutex g_siteMutex;
-std::deque<std::string> g_siteNames;
-std::unordered_map<std::string, uint32_t> g_siteIds; // "file:line:name"
-std::array<SiteInfo, maxNames + 1> g_sites;
-std::atomic<uint32_t> g_siteCount = 1;
+// Source locations: one per (file, line, name). The name is copied (a deque keeps every string where it is); the location's strings are static.
+// A source location's info is written before the count that publishes its id, so readers and beginZone read it without the lock. Id 0 is no source location.
+std::mutex g_locationMutex;
+std::deque<std::string> g_locationNames;
+std::unordered_map<std::string, uint32_t> g_locationIds; // "file:line:name"
+std::array<SourceLocationInfo, maxNames + 1> g_locations;
+std::atomic<uint32_t> g_locationCount = 1;
 
 std::mutex g_frameMutex;
 std::deque<FrameInterval> g_intervals;
@@ -228,7 +228,7 @@ auto stopTracyAtExit() -> void {
 // so beginZone reads it without a lock; its strings are the interned copies, which never move.
 std::array<___tracy_source_location_data, maxNames + 1> g_tracySourceLocations;
 
-// The GPU lane's Tracy context. Touched only by the thread that submits GPU zones (the render thread).
+// The GPU track's Tracy context. Touched only by the thread that submits GPU zones (the render thread).
 struct TracyGpu {
     bool created = false;
     uint16_t nextQueryId = 0;
@@ -278,15 +278,15 @@ auto sendGpuZonesToTracy(std::span<const Zone> zones) -> void {
         }
         auto beginQueryId = g_tracyGpu.nextQueryId;
         g_tracyGpu.nextQueryId += 2;
-        auto site = siteOf(zone.siteId);
-        auto color = groupColor(site.group, zone.siteId);
-        auto sourceLocation = ___tracy_alloc_srcloc_name(site.line,
-                                                         site.file,
-                                                         std::strlen(site.file),
-                                                         site.function,
-                                                         std::strlen(site.function),
-                                                         site.name,
-                                                         std::strlen(site.name),
+        auto source = sourceLocationOf(zone.locationId);
+        auto color = groupColor(source.group, zone.locationId);
+        auto sourceLocation = ___tracy_alloc_srcloc_name(source.line,
+                                                         source.file,
+                                                         std::strlen(source.file),
+                                                         source.function,
+                                                         std::strlen(source.function),
+                                                         source.name,
+                                                         std::strlen(source.name),
                                                          color);
         ___tracy_emit_gpu_zone_begin_alloc_serial({.srcloc = sourceLocation, .queryId = beginQueryId, .context = tracyGpuContext});
         ___tracy_emit_gpu_time_serial({.gpuTime = (int64_t) zone.startNs, .queryId = beginQueryId, .context = tracyGpuContext});
@@ -299,70 +299,70 @@ auto sendGpuZonesToTracy(std::span<const Zone> zones) -> void {
 }
 #endif
 
-// The zones the thread opened before it had a lane, published when it takes one.
-auto publishOpenZones(Lane& lane) -> void {
+// The zones the thread opened before it had a track, published when it takes one.
+auto publishOpenZones(Track& track) -> void {
     auto depth = std::min(t_state.depth, maxDepth);
     for (uint32_t i = 0; i < depth; i++) {
-        lane.openSites[i].store(t_state.siteIds[i], std::memory_order_relaxed);
-        lane.openStarts[i].store(t_state.starts[i], std::memory_order_relaxed);
+        track.openLocations[i].store(t_state.locationIds[i], std::memory_order_relaxed);
+        track.openStarts[i].store(t_state.starts[i], std::memory_order_relaxed);
     }
-    lane.openDepth.store(depth, std::memory_order_release);
+    track.openDepth.store(depth, std::memory_order_release);
 }
 
-auto laneForThread() -> Lane* {
-    if (t_state.lane != nullptr) {
-        return t_state.lane;
+auto trackForThread() -> Track* {
+    if (t_state.track != nullptr) {
+        return t_state.track;
     }
     if (t_state.pendingName != nullptr) {
-        auto count = std::min(g_laneCount.load(), maxLanes);
+        auto count = std::min(g_laneCount.load(), maxTracks);
         for (uint32_t i = 0; i < count; i++) {
-            auto& lane = g_lanes[i];
-            if (!lane.used.load(std::memory_order_acquire) || lane.owned.load(std::memory_order_acquire)) {
+            auto& track = g_lanes[i];
+            if (!track.used.load(std::memory_order_acquire) || track.owned.load(std::memory_order_acquire)) {
                 continue;
             }
             {
-                std::lock_guard lock(lane.mutex);
-                if (lane.name != t_state.pendingName) {
+                std::lock_guard lock(track.mutex);
+                if (track.name != t_state.pendingName) {
                     continue;
                 }
             }
             bool expected = false;
-            if (lane.owned.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
-                t_state.lane = &lane;
-                publishOpenZones(lane);
-                return &lane;
+            if (track.owned.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
+                t_state.track = &track;
+                publishOpenZones(track);
+                return &track;
             }
         }
     }
     auto index = g_laneCount.fetch_add(1);
-    if (index >= maxLanes) {
-        g_laneCount.store(maxLanes);
+    if (index >= maxTracks) {
+        g_laneCount.store(maxTracks);
         return nullptr;
     }
-    auto& lane = g_lanes[index];
+    auto& track = g_lanes[index];
     {
-        std::lock_guard lock(lane.mutex);
+        std::lock_guard lock(track.mutex);
         if (t_state.pendingName != nullptr) {
-            lane.name = t_state.pendingName;
+            track.name = t_state.pendingName;
         } else {
-            lane.name = "thread " + std::to_string(index);
+            track.name = "thread " + std::to_string(index);
         }
     }
-    lane.owned.store(true, std::memory_order_relaxed);
-    publishOpenZones(lane);
-    lane.used.store(true, std::memory_order_release);
-    t_state.lane = &lane;
-    return &lane;
+    track.owned.store(true, std::memory_order_relaxed);
+    publishOpenZones(track);
+    track.used.store(true, std::memory_order_release);
+    t_state.track = &track;
+    return &track;
 }
 
-// The writer's block is full (or the lane has none yet): blocks older than the window leave, one no reader holds is reused.
-auto startBlock(Lane& lane, uint64_t nowNs) -> ZoneBlock* {
-    std::lock_guard lock(lane.mutex);
+// The writer's block is full (or the track has none yet): blocks older than the window leave, one no reader holds is reused.
+auto startBlock(Track& track, uint64_t nowNs) -> ZoneBlock* {
+    std::lock_guard lock(track.mutex);
     auto oldest = windowStart(nowNs);
     std::shared_ptr<ZoneBlock> reuse;
-    while (!lane.blocks.empty() && lane.blocks.front()->newestEndNs.load(std::memory_order_relaxed) < oldest) {
-        auto old = std::move(lane.blocks.front());
-        lane.blocks.erase(lane.blocks.begin());
+    while (!track.blocks.empty() && track.blocks.front()->newestEndNs.load(std::memory_order_relaxed) < oldest) {
+        auto old = std::move(track.blocks.front());
+        track.blocks.erase(track.blocks.begin());
         if (reuse == nullptr && old.use_count() == 1) {
             reuse = std::move(old);
         }
@@ -373,34 +373,34 @@ auto startBlock(Lane& lane, uint64_t nowNs) -> ZoneBlock* {
     } else {
         reuse = std::make_shared<ZoneBlock>();
     }
-    lane.current = reuse.get();
-    lane.blocks.push_back(std::move(reuse));
-    return lane.current;
+    track.current = reuse.get();
+    track.blocks.push_back(std::move(reuse));
+    return track.current;
 }
 
-auto blocksOf(uint32_t laneIndex) -> std::vector<std::shared_ptr<ZoneBlock>> {
-    if (laneIndex >= maxLanes) {
+auto blocksOf(uint32_t trackIndex) -> std::vector<std::shared_ptr<ZoneBlock>> {
+    if (trackIndex >= maxTracks) {
         return {};
     }
-    auto& lane = g_lanes[laneIndex];
-    if (!lane.used.load(std::memory_order_acquire)) {
+    auto& track = g_lanes[trackIndex];
+    if (!track.used.load(std::memory_order_acquire)) {
         return {};
     }
-    std::lock_guard lock(lane.mutex);
-    return lane.blocks;
+    std::lock_guard lock(track.mutex);
+    return track.blocks;
 }
 
 // Where a frame's own work went: the innermost zone, outside every wait, that holds at least half of it, else the one holding the most.
-// A zone's own work is its time less the outermost Wait-group zones in it. Read from the lane's history after the frame ended; empty when
+// A zone's own work is its time less the outermost Wait-group zones in it. Read from the track's history after the frame ended; empty when
 // the history has none of it (paused).
 struct FrameZone {
-    uint32_t siteId = 0;
+    uint32_t locationId = 0;
     uint64_t ownNs = 0;
 };
 
-auto frameZoneOf(uint32_t laneIndex, uint64_t startNs, uint64_t endNs, uint64_t frameOwnNs) -> FrameZone {
+auto frameZoneOf(uint32_t trackIndex, uint64_t startNs, uint64_t endNs, uint64_t frameOwnNs) -> FrameZone {
     std::vector<Zone> zones;
-    zonesIn(laneIndex, startNs, endNs, zones);
+    zonesIn(trackIndex, startNs, endNs, zones);
     std::erase_if(zones, [&](const Zone& zone) {
         return zone.startNs < startNs || zone.endNs > endNs;
     });
@@ -419,7 +419,7 @@ auto frameZoneOf(uint32_t laneIndex, uint64_t startNs, uint64_t endNs, uint64_t 
             open.pop_back();
         }
         bool parentInWait = !open.empty() && inWait[open.back()];
-        bool isWait = groupOf(zones[i].siteId) == Group::Wait;
+        bool isWait = groupOf(zones[i].locationId) == Group::Wait;
         inWait[i] = isWait || parentInWait;
         if (isWait && !parentInWait) {
             for (auto parent : open) {
@@ -437,15 +437,15 @@ auto frameZoneOf(uint32_t laneIndex, uint64_t startNs, uint64_t endNs, uint64_t 
         }
         auto durationNs = zones[i].endNs - zones[i].startNs;
         auto ownNs = durationNs > waitNs[i] ? durationNs - waitNs[i] : 0;
-        if (ownNs * 2 >= frameOwnNs && (holding.siteId == 0 || zones[i].depth > holdingDepth)) {
-            holding = {.siteId = zones[i].siteId, .ownNs = ownNs};
+        if (ownNs * 2 >= frameOwnNs && (holding.locationId == 0 || zones[i].depth > holdingDepth)) {
+            holding = {.locationId = zones[i].locationId, .ownNs = ownNs};
             holdingDepth = zones[i].depth;
         }
         if (ownNs > most.ownNs) {
-            most = {.siteId = zones[i].siteId, .ownNs = ownNs};
+            most = {.locationId = zones[i].locationId, .ownNs = ownNs};
         }
     }
-    if (holding.siteId != 0) {
+    if (holding.locationId != 0) {
         return holding;
     }
     return most;
@@ -487,29 +487,29 @@ auto startTracyIfAsked() -> void {
 
 namespace {
 
-auto addSite(const std::string& key, const char* name, Group group, Level level, const char* file, const char* function, uint32_t line) -> uint32_t {
-    std::lock_guard lock(g_siteMutex);
-    if (auto found = g_siteIds.find(key); found != g_siteIds.end()) {
+auto addSourceLocation(const std::string& key, const char* name, Group group, Level level, const char* file, const char* function, uint32_t line) -> uint32_t {
+    std::lock_guard lock(g_locationMutex);
+    if (auto found = g_locationIds.find(key); found != g_locationIds.end()) {
         return found->second;
     }
-    auto id = g_siteCount.load(std::memory_order_relaxed);
+    auto id = g_locationCount.load(std::memory_order_relaxed);
     assert(id <= maxNames);
     if (id > maxNames) {
         return 0;
     }
-    const auto& stored = g_siteNames.emplace_back(name);
-    g_siteIds.emplace(key, id);
-    g_sites[id] = {.name = stored.c_str(), .file = file, .function = function, .line = line, .group = group, .level = level};
+    const auto& stored = g_locationNames.emplace_back(name);
+    g_locationIds.emplace(key, id);
+    g_locations[id] = {.name = stored.c_str(), .file = file, .function = function, .line = line, .group = group, .level = level};
 #ifdef TRACY_ENABLE
     g_tracySourceLocations[id] = {.name = stored.c_str(), .function = function, .file = file, .line = line, .color = groupColor(group, id)};
 #endif
-    g_siteCount.store(id + 1, std::memory_order_release);
+    g_locationCount.store(id + 1, std::memory_order_release);
     return id;
 }
 
 } // namespace
 
-auto registerSite(const char* name, Group group, Level level, std::source_location location) -> uint32_t {
+auto registerSourceLocation(const char* name, Group group, Level level, std::source_location location) -> uint32_t {
     // Built in a reused buffer: GPU zones register every frame.
     thread_local std::string key;
     key.assign(location.file_name());
@@ -517,40 +517,40 @@ auto registerSite(const char* name, Group group, Level level, std::source_locati
     key += std::to_string(location.line());
     key += ':';
     key += name;
-    return addSite(key, name, group, level, location.file_name(), location.function_name(), location.line());
+    return addSourceLocation(key, name, group, level, location.file_name(), location.function_name(), location.line());
 }
 
-auto siteIdOf(const char* name) -> uint32_t {
+auto sourceLocationIdOf(const char* name) -> uint32_t {
     thread_local std::string key;
     key.assign("::");
     key += name;
-    return addSite(key, name, Group::Render, Level::Guide, "", "", 0);
+    return addSourceLocation(key, name, Group::Render, Level::Guide, "", "", 0);
 }
 
-auto siteOf(uint32_t siteId) -> SiteInfo {
-    if (siteId != 0 && siteId < g_siteCount.load(std::memory_order_acquire)) {
-        return g_sites[siteId];
+auto sourceLocationOf(uint32_t locationId) -> SourceLocationInfo {
+    if (locationId != 0 && locationId < g_locationCount.load(std::memory_order_acquire)) {
+        return g_locations[locationId];
     }
     return {};
 }
 
-auto nameOf(uint32_t siteId) -> const char* {
-    if (siteId != 0 && siteId < g_siteCount.load(std::memory_order_acquire)) {
-        return g_sites[siteId].name;
+auto nameOf(uint32_t locationId) -> const char* {
+    if (locationId != 0 && locationId < g_locationCount.load(std::memory_order_acquire)) {
+        return g_locations[locationId].name;
     }
     return "?";
 }
 
-auto groupOf(uint32_t siteId) -> Group {
-    if (siteId != 0 && siteId < g_siteCount.load(std::memory_order_acquire)) {
-        return g_sites[siteId].group;
+auto groupOf(uint32_t locationId) -> Group {
+    if (locationId != 0 && locationId < g_locationCount.load(std::memory_order_acquire)) {
+        return g_locations[locationId].group;
     }
     return Group::Render;
 }
 
-auto levelOf(uint32_t siteId) -> Level {
-    if (siteId != 0 && siteId < g_siteCount.load(std::memory_order_acquire)) {
-        return g_sites[siteId].level;
+auto levelOf(uint32_t locationId) -> Level {
+    if (locationId != 0 && locationId < g_locationCount.load(std::memory_order_acquire)) {
+        return g_locations[locationId].level;
     }
     return Level::Guide;
 }
@@ -563,15 +563,15 @@ auto groupName(Group group) -> const char* {
     return "?";
 }
 
-auto groupColor(Group group, uint32_t siteId) -> uint32_t {
+auto groupColor(Group group, uint32_t locationId) -> uint32_t {
     auto index = (uint32_t) group;
     if (index >= groupCount) {
         return 0x808080;
     }
     auto color = groupColors[index];
     if (group == Group::Jobs) {
-        // Five shades, darker to lighter, picked by the site.
-        auto step = (int) ((siteId * 2654435761u) >> 16) % 5 - 2;
+        // Five shades, darker to lighter, picked by the source location.
+        auto step = (int) ((locationId * 2654435761u) >> 16) % 5 - 2;
         color = shade(color, step);
     }
     return color;
@@ -591,40 +591,40 @@ auto registerThread(const char* name) -> void {
     pthread_setname_np(pthread_self(), systemName.data());
 #endif
     t_state.pendingName = name;
-    if (t_state.lane != nullptr) {
-        std::lock_guard lock(t_state.lane->mutex);
-        t_state.lane->name = name;
+    if (t_state.track != nullptr) {
+        std::lock_guard lock(t_state.track->mutex);
+        t_state.track->name = name;
     } else {
-        // Take the lane now so a named thread shows up in the window and in dumps even before its first zone (workers idle until
+        // Take the track now so a named thread shows up in the window and in dumps even before its first zone (workers idle until
         // the first job).
-        laneForThread();
+        trackForThread();
     }
-    static const uint32_t startedId = registerSite("ThreadStarted", Group::Wait, Level::Detail);
+    static const uint32_t startedId = registerSourceLocation("ThreadStarted", Group::Wait, Level::Detail);
     beginZone(startedId);
     endZone();
 }
 
-auto beginZone(uint32_t siteId) -> void {
+auto beginZone(uint32_t locationId) -> void {
     if (t_state.depth >= maxDepth) {
         t_state.depth++;
         return;
     }
     auto startNs = now();
-    t_state.siteIds[t_state.depth] = siteId;
+    t_state.locationIds[t_state.depth] = locationId;
     t_state.starts[t_state.depth] = startNs;
     t_state.hasValues[t_state.depth] = false;
-    t_state.waits[t_state.depth] = groupOf(siteId) == Group::Wait;
+    t_state.waits[t_state.depth] = groupOf(locationId) == Group::Wait;
     if (t_state.waits[t_state.depth]) {
         t_state.waitsOpen++;
     }
-    if (t_state.lane != nullptr) {
-        t_state.lane->openSites[t_state.depth].store(siteId, std::memory_order_relaxed);
-        t_state.lane->openStarts[t_state.depth].store(startNs, std::memory_order_relaxed);
-        t_state.lane->openDepth.store(t_state.depth + 1, std::memory_order_release);
+    if (t_state.track != nullptr) {
+        t_state.track->openLocations[t_state.depth].store(locationId, std::memory_order_relaxed);
+        t_state.track->openStarts[t_state.depth].store(startNs, std::memory_order_relaxed);
+        t_state.track->openDepth.store(t_state.depth + 1, std::memory_order_release);
     }
 #ifdef TRACY_ENABLE
-    if (siteId != 0 && siteId <= maxNames && tracyRunning()) {
-        t_state.tracyZones[t_state.depth] = ___tracy_emit_zone_begin(&g_tracySourceLocations[siteId], 1);
+    if (locationId != 0 && locationId <= maxNames && tracyRunning()) {
+        t_state.tracyZones[t_state.depth] = ___tracy_emit_zone_begin(&g_tracySourceLocations[locationId], 1);
     } else {
         t_state.tracyZones[t_state.depth] = {};
     }
@@ -650,8 +650,8 @@ auto endZone() -> void {
         return;
     }
     t_state.depth--;
-    if (t_state.lane != nullptr && t_state.depth < maxDepth) {
-        t_state.lane->openDepth.store(t_state.depth, std::memory_order_release);
+    if (t_state.track != nullptr && t_state.depth < maxDepth) {
+        t_state.track->openDepth.store(t_state.depth, std::memory_order_release);
     }
     if (t_state.depth < maxDepth && t_state.waits[t_state.depth]) {
         t_state.waitsOpen--;
@@ -668,18 +668,18 @@ auto endZone() -> void {
     if (t_state.depth >= maxDepth || g_paused.load(std::memory_order_relaxed)) {
         return;
     }
-    auto* lane = laneForThread();
-    if (lane == nullptr) {
+    auto* track = trackForThread();
+    if (track == nullptr) {
         return;
     }
     auto endNs = now();
-    auto* block = lane->current;
+    auto* block = track->current;
     if (block == nullptr || block->count.load(std::memory_order_relaxed) == blockZones) {
-        block = startBlock(*lane, endNs);
+        block = startBlock(*track, endNs);
     }
     auto index = block->count.load(std::memory_order_relaxed);
     auto& entry = block->zones[index];
-    entry.siteId = t_state.siteIds[t_state.depth];
+    entry.locationId = t_state.locationIds[t_state.depth];
     entry.depth = (uint16_t) t_state.depth;
     entry.hasValue = t_state.hasValues[t_state.depth];
     entry.value = t_state.values[t_state.depth];
@@ -690,7 +690,7 @@ auto endZone() -> void {
 }
 
 auto frameMark() -> void {
-    laneFrameMark();
+    trackFrameMark();
     {
         std::lock_guard markLock(g_frameMarkMutex);
 #ifdef TRACY_ENABLE
@@ -723,25 +723,25 @@ auto frameMark() -> void {
     g_frameStartNs = t;
 }
 
-auto laneFrameMark() -> void {
-    auto* lane = laneForThread();
+auto trackFrameMark() -> void {
+    auto* track = trackForThread();
     auto endNs = now();
     auto startNs = std::exchange(t_state.frameStartNs, endNs);
     auto waitNs = std::exchange(t_state.frameWaitNs, 0);
-    if (lane == nullptr || startNs == 0) {
+    if (track == nullptr || startNs == 0) {
         return;
     }
     auto spanNs = endNs - startNs;
     auto ownNs = spanNs > waitNs ? spanNs - waitNs : 0;
     bool worst = false;
     {
-        std::lock_guard lock(lane->mutex);
-        lane->marksFrames = true;
+        std::lock_guard lock(track->mutex);
+        track->marksFrames = true;
         // Read under the lock: a reset clears the counts under it after moving this, so a frame from before it isn't counted after.
         if (startNs < g_overBudgetResetNs.load(std::memory_order_relaxed)) {
             return;
         }
-        auto& counts = lane->overBudget;
+        auto& counts = track->overBudget;
         counts.frames++;
         if (ownNs > g_frameBudgetNs.load(std::memory_order_relaxed)) {
             counts.over++;
@@ -749,7 +749,7 @@ auto laneFrameMark() -> void {
         if ((double) ownNs * 1e-6 > counts.worstMs) {
             counts.worstMs = (double) ownNs * 1e-6;
             counts.worstEndNs = endNs;
-            counts.worstSiteId = 0;
+            counts.worstLocationId = 0;
             counts.worstZoneMs = 0.0;
             worst = true;
         }
@@ -757,12 +757,12 @@ auto laneFrameMark() -> void {
     if (!worst) {
         return;
     }
-    auto laneIndex = (uint32_t) (lane - g_lanes.data());
-    auto zone = frameZoneOf(laneIndex, startNs, endNs, ownNs);
-    std::lock_guard lock(lane->mutex);
-    if (lane->overBudget.worstEndNs == endNs) {
-        lane->overBudget.worstSiteId = zone.siteId;
-        lane->overBudget.worstZoneMs = (double) zone.ownNs * 1e-6;
+    auto trackIndex = (uint32_t) (track - g_lanes.data());
+    auto zone = frameZoneOf(trackIndex, startNs, endNs, ownNs);
+    std::lock_guard lock(track->mutex);
+    if (track->overBudget.worstEndNs == endNs) {
+        track->overBudget.worstLocationId = zone.locationId;
+        track->overBudget.worstZoneMs = (double) zone.ownNs * 1e-6;
     }
 }
 
@@ -777,33 +777,33 @@ auto frameBudgetMs() -> double {
 auto overBudget(OverBudget& out) -> void {
     out.budgetMs = frameBudgetMs();
     out.resetNs = g_overBudgetResetNs.load(std::memory_order_relaxed);
-    out.lanes.clear();
-    auto count = std::min(g_laneCount.load(), maxLanes);
+    out.tracks.clear();
+    auto count = std::min(g_laneCount.load(), maxTracks);
     for (uint32_t i = 0; i < count; i++) {
-        auto& lane = g_lanes[i];
-        if (!lane.used.load(std::memory_order_acquire)) {
+        auto& track = g_lanes[i];
+        if (!track.used.load(std::memory_order_acquire)) {
             continue;
         }
-        std::lock_guard lock(lane.mutex);
-        if (!lane.marksFrames) {
+        std::lock_guard lock(track.mutex);
+        if (!track.marksFrames) {
             continue;
         }
-        auto entry = lane.overBudget;
-        entry.lane = lane.name;
-        out.lanes.push_back(std::move(entry));
+        auto entry = track.overBudget;
+        entry.track = track.name;
+        out.tracks.push_back(std::move(entry));
     }
 }
 
 auto resetOverBudget() -> void {
     g_overBudgetResetNs.store(now(), std::memory_order_relaxed);
-    auto count = std::min(g_laneCount.load(), maxLanes);
+    auto count = std::min(g_laneCount.load(), maxTracks);
     for (uint32_t i = 0; i < count; i++) {
-        auto& lane = g_lanes[i];
-        if (!lane.used.load(std::memory_order_acquire)) {
+        auto& track = g_lanes[i];
+        if (!track.used.load(std::memory_order_acquire)) {
             continue;
         }
-        std::lock_guard lock(lane.mutex);
-        lane.overBudget = {};
+        std::lock_guard lock(track.mutex);
+        track.overBudget = {};
     }
 }
 
@@ -1044,59 +1044,59 @@ auto memoryFree(const char* pool, uint64_t id) -> void {
 #endif
 }
 
-auto lanes(std::vector<LaneInfo>& out) -> void {
+auto tracks(std::vector<TrackInfo>& out) -> void {
     out.clear();
-    auto count = std::min(g_laneCount.load(), maxLanes);
+    auto count = std::min(g_laneCount.load(), maxTracks);
     for (uint32_t i = 0; i < count; i++) {
-        auto& lane = g_lanes[i];
-        if (!lane.used.load(std::memory_order_acquire)) {
+        auto& track = g_lanes[i];
+        if (!track.used.load(std::memory_order_acquire)) {
             continue;
         }
-        std::lock_guard lock(lane.mutex);
-        out.push_back({.index = i, .name = lane.name});
+        std::lock_guard lock(track.mutex);
+        out.push_back({.index = i, .name = track.name});
     }
 }
 
 auto openZones(std::vector<OpenZones>& out) -> void {
     out.clear();
-    auto count = std::min(g_laneCount.load(), maxLanes);
+    auto count = std::min(g_laneCount.load(), maxTracks);
     for (uint32_t i = 0; i < count; i++) {
-        auto& lane = g_lanes[i];
-        if (!lane.used.load(std::memory_order_acquire) || !lane.owned.load(std::memory_order_acquire)) {
+        auto& track = g_lanes[i];
+        if (!track.used.load(std::memory_order_acquire) || !track.owned.load(std::memory_order_acquire)) {
             continue;
         }
         OpenZones entry;
-        entry.laneIndex = i;
+        entry.trackIndex = i;
         {
-            std::lock_guard lock(lane.mutex);
-            entry.lane = lane.name;
+            std::lock_guard lock(track.mutex);
+            entry.track = track.name;
         }
-        auto depth = std::min(lane.openDepth.load(std::memory_order_acquire), maxDepth);
+        auto depth = std::min(track.openDepth.load(std::memory_order_acquire), maxDepth);
         entry.zones.reserve(depth);
         for (uint32_t d = 0; d < depth; d++) {
             entry.zones.push_back({
-                .siteId = lane.openSites[d].load(std::memory_order_relaxed),
-                .startNs = lane.openStarts[d].load(std::memory_order_relaxed),
+                .locationId = track.openLocations[d].load(std::memory_order_relaxed),
+                .startNs = track.openStarts[d].load(std::memory_order_relaxed),
             });
         }
         out.push_back(std::move(entry));
     }
 }
 
-auto historyUsage(std::vector<LaneUsage>& out) -> void {
+auto historyUsage(std::vector<TrackUsage>& out) -> void {
     out.clear();
-    std::vector<LaneInfo> laneList;
-    lanes(laneList);
-    for (const auto& lane : laneList) {
-        auto blocks = blocksOf(lane.index);
-        LaneUsage usage = {.index = lane.index, .name = lane.name};
+    std::vector<TrackInfo> trackList;
+    tracks(trackList);
+    for (const auto& track : trackList) {
+        auto blocks = blocksOf(track.index);
+        TrackUsage usage = {.index = track.index, .name = track.name};
         for (const auto& block : blocks) {
             usage.zones += block->count.load(std::memory_order_acquire);
             usage.bytes += sizeof(ZoneBlock);
         }
         out.push_back(std::move(usage));
     }
-    LaneUsage gpu = {.index = UINT32_MAX, .name = "GPU"};
+    TrackUsage gpu = {.index = UINT32_MAX, .name = "GPU"};
     {
         std::lock_guard lock(g_gpuMutex);
         for (const auto& frame : g_gpuFrames) {
@@ -1135,9 +1135,9 @@ auto frameByIndex(uint64_t frameIndex) -> std::optional<FrameInterval> {
     return interval;
 }
 
-auto zonesIn(uint32_t laneIndex, uint64_t startNs, uint64_t endNs, std::vector<Zone>& out) -> void {
+auto zonesIn(uint32_t trackIndex, uint64_t startNs, uint64_t endNs, std::vector<Zone>& out) -> void {
     out.clear();
-    auto blocks = blocksOf(laneIndex);
+    auto blocks = blocksOf(trackIndex);
     // Newest first; stop once entries end before the window (zones are appended in end order).
     for (auto block = blocks.rbegin(); block != blocks.rend(); ++block) {
         auto count = (*block)->count.load(std::memory_order_acquire);
@@ -1233,19 +1233,19 @@ auto gpuPassTimes(uint32_t frames, GpuPassTimes& out) -> void {
                 if (zone.depth != 0 || zone.endNs < startNs || zone.startNs > endNs) {
                     continue;
                 }
-                totalNs[zone.siteId] += zone.endNs - zone.startNs;
-                auto found = std::ranges::find(order, zone.siteId);
+                totalNs[zone.locationId] += zone.endNs - zone.startNs;
+                auto found = std::ranges::find(order, zone.locationId);
                 if (found == order.end()) {
                     auto at = hasPrevious ? previous + 1 : order.begin();
-                    found = order.insert(at, zone.siteId);
+                    found = order.insert(at, zone.locationId);
                 }
                 previous = found;
                 hasPrevious = true;
             }
         }
     }
-    for (auto siteId : order) {
-        out.passes.push_back({.siteId = siteId, .msPerFrame = (double) totalNs[siteId] * 1e-6 / (double) out.frames});
+    for (auto locationId : order) {
+        out.passes.push_back({.locationId = locationId, .msPerFrame = (double) totalNs[locationId] * 1e-6 / (double) out.frames});
     }
 }
 
@@ -1275,25 +1275,25 @@ auto statsFrom(std::vector<double>& samples) -> ZoneStats {
 
 } // namespace
 
-auto zoneStats(uint32_t laneIndex, uint32_t siteId) -> ZoneStats {
+auto zoneStats(uint32_t trackIndex, uint32_t locationId) -> ZoneStats {
     std::vector<double> samples;
-    if (laneIndex == UINT32_MAX) {
+    if (trackIndex == UINT32_MAX) {
         std::lock_guard lock(g_gpuMutex);
         for (const auto& frame : g_gpuFrames) {
             for (const auto& zone : frame.zones) {
-                if (zone.siteId == siteId) {
+                if (zone.locationId == locationId) {
                     samples.push_back((double) (zone.endNs - zone.startNs) * 1e-6);
                 }
             }
         }
         return statsFrom(samples);
     }
-    auto blocks = blocksOf(laneIndex);
+    auto blocks = blocksOf(trackIndex);
     for (const auto& block : blocks) {
         auto count = block->count.load(std::memory_order_acquire);
         for (uint32_t i = 0; i < count; i++) {
             const auto& z = block->zones[i];
-            if (z.siteId == siteId) {
+            if (z.locationId == locationId) {
                 samples.push_back((double) (z.endNs - z.startNs) * 1e-6);
             }
         }
@@ -1315,56 +1315,56 @@ auto exportChromeTrace(const char* path, const ExportOptions& options) -> bool {
     std::fprintf(f, "{\"displayTimeUnit\": \"ms\", \"traceEvents\": [\n");
     bool first = true;
     auto emit = [&](const Zone& z, uint32_t tid) {
-        auto site = siteOf(z.siteId);
-        if (site.level == Level::Detail && !options.detail) {
+        auto source = sourceLocationOf(z.locationId);
+        if (source.level == Level::Detail && !options.detail) {
             return;
         }
         std::fprintf(f,
                      "%s{\"name\": \"%s\", \"cat\": \"%s\", \"ph\": \"X\", \"pid\": 1, \"tid\": %u, \"ts\": %.3f, \"dur\": %.3f, \"args\": {\"depth\": %u, \"value\": %llu, "
                      "\"group\": \"%s\", \"level\": \"%s\", \"file\": \"%s\", \"line\": %u}}",
                      first ? "" : ",\n",
-                     site.name,
-                     groupName(site.group),
+                     source.name,
+                     groupName(source.group),
                      tid,
                      (double) z.startNs * 1e-3,
                      (double) (z.endNs - z.startNs) * 1e-3,
                      (uint32_t) z.depth,
                      (unsigned long long) (z.hasValue ? z.value : 0),
-                     groupName(site.group),
-                     site.level == Level::Detail ? "detail" : "guide",
-                     site.file,
-                     site.line);
+                     groupName(source.group),
+                     source.level == Level::Detail ? "detail" : "guide",
+                     source.file,
+                     source.line);
         first = false;
     };
     // Thread ids start at 100: viewers treat tid 0 and tid == pid as special (idle
-    // thread, process main thread) and fold lanes together. Viewers sort rows by tid,
-    // so Main and Render come first and the workers follow in numeric order; lane
+    // thread, process main thread) and fold tracks together. Viewers sort rows by tid,
+    // so Main and Render come first and the workers follow in numeric order; track
     // indices depend on which thread registered first.
     constexpr uint32_t firstCpuTid = 100;
-    std::vector<LaneInfo> laneList;
-    lanes(laneList);
-    auto laneRank = [](const LaneInfo& lane) -> std::pair<int, int> {
-        if (lane.name == "Main") {
+    std::vector<TrackInfo> trackList;
+    tracks(trackList);
+    auto trackRank = [](const TrackInfo& track) -> std::pair<int, int> {
+        if (track.name == "Main") {
             return {0, 0};
         }
-        if (lane.name == "Render") {
+        if (track.name == "Render") {
             return {1, 0};
         }
-        auto digits = lane.name.find_last_not_of("0123456789");
+        auto digits = track.name.find_last_not_of("0123456789");
         int number = 0;
-        if (digits != std::string::npos && digits + 1 < lane.name.size()) {
-            number = std::stoi(lane.name.substr(digits + 1));
+        if (digits != std::string::npos && digits + 1 < track.name.size()) {
+            number = std::stoi(track.name.substr(digits + 1));
         }
         return {2, number};
     };
-    std::stable_sort(laneList.begin(), laneList.end(), [&](const LaneInfo& a, const LaneInfo& b) { return laneRank(a) < laneRank(b); });
+    std::stable_sort(trackList.begin(), trackList.end(), [&](const TrackInfo& a, const TrackInfo& b) { return trackRank(a) < trackRank(b); });
     std::vector<Zone> zones;
-    for (size_t rank = 0; rank < laneList.size(); rank++) {
-        const auto& lane = laneList[rank];
+    for (size_t rank = 0; rank < trackList.size(); rank++) {
+        const auto& track = trackList[rank];
         auto tid = firstCpuTid + (uint32_t) rank;
-        std::fprintf(f, "%s{\"name\": \"thread_name\", \"ph\": \"M\", \"pid\": 1, \"tid\": %u, \"args\": {\"name\": \"%s\"}}", first ? "" : ",\n", tid, lane.name.c_str());
+        std::fprintf(f, "%s{\"name\": \"thread_name\", \"ph\": \"M\", \"pid\": 1, \"tid\": %u, \"args\": {\"name\": \"%s\"}}", first ? "" : ",\n", tid, track.name.c_str());
         first = false;
-        zonesIn(lane.index, startNs, UINT64_MAX, zones);
+        zonesIn(track.index, startNs, UINT64_MAX, zones);
         for (const auto& z : zones) {
             emit(z, tid);
         }

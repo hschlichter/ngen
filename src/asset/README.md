@@ -112,7 +112,7 @@ is in, `_out/<platform>/<config>/`. It uses nothing from `src/build/`: its own c
   it: `./ngen-cli asset-server > /tmp/asset-server.log 2>&1 &`. Every line is a trace event (category `Asset`, type `Message`, the line in
   `text`), streamed like any process's trace (`src/trace/README.md`), so `ngen-introspect` shows it next to the view's events. A request
   that fails (refused, no rule, no such file, the packer failed, and the packer's output) is a warning, on stderr; the rest is info, on stdout.
-- **The profiler** (`src/profile/README.md`): the server's threads are lanes (Main, RPC I/O, Trace I/O, Pack N, File Watcher, Cache Saver);
+- **The profiler** (`src/profile/README.md`): the server's threads are tracks (Main, RPC I/O, Trace I/O, Pack N, File Watcher, Cache Saver);
   a request (`AssetRequest`), a pack task (`Pack`, and inside it a zone named after the rule), the wait for a packer process (`PackerRun`, group
   Wait), the cache's records and saves, deliveries and pumping are zones. It has the `profile` and `zones` records and answers
   `introspect.profile` (a Chrome trace of its history), and starts Tracy's client at launch. A packer is profiled too (a zone per stage: read,

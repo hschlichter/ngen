@@ -331,7 +331,7 @@ sense of a map; that is a scene.
   stages and accesses. The caller tracks state.
 - **Desc** — a `*Desc` struct with defaults, filled with designated initializers, that `RhiDevice::createX` takes.
 - **Frame pacing** — command buffers, fences and semaphores per frame slot and per swapchain image; the integrator's, not the RHI's.
-- **GPU zone** — a named, nested timestamp range on a command buffer (`beginGpuZone`/`endGpuZone`); the profiler's GPU lane.
+- **GPU zone** — a named, nested timestamp range on a command buffer (`beginGpuZone`/`endGpuZone`); the profiler's GPU track.
 - **Integrator** — whatever sits on the RHI (the engine, an example); provides the window, frame pacing, uploads, deferred destruction.
 - **Lavapipe** — Mesa's software Vulkan driver, which CI runs the RHI examples on.
 - **RHI** — render hardware interface: a thin, header-only abstraction that executes and never schedules, waits or caches.
@@ -354,7 +354,6 @@ sense of a map; that is a scene.
 - **Group** (profile) — a zone's colour and category: Frame, Scene, Assets, Jobs, Ui, Tools, Render, Culling, Geometry, Shadow, Lighting, Post,
   Upload, Io, Wait.
 - **Introspection** — reading and driving a running process from outside: records, methods and the trace through `ngen-introspect`.
-- **Lane** — one thread's zones in the profiler (Main, Render, Scene, Worker N, RPC I/O, …), plus the GPU lane.
 - **Level** (profile) — *guide* zones (the overview, shown by default) or *detail* zones (everything finer); both always recorded.
 - **Method** — a JSON-RPC method named `area.verb` (`view.camera.set`) with typed parameters; `rpc.describe` lists them.
 - **Plot** — a value over time sampled where produced (frame times, uploads, GPU busy), kept with the zones and sent to Tracy.
@@ -365,9 +364,10 @@ sense of a map; that is a scene.
 - **RPC** — JSON-RPC 2.0 over loopback TCP, frames with optional binary attachments; how processes and agents talk.
 - **Severity** — how much a trace event matters: `info` (flow), `warning` (worked around), `error` (failed). A clean run has no warnings or
   errors.
-- **Site** — a profiler marker: its name, file, line, function, group and level.
+- **Source location** — a profiler marker: its name, file, line, function, group and level. Tracy's word.
 - **Trace** — a process's flow and messages (not data), always on, printed to its console and streamed over RPC to subscribers. The console is
   the trace.
+- **Track** — one thread's zones in the profiler (Main, Render, Scene, Worker N, RPC I/O, …), plus the GPU track.
 - **Tracy** — the external profiler, a second sink inside the collector for whole sessions; nothing in the engine reads back from it.
 - **Verb** — a script and command-line word (`camera`, `lod`, `record`) that maps to a method; script lines and live calls run the same code.
 - **Zone** — a timed CPU or GPU range from a marker (`PROFILE_ZONE`, `PROFILE_GPU_ZONE`); frame-graph passes, RPC calls, jobs and render
@@ -415,7 +415,7 @@ sense of a map; that is a scene.
 | slot | a frame slot; a draw slot; a texture slot; a streaming root's slot (streaming view) |
 | snapshot | `SceneSnapshot` (scene thread → main); `RenderSnapshot` (main → render); a debug snapshot (render tools → main) |
 | state | a resource state (RHI barriers); a streaming state (finest resident level); a tool's state struct |
-| tag | the LOD tag (normal alpha); a GPU zone's tag (profiler site id) |
+| tag | the LOD tag (normal alpha); a GPU zone's tag (its source location's id) |
 | variant | a build variant (platform/config); a USD variant (of a variant set) |
 | view | ngen-view; the `view` library; a culling view (camera, cascades, phase 2); a view mode (`view` verb) or debug view (`debugview` verb) |
 | version | a World content's version (each compose); a pack rule's version; the IR and scene-pack format versions |

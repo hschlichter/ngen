@@ -21,16 +21,16 @@ namespace {
 
 constexpr std::chrono::milliseconds checkInterval{250};
 
-// A lane's stall: it begins when a zone has been open longer than the threshold, and ends when that zone, the outermost of those over it,
+// A track's stall: it begins when a zone has been open longer than the threshold, and ends when that zone, the outermost of those over it,
 // ends. Going deeper inside it is the same stall.
 struct Reported {
-    uint32_t siteId = 0;
+    uint32_t locationId = 0;
     uint64_t startNs = 0;
     StallInfo info;
 };
 
 std::mutex g_mutex;
-std::map<uint32_t, Reported> g_reported; // by lane index
+std::map<uint32_t, Reported> g_reported; // by track index
 uint64_t g_reportedCount = 0;
 std::jthread g_thread;
 
@@ -47,7 +47,7 @@ auto stackText(const OpenZones& stack, uint64_t nowNs) -> std::string {
         if (!text.empty()) {
             text += " > ";
         }
-        text += std::format("{} {:.1f} s", nameOf(zone.siteId), seconds(zone.startNs, nowNs));
+        text += std::format("{} {:.1f} s", nameOf(zone.locationId), seconds(zone.startNs, nowNs));
     }
     return text;
 }
@@ -61,10 +61,10 @@ auto check() -> void {
     std::map<uint32_t, Reported> still;
     auto ended = [nowNs](const Reported& reported) {
         const auto& info = reported.info;
-        auto outerName = nameOf(reported.siteId);
-        TRACE_EVENT("Profile", "StallEnded", info.lane)
-            .text(std::format("{} left {} after about {:.1f} s", info.lane, outerName, seconds(reported.startNs, nowNs)))
-            .field("lane", info.lane)
+        auto outerName = nameOf(reported.locationId);
+        TRACE_EVENT("Profile", "StallEnded", info.track)
+            .text(std::format("{} left {} after about {:.1f} s", info.track, outerName, seconds(reported.startNs, nowNs)))
+            .field("track", info.track)
             .field("zone", outerName)
             .field("seconds", seconds(reported.startNs, nowNs));
     };
@@ -83,8 +83,8 @@ auto check() -> void {
                 }
             }
         }
-        auto previous = g_reported.find(stack.laneIndex);
-        bool same = previous != g_reported.end() && outermost != nullptr && previous->second.siteId == outermost->siteId &&
+        auto previous = g_reported.find(stack.trackIndex);
+        bool same = previous != g_reported.end() && outermost != nullptr && previous->second.locationId == outermost->locationId &&
                     previous->second.startNs == outermost->startNs;
         if (previous != g_reported.end() && !same) {
             ended(previous->second);
@@ -93,29 +93,29 @@ auto check() -> void {
             continue;
         }
         Reported entry;
-        entry.siteId = outermost->siteId;
+        entry.locationId = outermost->locationId;
         entry.startNs = outermost->startNs;
-        entry.info.lane = stack.lane;
-        entry.info.zone = nameOf(stuck->siteId);
+        entry.info.track = stack.track;
+        entry.info.zone = nameOf(stuck->locationId);
         entry.info.stack = stackText(stack, nowNs);
         entry.info.seconds = seconds(stuck->startNs, nowNs);
         if (!same) {
-            auto site = siteOf(stuck->siteId);
-            TRACE_WARNING("Profile", "Stall", stack.lane)
-                .text(std::format("{} has been in {} for {:.1f} s ({}:{}); open zones, outermost first: {}", stack.lane, entry.info.zone, entry.info.seconds, site.file, site.line, entry.info.stack))
-                .field("lane", stack.lane)
+            auto source = sourceLocationOf(stuck->locationId);
+            TRACE_WARNING("Profile", "Stall", stack.track)
+                .text(std::format("{} has been in {} for {:.1f} s ({}:{}); open zones, outermost first: {}", stack.track, entry.info.zone, entry.info.seconds, source.file, source.line, entry.info.stack))
+                .field("track", stack.track)
                 .field("zone", entry.info.zone)
-                .field("file", site.file)
-                .field("line", site.line)
+                .field("file", source.file)
+                .field("line", source.line)
                 .field("seconds", entry.info.seconds)
                 .field("stack", entry.info.stack);
             g_reportedCount++;
         }
-        still[stack.laneIndex] = std::move(entry);
+        still[stack.trackIndex] = std::move(entry);
     }
-    // A lane that is no longer listed (its thread has gone) left its zone too: every Stall has its StallEnded.
-    for (const auto& [laneIndex, reported] : g_reported) {
-        bool listed = std::ranges::any_of(stacks, [laneIndex](const OpenZones& stack) { return stack.laneIndex == laneIndex; });
+    // A track that is no longer listed (its thread has gone) left its zone too: every Stall has its StallEnded.
+    for (const auto& [trackIndex, reported] : g_reported) {
+        bool listed = std::ranges::any_of(stacks, [trackIndex](const OpenZones& stack) { return stack.trackIndex == trackIndex; });
         if (!listed) {
             ended(reported);
         }
@@ -156,7 +156,7 @@ auto stallWatchState() -> StallWatchState {
     state.running = g_thread.joinable();
     std::lock_guard lock(g_mutex);
     state.reported = g_reportedCount;
-    for (const auto& [lane, entry] : g_reported) {
+    for (const auto& [track, entry] : g_reported) {
         state.current.push_back(entry.info);
     }
     return state;

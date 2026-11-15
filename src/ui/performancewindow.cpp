@@ -13,9 +13,9 @@
 
 namespace {
 
-constexpr uint32_t gpuLane = UINT32_MAX;
+constexpr uint32_t gpuTrack = UINT32_MAX;
 
-auto isWorkerLane(const profile::LaneInfo& lane) -> bool;
+auto isWorkerTrack(const profile::TrackInfo& track) -> bool;
 auto maxDepth(const std::vector<profile::Zone>& zones) -> uint32_t;
 auto keepGuideZones(std::vector<profile::Zone>& zones) -> void;
 auto drawOverBudget() -> void;
@@ -33,17 +33,17 @@ auto gather(PerformanceWindowState& state) -> void {
         return;
     }
     if (state.following) {
-        // Right edge slightly behind the newest completed frame so the GPU lane, which lags
+        // Right edge slightly behind the newest completed frame so the GPU track, which lags
         // by the frames in flight, is visible for most of the view.
         state.viewEndNs = newest->endNs;
         state.viewStartNs = state.viewEndNs > (uint64_t) state.viewSpanNs ? state.viewEndNs - (uint64_t) state.viewSpanNs : 0;
     }
-    profile::lanes(state.lanes);
-    state.laneZones.resize(state.lanes.size());
-    for (size_t i = 0; i < state.lanes.size(); i++) {
-        profile::zonesIn(state.lanes[i].index, state.viewStartNs, state.viewEndNs, state.laneZones[i]);
+    profile::tracks(state.tracks);
+    state.trackZones.resize(state.tracks.size());
+    for (size_t i = 0; i < state.tracks.size(); i++) {
+        profile::zonesIn(state.tracks[i].index, state.viewStartNs, state.viewEndNs, state.trackZones[i]);
         if (!state.showDetail) {
-            keepGuideZones(state.laneZones[i]);
+            keepGuideZones(state.trackZones[i]);
         }
     }
     profile::gpuZonesIn(state.viewStartNs, state.viewEndNs, state.gpuZones);
@@ -52,22 +52,22 @@ auto gather(PerformanceWindowState& state) -> void {
     }
     profile::framesIn(state.viewStartNs, state.viewEndNs, state.frames);
 
-    // Workers are interchangeable, so they share one lane. Each worker's zones form a
+    // Workers are interchangeable, so they share one track. Each worker's zones form a
     // block (maxDepth + 1 rows) placed on the first rows where it does not overlap another
     // worker's block in time.
     state.workerZones.clear();
-    state.workerZoneLanes.clear();
+    state.workerZoneTracks.clear();
     state.workerCount = 0;
     struct RowUse {
         uint64_t busyUntilNs = 0;
     };
     std::vector<RowUse> rows;
-    for (size_t i = 0; i < state.lanes.size(); i++) {
-        if (!isWorkerLane(state.lanes[i])) {
+    for (size_t i = 0; i < state.tracks.size(); i++) {
+        if (!isWorkerTrack(state.tracks[i])) {
             continue;
         }
         state.workerCount++;
-        const auto& zones = state.laneZones[i];
+        const auto& zones = state.trackZones[i];
         if (zones.empty()) {
             continue;
         }
@@ -102,19 +102,19 @@ auto gather(PerformanceWindowState& state) -> void {
             auto packed = z;
             packed.depth = (uint16_t) (row + z.depth);
             state.workerZones.push_back(packed);
-            state.workerZoneLanes.push_back(state.lanes[i].index);
+            state.workerZoneTracks.push_back(state.tracks[i].index);
         }
     }
     state.valid = true;
 }
 
-auto isWorkerLane(const profile::LaneInfo& lane) -> bool {
-    return lane.name.rfind("Worker ", 0) == 0;
+auto isWorkerTrack(const profile::TrackInfo& track) -> bool {
+    return track.name.rfind("Worker ", 0) == 0;
 }
 
 // The zone's group colour, as in Tracy.
-auto zoneColor(uint32_t siteId) -> ImU32 {
-    auto rgb = profile::groupColor(profile::groupOf(siteId), siteId);
+auto zoneColor(uint32_t locationId) -> ImU32 {
+    auto rgb = profile::groupColor(profile::groupOf(locationId), locationId);
     return IM_COL32((int) ((rgb >> 16) & 0xFF), (int) ((rgb >> 8) & 0xFF), (int) (rgb & 0xFF), 255);
 }
 
@@ -130,28 +130,28 @@ auto drawOverBudget() -> void {
     } else {
         ImGui::Text("Own work over %.1f ms since reset %.0f s ago:", budget.budgetMs, (double) (t - std::min(t, budget.resetNs)) * 1e-9);
     }
-    for (const auto& lane : budget.lanes) {
+    for (const auto& track : budget.tracks) {
         ImGui::SameLine(0.0f, 16.0f);
-        auto zone = lane.worstSiteId != 0 ? std::string(profile::nameOf(lane.worstSiteId)) : std::string("no zone named");
-        auto text = std::format("{} {} of {} frames, worst {:.1f} ms ({})", lane.lane, lane.over, lane.frames, lane.worstMs, zone);
-        if (lane.over > 0) {
+        auto zone = track.worstLocationId != 0 ? std::string(profile::nameOf(track.worstLocationId)) : std::string("no zone named");
+        auto text = std::format("{} {} of {} frames, worst {:.1f} ms ({})", track.track, track.over, track.frames, track.worstMs, zone);
+        if (track.over > 0) {
             ImGui::TextColored(ImVec4(0.95f, 0.45f, 0.35f, 1.0f), "%s", text.c_str());
         } else {
             ImGui::TextUnformatted(text.c_str());
         }
-        if (ImGui::IsItemHovered() && lane.frames > 0) {
-            auto ago = (double) (t - std::min(t, lane.worstEndNs)) * 1e-9;
-            if (lane.worstSiteId != 0) {
-                auto site = profile::siteOf(lane.worstSiteId);
+        if (ImGui::IsItemHovered() && track.frames > 0) {
+            auto ago = (double) (t - std::min(t, track.worstEndNs)) * 1e-9;
+            if (track.worstLocationId != 0) {
+                auto source = profile::sourceLocationOf(track.worstLocationId);
                 ImGui::SetTooltip("Worst frame %.0f s ago: %.1f ms of its own work, %.1f ms of it in %s\n%s:%u",
                                   ago,
-                                  lane.worstMs,
-                                  lane.worstZoneMs,
-                                  site.name,
-                                  site.file,
-                                  site.line);
+                                  track.worstMs,
+                                  track.worstZoneMs,
+                                  source.name,
+                                  source.file,
+                                  source.line);
             } else {
-                ImGui::SetTooltip("Worst frame %.0f s ago: %.1f ms of its own work", ago, lane.worstMs);
+                ImGui::SetTooltip("Worst frame %.0f s ago: %.1f ms of its own work", ago, track.worstMs);
             }
         }
     }
@@ -163,7 +163,7 @@ auto drawOverBudget() -> void {
 }
 
 auto keepGuideZones(std::vector<profile::Zone>& zones) -> void {
-    std::erase_if(zones, [](const profile::Zone& z) { return profile::levelOf(z.siteId) == profile::Level::Detail; });
+    std::erase_if(zones, [](const profile::Zone& z) { return profile::levelOf(z.locationId) == profile::Level::Detail; });
     std::sort(zones.begin(), zones.end(), [](const profile::Zone& a, const profile::Zone& b) {
         if (a.startNs != b.startNs) {
             return a.startNs < b.startNs;
@@ -218,15 +218,15 @@ auto drawRuler(const PerformanceWindowState& state, const Axis& axis, float heig
     ImGui::Dummy(ImVec2(axis.left - origin.x + axis.width, height + 2.0f));
 }
 
-// One lane: nested bars on the shared axis. A click selects the bar.
-auto drawLane(const char* label, uint32_t laneKey, const std::vector<profile::Zone>& zones, const Axis& axis, float rowHeight, PerformanceWindowState& state, const std::vector<uint32_t>* zoneLanes = nullptr) -> void {
+// One track: nested bars on the shared axis. A click selects the bar.
+auto drawTrack(const char* label, uint32_t trackKey, const std::vector<profile::Zone>& zones, const Axis& axis, float rowHeight, PerformanceWindowState& state, const std::vector<uint32_t>* zoneTracks = nullptr) -> void {
     auto* draw = ImGui::GetWindowDrawList();
     auto depth = maxDepth(zones) + 1;
-    auto laneHeight = rowHeight * (float) depth;
+    auto trackHeight = rowHeight * (float) depth;
     auto origin = ImGui::GetCursorScreenPos();
     auto totalWidth = axis.left - origin.x + axis.width;
 
-    draw->AddRectFilled(origin, ImVec2(origin.x + totalWidth, origin.y + laneHeight), IM_COL32(30, 30, 34, 255));
+    draw->AddRectFilled(origin, ImVec2(origin.x + totalWidth, origin.y + trackHeight), IM_COL32(30, 30, 34, 255));
     draw->AddText(ImVec2(origin.x + 4.0f, origin.y + 2.0f), IM_COL32(200, 200, 200, 255), label);
 
     ImVec2 mouse = ImGui::GetIO().MousePos;
@@ -235,7 +235,7 @@ auto drawLane(const char* label, uint32_t laneKey, const std::vector<profile::Zo
 
     for (size_t zi = 0; zi < zones.size(); zi++) {
         const auto& z = zones[zi];
-        auto zoneLane = zoneLanes != nullptr ? (*zoneLanes)[zi] : laneKey;
+        auto zoneTrack = zoneTracks != nullptr ? (*zoneTracks)[zi] : trackKey;
         auto x0 = std::clamp(axis.x(z.startNs), axis.left, right);
         auto x1 = std::clamp(axis.x(z.endNs), axis.left, right);
         if (x1 - x0 < 1.0f) {
@@ -243,55 +243,55 @@ auto drawLane(const char* label, uint32_t laneKey, const std::vector<profile::Zo
         }
         auto y0 = origin.y + rowHeight * (float) z.depth;
         auto y1 = y0 + rowHeight - 1.0f;
-        bool selected = state.hasSelection && state.selectedLane == zoneLane && state.selectedZone.startNs == z.startNs && state.selectedZone.siteId == z.siteId;
-        draw->AddRectFilled(ImVec2(x0, y0), ImVec2(x1, y1), zoneColor(z.siteId));
+        bool selected = state.hasSelection && state.selectedTrack == zoneTrack && state.selectedZone.startNs == z.startNs && state.selectedZone.locationId == z.locationId;
+        draw->AddRectFilled(ImVec2(x0, y0), ImVec2(x1, y1), zoneColor(z.locationId));
         if (selected) {
             draw->AddRect(ImVec2(x0, y0), ImVec2(x1, y1), IM_COL32(255, 255, 255, 255), 0.0f, 0, 2.0f);
         }
 
         auto ms = (double) (z.endNs - z.startNs) * 1e-6;
         char text[96];
-        std::snprintf(text, sizeof(text), "%s %.2f ms", profile::nameOf(z.siteId), ms);
+        std::snprintf(text, sizeof(text), "%s %.2f ms", profile::nameOf(z.locationId), ms);
         auto textWidth = ImGui::CalcTextSize(text).x;
         if (x1 - x0 > textWidth + 6.0f) {
             draw->AddText(ImVec2(x0 + 3.0f, y0 + 1.0f), IM_COL32(15, 15, 15, 255), text);
         } else if (x1 - x0 > 24.0f) {
             draw->PushClipRect(ImVec2(x0, y0), ImVec2(x1, y1), true);
-            draw->AddText(ImVec2(x0 + 3.0f, y0 + 1.0f), IM_COL32(15, 15, 15, 255), profile::nameOf(z.siteId));
+            draw->AddText(ImVec2(x0 + 3.0f, y0 + 1.0f), IM_COL32(15, 15, 15, 255), profile::nameOf(z.locationId));
             draw->PopClipRect();
         }
         bool hovered = mouse.x >= x0 && mouse.x <= x1 && mouse.y >= y0 && mouse.y <= y1;
         if (hovered) {
             double startMs = (double) ((int64_t) z.startNs - (int64_t) axis.startNs) * 1e-6;
-            ImGui::SetTooltip("%s\n%.3f ms\nat %.3f ms in view\nclick for details", profile::nameOf(z.siteId), ms, startMs);
+            ImGui::SetTooltip("%s\n%.3f ms\nat %.3f ms in view\nclick for details", profile::nameOf(z.locationId), ms, startMs);
             if (clicked) {
                 state.hasSelection = true;
-                state.selectedLane = zoneLane;
+                state.selectedTrack = zoneTrack;
                 state.selectedZone = z;
-                state.selectedZone.depth = zoneLanes != nullptr ? 0 : z.depth; // packed row is not the real depth
+                state.selectedZone.depth = zoneTracks != nullptr ? 0 : z.depth; // packed row is not the real depth
             }
         }
     }
 
-    ImGui::Dummy(ImVec2(totalWidth, laneHeight + 4.0f));
+    ImGui::Dummy(ImVec2(totalWidth, trackHeight + 4.0f));
 }
 
 // Detail pane for the selected zone: self time, children, ancestry, history statistics.
 auto drawZoneDetails(const PerformanceWindowState& state) -> void {
     const auto& zone = state.selectedZone;
-    const std::vector<profile::Zone>* laneZones = nullptr;
-    const char* laneName = "GPU";
-    if (state.selectedLane == gpuLane) {
-        laneZones = &state.gpuZones;
+    const std::vector<profile::Zone>* trackZones = nullptr;
+    const char* trackName = "GPU";
+    if (state.selectedTrack == gpuTrack) {
+        trackZones = &state.gpuZones;
     } else {
-        for (size_t i = 0; i < state.lanes.size(); i++) {
-            if (state.lanes[i].index == state.selectedLane) {
-                laneZones = &state.laneZones[i];
-                laneName = state.lanes[i].name.c_str();
+        for (size_t i = 0; i < state.tracks.size(); i++) {
+            if (state.tracks[i].index == state.selectedTrack) {
+                trackZones = &state.trackZones[i];
+                trackName = state.tracks[i].name.c_str();
             }
         }
     }
-    if (laneZones == nullptr) {
+    if (trackZones == nullptr) {
         ImGui::TextDisabled("Selected zone is no longer in view.");
         return;
     }
@@ -300,7 +300,7 @@ auto drawZoneDetails(const PerformanceWindowState& state) -> void {
     double childrenMs = 0.0;
     std::vector<const profile::Zone*> children;
     std::vector<const profile::Zone*> ancestors;
-    for (const auto& z : *laneZones) {
+    for (const auto& z : *trackZones) {
         bool inside = z.startNs >= zone.startNs && z.endNs <= zone.endNs;
         if (inside && z.depth == zone.depth + 1) {
             children.push_back(&z);
@@ -322,20 +322,20 @@ auto drawZoneDetails(const PerformanceWindowState& state) -> void {
         }
     }
 
-    ImGui::Text("%s", profile::nameOf(zone.siteId));
+    ImGui::Text("%s", profile::nameOf(zone.locationId));
     ImGui::SameLine();
-    ImGui::TextDisabled("on %s", laneName);
-    auto site = profile::siteOf(zone.siteId);
-    if (site.line != 0) {
-        ImGui::TextDisabled("%s:%u   %s", site.file, site.line, site.function);
+    ImGui::TextDisabled("on %s", trackName);
+    auto source = profile::sourceLocationOf(zone.locationId);
+    if (source.line != 0) {
+        ImGui::TextDisabled("%s:%u   %s", source.file, source.line, source.function);
     }
     if (!ancestors.empty()) {
         std::string chain;
         for (const auto* a : ancestors) {
-            chain += profile::nameOf(a->siteId);
+            chain += profile::nameOf(a->locationId);
             chain += " > ";
         }
-        chain += profile::nameOf(zone.siteId);
+        chain += profile::nameOf(zone.locationId);
         ImGui::TextDisabled("%s", chain.c_str());
     }
     if (frameMs > 0.0) {
@@ -347,7 +347,7 @@ auto drawZoneDetails(const PerformanceWindowState& state) -> void {
         ImGui::Text("Value %llu", (unsigned long long) zone.value);
     }
 
-    auto stats = profile::zoneStats(state.selectedLane, zone.siteId);
+    auto stats = profile::zoneStats(state.selectedTrack, zone.locationId);
     if (stats.count > 0) {
         ImGui::Text("History (%u samples): min %.3f   avg %.3f   p99 %.3f   max %.3f ms", stats.count, stats.minMs, stats.avgMs, stats.p99Ms, stats.maxMs);
     }
@@ -362,7 +362,7 @@ auto drawZoneDetails(const PerformanceWindowState& state) -> void {
                 auto ms = (double) (c->endNs - c->startNs) * 1e-6;
                 ImGui::TableNextRow();
                 ImGui::TableSetColumnIndex(0);
-                ImGui::TextUnformatted(profile::nameOf(c->siteId));
+                ImGui::TextUnformatted(profile::nameOf(c->locationId));
                 ImGui::TableSetColumnIndex(1);
                 ImGui::Text("%.3f", ms);
                 ImGui::TableSetColumnIndex(2);
@@ -543,9 +543,9 @@ void drawPerformanceWindow(bool& show, PerformanceWindowState& state) {
     drawGuidePlots();
 
     ImGui::Separator();
-    ImGui::TextDisabled("Drag to pan, wheel to zoom, click a bar for details. All lanes share the CPU clock; the GPU lane is calibrated when the device allows, else anchored at submit.");
+    ImGui::TextDisabled("Drag to pan, wheel to zoom, click a bar for details. All tracks share the CPU clock; the GPU track is calibrated when the device allows, else anchored at submit.");
 
-    // Timeline area: ruler + lanes. Pan and zoom act on the view when the mouse is over it.
+    // Timeline area: ruler + tracks. Pan and zoom act on the view when the mouse is over it.
     auto labelWidth = 90.0f;
     auto areaPos = ImGui::GetCursorScreenPos();
     auto areaWidth = std::max(200.0f, ImGui::GetContentRegionAvail().x);
@@ -562,11 +562,11 @@ void drawPerformanceWindow(bool& show, PerformanceWindowState& state) {
     // An invisible button under the whole timeline owns the mouse, so dragging pans the
     // view instead of moving the window. Drawing happens on top of it.
     float contentHeight = rowHeight + 2.0f;
-    for (size_t i = 0; i < state.laneZones.size(); i++) {
-        if (isWorkerLane(state.lanes[i])) {
+    for (size_t i = 0; i < state.trackZones.size(); i++) {
+        if (isWorkerTrack(state.tracks[i])) {
             continue;
         }
-        contentHeight += rowHeight * (float) (maxDepth(state.laneZones[i]) + 1) + 4.0f;
+        contentHeight += rowHeight * (float) (maxDepth(state.trackZones[i]) + 1) + 4.0f;
     }
     contentHeight += rowHeight * (float) (maxDepth(state.gpuZones) + 1) + 4.0f;
     contentHeight += rowHeight * (float) (maxDepth(state.workerZones) + 1) + 4.0f;
@@ -577,16 +577,16 @@ void drawPerformanceWindow(bool& show, PerformanceWindowState& state) {
     ImGui::SetCursorScreenPos(contentPos);
 
     drawRuler(state, axis, rowHeight);
-    for (size_t i = 0; i < state.lanes.size(); i++) {
-        if (isWorkerLane(state.lanes[i])) {
+    for (size_t i = 0; i < state.tracks.size(); i++) {
+        if (isWorkerTrack(state.tracks[i])) {
             continue;
         }
-        drawLane(state.lanes[i].name.c_str(), state.lanes[i].index, state.laneZones[i], axis, rowHeight, state);
+        drawTrack(state.tracks[i].name.c_str(), state.tracks[i].index, state.trackZones[i], axis, rowHeight, state);
     }
-    drawLane("GPU", gpuLane, state.gpuZones, axis, rowHeight, state);
+    drawTrack("GPU", gpuTrack, state.gpuZones, axis, rowHeight, state);
     char workersLabel[32];
     std::snprintf(workersLabel, sizeof(workersLabel), "Workers (%u)", state.workerCount);
-    drawLane(workersLabel, 0, state.workerZones, axis, rowHeight, state, &state.workerZoneLanes);
+    drawTrack(workersLabel, 0, state.workerZones, axis, rowHeight, state, &state.workerZoneTracks);
 
     if (areaHovered || areaActive) {
         auto& io = ImGui::GetIO();

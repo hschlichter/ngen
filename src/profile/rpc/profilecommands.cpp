@@ -33,19 +33,19 @@ auto profileRecord() -> Json {
     double cpuAverage = history.empty() ? 0.0 : cpuSum / (double) history.size();
     double gpuAverage = gpuCount == 0 ? 0.0 : gpuSum / (double) gpuCount;
 
-    std::vector<LaneUsage> usage;
+    std::vector<TrackUsage> usage;
     historyUsage(usage);
-    auto lanes = Json::array();
+    auto tracks = Json::array();
     uint64_t historyBytes = 0;
-    for (const auto& lane : usage) {
-        lanes.push_back({{"lane", lane.name}, {"zones", lane.zones}, {"bytes", lane.bytes}});
-        historyBytes += lane.bytes;
+    for (const auto& track : usage) {
+        tracks.push_back({{"track", track.name}, {"zones", track.zones}, {"bytes", track.bytes}});
+        historyBytes += track.bytes;
     }
     auto driverBusy = gpuDriverBusyPercent();
     auto watch = stallWatchState();
     auto current = Json::array();
     for (const auto& stall : watch.current) {
-        current.push_back({{"lane", stall.lane}, {"zone", stall.zone}, {"seconds", stall.seconds}, {"stack", stall.stack}});
+        current.push_back({{"track", stall.track}, {"zone", stall.zone}, {"seconds", stall.seconds}, {"stack", stall.stack}});
     }
     Json stalls = {
         {"watching", watch.running},
@@ -59,26 +59,26 @@ auto profileRecord() -> Json {
     auto secondsAgo = [&](uint64_t ns) {
         return (double) (t > ns ? t - ns : 0) * 1e-9;
     };
-    auto budgetLanes = Json::array();
-    for (const auto& lane : budget.lanes) {
+    auto budgetTracks = Json::array();
+    for (const auto& track : budget.tracks) {
         Json zone = nullptr;
-        if (lane.worstSiteId != 0) {
-            auto site = siteOf(lane.worstSiteId);
-            zone = {{"name", site.name}, {"file", site.file}, {"line", site.line}, {"ms", lane.worstZoneMs}};
+        if (track.worstLocationId != 0) {
+            auto source = sourceLocationOf(track.worstLocationId);
+            zone = {{"name", source.name}, {"file", source.file}, {"line", source.line}, {"ms", track.worstZoneMs}};
         }
-        budgetLanes.push_back({
-            {"lane", lane.lane},
-            {"frames", lane.frames},
-            {"over", lane.over},
-            {"worstMs", lane.worstMs},
-            {"worstSecondsAgo", lane.frames == 0 ? Json(nullptr) : Json(secondsAgo(lane.worstEndNs))},
+        budgetTracks.push_back({
+            {"track", track.track},
+            {"frames", track.frames},
+            {"over", track.over},
+            {"worstMs", track.worstMs},
+            {"worstSecondsAgo", track.frames == 0 ? Json(nullptr) : Json(secondsAgo(track.worstEndNs))},
             {"worstZone", zone},
         });
     }
     Json overBudgetJson = {
         {"budgetMs", budget.budgetMs},
         {"resetSecondsAgo", budget.resetNs == 0 ? Json(nullptr) : Json(secondsAgo(budget.resetNs))},
-        {"lanes", budgetLanes},
+        {"tracks", budgetTracks},
     };
     return {
         {"frameCount", history.size()},
@@ -93,13 +93,13 @@ auto profileRecord() -> Json {
         {"gpuDetail", gpuDetail()},
         {"stalls", stalls},
         {"overBudget", overBudgetJson},
-        {"lanes", lanes},
+        {"tracks", tracks},
         {"frames", frames},
     };
 }
 
-// Where the time goes: every zone over the last 60 frames (a process without frames: the whole history), per thread lane and the GPU's,
-// by site: how often it ran, its total, self and longest time, the share its children cover, and how deep it nests, the most expensive first.
+// Where the time goes: every zone over the last 60 frames (a process without frames: the whole history), per thread track and the GPU's,
+// by source location: how often it ran, its total, self and longest time, the share its children cover, and how deep it nests, the most expensive first.
 auto zonesRecord() -> Json {
     constexpr uint64_t windowFrames = 60;
     uint64_t frames = 0;
@@ -149,10 +149,10 @@ auto zonesRecord() -> Json {
             }
             open.push_back(i);
         }
-        std::map<uint32_t, Totals> bySite;
+        std::map<uint32_t, Totals> byLocation;
         for (size_t i = 0; i < zones.size(); i++) {
             const auto& zone = zones[i];
-            auto& totals = bySite[zone.siteId];
+            auto& totals = byLocation[zone.locationId];
             auto duration = zone.endNs - zone.startNs;
             totals.count++;
             totals.totalNs += duration;
@@ -161,21 +161,21 @@ auto zonesRecord() -> Json {
             totals.depth = std::min(totals.depth, zone.depth);
             totals.durations.push_back(duration);
         }
-        std::vector<std::pair<uint32_t, Totals>> sorted(bySite.begin(), bySite.end());
+        std::vector<std::pair<uint32_t, Totals>> sorted(byLocation.begin(), byLocation.end());
         std::ranges::sort(sorted, [](const auto& a, const auto& b) { return a.second.totalNs > b.second.totalNs; });
         auto out = Json::array();
-        for (auto& [siteId, totals] : sorted) {
+        for (auto& [locationId, totals] : sorted) {
             // The median run, beside the total: one long run (a hitch) and a steady cost read differently.
             std::ranges::nth_element(totals.durations, totals.durations.begin() + (std::ptrdiff_t) (totals.durations.size() / 2));
             auto medianNs = totals.durations[totals.durations.size() / 2];
-            auto site = siteOf(siteId);
+            auto source = sourceLocationOf(locationId);
             Json zone = {
-                {"name", site.name},
-                {"group", groupName(site.group)},
-                {"level", site.level == Level::Detail ? "detail" : "guide"},
-                {"file", site.file},
-                {"line", site.line},
-                {"function", site.function},
+                {"name", source.name},
+                {"group", groupName(source.group)},
+                {"level", source.level == Level::Detail ? "detail" : "guide"},
+                {"file", source.file},
+                {"line", source.line},
+                {"function", source.function},
                 {"depth", totals.depth},
                 {"count", totals.count},
                 {"totalMs", (double) totals.totalNs / 1e6},
@@ -191,20 +191,20 @@ auto zonesRecord() -> Json {
         }
         return out;
     };
-    std::vector<LaneInfo> laneInfos;
-    lanes(laneInfos);
-    auto lanesJson = Json::array();
+    std::vector<TrackInfo> trackInfos;
+    tracks(trackInfos);
+    auto tracksJson = Json::array();
     std::vector<Zone> zones;
-    for (const auto& lane : laneInfos) {
-        zonesIn(lane.index, startNs, endNs, zones);
-        lanesJson.push_back({{"lane", lane.name}, {"zones", summarise(zones)}});
+    for (const auto& track : trackInfos) {
+        zonesIn(track.index, startNs, endNs, zones);
+        tracksJson.push_back({{"track", track.name}, {"zones", summarise(zones)}});
     }
     gpuZonesIn(startNs, endNs, zones);
-    lanesJson.push_back({{"lane", "GPU"}, {"zones", summarise(zones)}});
+    tracksJson.push_back({{"track", "GPU"}, {"zones", summarise(zones)}});
     return {
         {"frames", frames},
         {"windowMs", (double) (endNs - startNs) / 1e6},
-        {"lanes", lanesJson},
+        {"tracks", tracksJson},
     };
 }
 
@@ -243,7 +243,7 @@ auto plotsRecord() -> Json {
 
 auto registerProfileRecords(RpcRecords& records) -> void {
     records.add("profile",
-                "the profiler: CPU and GPU time per frame over the history, the history window and the zones and bytes each lane holds, the stall "
+                "the profiler: CPU and GPU time per frame over the history, the history window and the zones and bytes each track holds, the stall "
                 "watch: its threshold, the stalls reported and the threads stalled now with their open zones, and overBudget: per thread that marks "
                 "frames (Main, Render), the frames since start or profile-reset whose own work (less waits) was over profile.budget.frameMs, the "
                 "worst and the zone that held it",
@@ -251,7 +251,7 @@ auto registerProfileRecords(RpcRecords& records) -> void {
                     responder.respond(profileRecord());
                 });
     records.add("zones",
-                "where the time goes over the last 60 frames (without frames: the whole history): every profiler zone site per thread lane and on the GPU, "
+                "where the time goes over the last 60 frames (without frames: the whole history): every profiler source location per thread track and on the GPU, "
                 "its file, line, group and level, count, total, self time and the share its children cover, per frame, median and longest time",
                 [](RpcResponder responder) {
                     responder.respond(zonesRecord());

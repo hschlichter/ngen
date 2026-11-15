@@ -140,10 +140,10 @@ auto BufferGrowth::updateNow(RhiDevice* device, uint64_t needed, uint64_t capaci
     auto start = [&](uint64_t grown) {
         startedFor = needed;
         auto next = std::make_shared<State>(describe(grown));
-        auto siteId = profile::registerSite(status.name, profile::Group::Upload);
+        auto locationId = profile::registerSourceLocation(status.name, profile::Group::Upload);
         fence = JobSystem::submit(
-            [device, next, siteId] {
-                profile::ScopedZone zone(siteId);
+            [device, next, locationId] {
+                profile::ScopedZone zone(locationId);
                 make(device, *next);
             },
             "BufferGrowth",

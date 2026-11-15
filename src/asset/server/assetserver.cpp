@@ -513,7 +513,7 @@ auto AssetServer::pack(const std::string& id, int64_t forceRequest) -> Outcome {
     }
     const auto& rule = rules[ruleIt->second];
     // The pack task, named after its rule.
-    profile::ScopedZone ruleZone(profile::registerSite(rule.name.c_str(), profile::Group::Assets));
+    profile::ScopedZone ruleZone(profile::registerSourceLocation(rule.name.c_str(), profile::Group::Assets));
     std::error_code ec;
     if (!fs::is_regular_file(primary, ec)) {
         outcome.errors.push_back(std::format("{}: no such file", primary));

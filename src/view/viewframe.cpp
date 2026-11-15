@@ -39,7 +39,7 @@ auto ViewFrame::updateScene() -> void {
         renderThread.reloadShaders(changed);
         scene.refresh(changed, false);
     }
-    static const uint32_t sceneUpdateZoneId = profile::registerSite("SceneUpdate", profile::Group::Frame);
+    static const uint32_t sceneUpdateZoneId = profile::registerSourceLocation("SceneUpdate", profile::Group::Frame);
     profile::beginZone(sceneUpdateZoneId);
     bool sceneUpdated = scene.update();
     profile::endZone();
@@ -159,7 +159,7 @@ auto ViewFrame::sendSceneInputs() -> void {
 }
 
 auto ViewFrame::updateResidency() -> void {
-    static const uint32_t residencyZoneId = profile::registerSite("Residency", profile::Group::Frame);
+    static const uint32_t residencyZoneId = profile::registerSourceLocation("Residency", profile::Group::Frame);
     profile::beginZone(residencyZoneId);
     bool resident = scene.idle() && renderThread.sceneDrawn();
     if (resident && !residency.resident) {
@@ -316,7 +316,7 @@ auto ViewFrame::placeStartCamera() -> void {
 }
 
 auto ViewFrame::moveCamera(const CameraMove& move, bool orbitHeld) -> void {
-    static const uint32_t cameraZoneId = profile::registerSite("Camera", profile::Group::Frame);
+    static const uint32_t cameraZoneId = profile::registerSourceLocation("Camera", profile::Group::Frame);
     profile::beginZone(cameraZoneId);
     if (cameraModes.orbiting && !orbitHeld) {
         cameraModes.orbiting = false;
@@ -426,7 +426,7 @@ auto ViewFrame::readBack() -> void {
 }
 
 auto ViewFrame::buildSnapshot() -> RenderSnapshot {
-    static const uint32_t snapshotFillZoneId = profile::registerSite("SnapshotFill", profile::Group::Frame);
+    static const uint32_t snapshotFillZoneId = profile::registerSourceLocation("SnapshotFill", profile::Group::Frame);
     profile::beginZone(snapshotFillZoneId);
     const auto& shadowCamera = *cameras.shadows;
     RenderSnapshot snapshot = {

@@ -103,7 +103,7 @@ auto optionalField(std::string name, RpcType type, std::string description) -> R
 
 auto RpcRegistry::add(RpcMethodDesc desc, RpcHandler handler, std::source_location location) -> void {
     auto name = desc.name;
-    auto profileNameId = profile::registerSite(name.c_str(), profile::Group::Io, profile::Level::Detail, location);
+    auto profileNameId = profile::registerSourceLocation(name.c_str(), profile::Group::Io, profile::Level::Detail, location);
     methods[name] = Entry{.desc = std::move(desc), .handler = std::move(handler), .profileNameId = profileNameId};
 }
 

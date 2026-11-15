@@ -41,7 +41,7 @@ process is gone, so a crashed process leaves nothing behind after the next listi
 ![The I/O thread reads frames and writes queued replies, answers trace subscriptions itself, and queues every other request for RpcEndpoint::drain() on the main thread, whose handlers answer through an RpcResponder now or later](../../screenshots/rpc_threading.svg)
 
 - **The I/O thread** (`RpcServer`) accepts connections, reads frames, and writes queued replies. Any thread may queue a message. A caller never
-  blocks on a slow client: a client whose unread replies pass 256 MB is dropped. The thread is a profiler lane, "RPC I/O" unless named with
+  blocks on a slow client: a client whose unread replies pass 256 MB is dropped. The thread is a profiler track, "RPC I/O" unless named with
   `setThreadName` (ngen-view's `AssetClient`: "Asset I/O"); it polls in slices of `profile::idleSlice` (`RpcPoll`, group Wait) and each accept,
   receive and send is a detail zone (group Io).
 - **Connecting out.** `connect(port)` opens a connection that the same I/O thread serves like an accepted one, so requests, notifications and

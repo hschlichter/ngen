@@ -65,7 +65,7 @@ auto RenderThread::threadLoop() -> void {
     profile::registerThread("Render");
     while (true) {
         // An iteration is the render thread's frame: waiting for the snapshot, the scene changes, the frame and what follows it.
-        profile::laneFrameMark();
+        profile::trackFrameMark();
         RenderSnapshot snapshot;
         {
             PROFILE_ZONE("WaitSnapshot", Wait);

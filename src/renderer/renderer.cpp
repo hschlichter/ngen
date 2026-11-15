@@ -40,7 +40,7 @@ auto Renderer::addExtension(RenderExtension& extension, const char* name) -> voi
     };
     for (uint32_t hook = 0; hook < RenderExtension::HookCount; hook++) {
         auto zoneName = std::format("{}.{}", name, hookNames[hook]);
-        extension.hookZoneIds[hook] = profile::registerSite(zoneName.c_str(), profile::Group::Render, profile::Level::Detail);
+        extension.hookZoneIds[hook] = profile::registerSourceLocation(zoneName.c_str(), profile::Group::Render, profile::Level::Detail);
     }
     extensions.push_back(&extension);
 }
@@ -198,7 +198,7 @@ auto Renderer::init(RhiDevice* rhiDevice, AssetClient* shaders, RhiExtent2D wind
         TRACE_WARNING("Render", "TimestampsUnavailable", "device").text("GPU timestamps not supported on this device; pass timings disabled");
     } else {
         TRACE_EVENT("Render", "GpuClockCalibration", "device")
-            .text(std::format("GPU clock calibration: {}", device->limits().calibratedTimestamps ? "available" : "unavailable, GPU lane anchored at submit"))
+            .text(std::format("GPU clock calibration: {}", device->limits().calibratedTimestamps ? "available" : "unavailable, GPU track anchored at submit"))
             .field("available", device->limits().calibratedTimestamps);
     }
 
@@ -302,7 +302,7 @@ auto Renderer::readGpuTimings(uint32_t slot) -> void {
 
     lastDrawLog = slotDrawLogs[slot];
 
-    // Hand the same zones to the profiler's GPU lane, on the CPU clock. Calibrated when the
+    // Hand the same zones to the profiler's GPU track, on the CPU clock. Calibrated when the
     // device supports it (true position of GPU work relative to the threads); otherwise
     // anchored so the first zone starts at the submit, a lower bound.
     if (device->limits().calibratedTimestamps && (!gpuClockCalibrated || framesSinceCalibration >= 120)) {
@@ -319,7 +319,7 @@ auto Renderer::readGpuTimings(uint32_t slot) -> void {
     std::vector<profile::Zone> profileZones;
     profileZones.reserve(gpuZoneScratch.size());
     for (const auto& zone : gpuZoneScratch) {
-        profileZones.push_back({.siteId = zone.tag != 0 ? zone.tag : profile::siteIdOf(zone.name), .depth = zone.depth, .startNs = toCpu(zone.startNs), .endNs = toCpu(zone.endNs)});
+        profileZones.push_back({.locationId = zone.tag != 0 ? zone.tag : profile::sourceLocationIdOf(zone.name), .depth = zone.depth, .startNs = toCpu(zone.startNs), .endNs = toCpu(zone.endNs)});
     }
     profile::submitGpuZones(lastGpuFrame, slotSubmitNs[slot], profileZones);
 }
@@ -415,10 +415,10 @@ auto Renderer::applySceneChanges(const SceneChanges& changes) -> void {
             gpuScene.setMaterial(handle, material);
         }
     }
-    static const uint32_t copyZoneId = profile::registerSite("CopyInstances", profile::Group::Render);
+    static const uint32_t copyZoneId = profile::registerSourceLocation("CopyInstances", profile::Group::Render);
     profile::beginZone(copyZoneId);
     // Slots past the new count leave the bucket counts with them (the slot list doesn't shrink today); the list is resized to the count.
-    static const uint32_t resizeSlotsZoneId = profile::registerSite("ResizeSlots", profile::Group::Render, profile::Level::Detail);
+    static const uint32_t resizeSlotsZoneId = profile::registerSourceLocation("ResizeSlots", profile::Group::Render, profile::Level::Detail);
     profile::beginZone(resizeSlotsZoneId);
     for (size_t slot = changes.slotCount; slot < gpuInstances.size(); slot++) {
         drawLists.countInstance(gpuInstances[slot], -1);
@@ -428,7 +428,7 @@ auto Renderer::applySceneChanges(const SceneChanges& changes) -> void {
     profile::endZone();
     std::vector<uint32_t> changedSlots;
     changedSlots.reserve(changes.instances.size());
-    static const uint32_t copyChangedZoneId = profile::registerSite("CopyChangedSlots", profile::Group::Render, profile::Level::Detail);
+    static const uint32_t copyChangedZoneId = profile::registerSourceLocation("CopyChangedSlots", profile::Group::Render, profile::Level::Detail);
     profile::beginZone(copyChangedZoneId);
     profile::zoneValue(changes.instances.size());
     {
@@ -988,7 +988,7 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
     }
 
     // Build frame graph
-    static const uint32_t buildZoneId = profile::registerSite("BuildFrameGraph", profile::Group::Render);
+    static const uint32_t buildZoneId = profile::registerSourceLocation("BuildFrameGraph", profile::Group::Render);
     profile::beginZone(buildZoneId);
     auto ext = swapchain->extent();
     frameGraph.reset();
@@ -1001,7 +1001,7 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
     current.depth = depthHandle;
 
     // Textures uploaded in earlier frames take their slots; then this frame's scene uploads, before anything reads the tables.
-    static const uint32_t sceneFrameZoneId = profile::registerSite("GpuSceneBeginFrame", profile::Group::Render);
+    static const uint32_t sceneFrameZoneId = profile::registerSourceLocation("GpuSceneBeginFrame", profile::Group::Render);
     profile::beginZone(sceneFrameZoneId);
     growTables();
     if (gpuScene.beginFrame(m_frameIndex) || descriptorSetsDirty) {
@@ -1032,12 +1032,12 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
     if (!litReady) {
         addClearPass(frameGraph, colorHandle, ext);
     } else {
-        static const uint32_t instanceUploadZoneId = profile::registerSite("InstanceUpload", profile::Group::Upload);
+        static const uint32_t instanceUploadZoneId = profile::registerSourceLocation("InstanceUpload", profile::Group::Upload);
         profile::beginZone(instanceUploadZoneId);
         auto instanceHandle = gpuScene.addInstanceUploadPasses(frameGraph, gpuInstances, currentFrame);
         profile::endZone();
 
-        static const uint32_t shadowSetupZoneId = profile::registerSite("ShadowSetup", profile::Group::Shadow);
+        static const uint32_t shadowSetupZoneId = profile::registerSourceLocation("ShadowSetup", profile::Group::Shadow);
         profile::beginZone(shadowSetupZoneId);
         // Pick a shadow-casting directional light: first directional with shadowEnable,
         // else first directional. USDScene authors a session-layer UsdLuxDistantLight when
@@ -1107,8 +1107,8 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
         auto invViewProj = glm::inverse(snapshot.projMatrix * snapshot.viewMatrix);
 
         profile::endZone(); // ShadowSetup
-        static const uint32_t addCullPassesSite = profile::registerSite("AddCullPasses", profile::Group::Render, profile::Level::Detail);
-        profile::beginZone(addCullPassesSite);
+        static const uint32_t addCullPassesLocation = profile::registerSourceLocation("AddCullPasses", profile::Group::Render, profile::Level::Detail);
+        profile::beginZone(addCullPassesLocation);
         // Render LOD picks each group's level from the live main camera (not a frozen culling frustum, nor a debug camera rendered from):
         // its position, and the view window's area at depth 1 from the projection (2 / |proj[0][0]| wide, 2 / |proj[1][1]| high), as the
         // view's heuristic measures.
@@ -1127,8 +1127,8 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
         auto hzbHandle = depthPyramid.import(frameGraph);
         instanceCullPass.addPasses(frameGraph, drawLists, drawHandles, lodHandles, instanceHandle, hzbHandle, cullGroups, currentFrame);
         profile::endZone();
-        static const uint32_t addGeometryPassesSite = profile::registerSite("AddGeometryPasses", profile::Group::Render, profile::Level::Detail);
-        profile::beginZone(addGeometryPassesSite);
+        static const uint32_t addGeometryPassesLocation = profile::registerSourceLocation("AddGeometryPasses", profile::Group::Render, profile::Level::Detail);
+        profile::beginZone(addGeometryPassesLocation);
         if (snapshot.sampler != materialSamplerSettings) {
             applySamplerSettings(snapshot.sampler);
         }
@@ -1172,8 +1172,8 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
         lodGroups.addReadbackPass(frameGraph, lodHandles, currentFrame, snapshot.readLodStates, lodCamera.eye, lodCamera.windowArea);
 
         profile::endZone();
-        static const uint32_t addLightingPassesSite = profile::registerSite("AddLightingPasses", profile::Group::Render, profile::Level::Detail);
-        profile::beginZone(addLightingPassesSite);
+        static const uint32_t addLightingPassesLocation = profile::registerSourceLocation("AddLightingPasses", profile::Group::Render, profile::Level::Detail);
+        profile::beginZone(addLightingPassesLocation);
         // The depth preview's far end: the camera has no far plane, so the farthest corner of the scene.
         float previewFar = projectionNear * 10.0f;
         const auto& sceneBounds = snapshot.sceneBounds;

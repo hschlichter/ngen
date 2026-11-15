@@ -177,7 +177,7 @@ auto FrameGraph::addPass(const char* name,
     passes.push_back({});
     passes.back().name = name;
     passes.back().profileGroup = group;
-    passes.back().profileNameId = profile::registerSite(name, group, profile::Level::Guide, location);
+    passes.back().profileNameId = profile::registerSourceLocation(name, group, profile::Level::Guide, location);
 
     FrameGraphBuilder builder(this, passIndex);
     setup(builder, *data);

@@ -102,7 +102,7 @@ the task shader culls meshlets and the mesh shader emits their triangles. The se
 - **Back to the main thread**, non-blocking: `CullResult` (latest-only, every new readback), the capture results, and what the extensions hand
   back on their own (the render tools' snapshots, counters and screenshots).
 - **Settings** go to the `RenderThread` under a lock, applied before the next frame: the upload budget, the geometry limit, shaders to reload.
-- **In the profiler** an iteration of the render thread's loop is its frame (`profile::laneFrameMark` at the top): waiting for the snapshot,
+- **In the profiler** an iteration of the render thread's loop is its frame (`profile::trackFrameMark` at the top): waiting for the snapshot,
   the scene changes, `RenderFrame` and what follows. The `profile` record's `overBudget` counts these frames' own work, less the waits
   (`src/profile/README.md`, "Frames over budget").
 
@@ -127,7 +127,7 @@ image, because present consumes it per image.
 
 **A frame (`Renderer::render`).**
 
-1. Wait for the slot's fence. Drain the deletion queue up to that slot's last frame, read its GPU zones (profiler lane) and its culling
+1. Wait for the slot's fence. Drain the deletion queue up to that slot's last frame, read its GPU zones (profiler track) and its culling
    readback.
 2. Acquire a swapchain image; on `OutOfDate` recreate the swapchain and depth texture and skip the frame.
 3. Write the slot's view UBO. Pick the shadow light and the cascades (from the snapshot, or one fitted here if the snapshot has none).
@@ -280,7 +280,7 @@ A table that outgrows its buffer gets a larger one, which takes hundreds of mill
 - **Seen from outside.** The `gpuscene` record's `growth` lists every growable: capacity and use in its own unit (slots, records, items,
   elements, bytes), a growth in flight and for how long, whether it waits, how often it grew ahead, grew at once and waited, and how long it
   last waited. `render.growth.ahead` is a configuration value (0 grows only when needed, still on a job). The jobs show in the Performance
-  window's worker lanes as `BufferGrowth`, with the table's name inside. The Memory window lists the buffers, not the growths: a gap.
+  window's worker tracks as `BufferGrowth`, with the table's name inside. The Memory window lists the buffers, not the growths: a gap.
 
 `GpuInstance` is the CPU mirror the renderer keeps (`Renderer::gpuInstances`), by draw slot, in a `ChunkedList` (chunks of 4,096 that never
 move), so a growing slot count adds chunks and copies none. The slots of one `SceneChanges` are written on the job workers a chunk each
@@ -658,7 +658,7 @@ points of `Renderer::render`, in the order added; each hook does nothing unless 
   tables and the Frame Debugger's draw records capture so.
   The watches go with the snapshot, so the captures and the frame's other requests describe the same frame.
 - **GPU timings.** Every pass is a GPU zone, and every indirect call in the depth prepass, geometry and shadow passes is a nested zone named by its
-  region (`DrawLists::regionName`). The zones of a slot are read after its fence and handed to the profiler's GPU lane on the CPU clock; the render
+  region (`DrawLists::regionName`). The zones of a slot are read after its fence and handed to the profiler's GPU track on the CPU clock; the render
   tools make counters from them.
 - **Culling introspection.** `instancecull.comp` writes, next to the visibility bits, the frustum plane that rejected each instance in each view
   (`cullPlanes`, 4 bits per view: plane 0–5, `D` a render-LOD level its group doesn't draw, `E` visible, `F` not tested). The readback keeps every view's visibility bit (`CullResult::viewBits`) when it reads them.

@@ -1655,8 +1655,8 @@ struct WorldComposer::Impl {
             }
             reached.push_back(at.info);
             // A content with LOD roots: its roots' loaded levels and linked contents, one zone per content (the value: its roots).
-            static const uint32_t contentSite = profile::registerSite("ResolveContent", profile::Group::Scene, profile::Level::Detail);
-            profile::ScopedZone contentZone(contentSite, !at.content->lodRoots.empty());
+            static const uint32_t contentLocation = profile::registerSourceLocation("ResolveContent", profile::Group::Scene, profile::Level::Detail);
+            profile::ScopedZone contentZone(contentLocation, !at.content->lodRoots.empty());
             if (!at.content->lodRoots.empty()) {
                 PROFILE_ZONE_VALUE(at.content->lodRoots.size());
             }
@@ -1713,8 +1713,8 @@ struct WorldComposer::Impl {
                 }
             }
         }
-        static const uint32_t bindingsSite = profile::registerSite("ResolveBindings", profile::Group::Scene, profile::Level::Detail);
-        profile::beginZone(bindingsSite);
+        static const uint32_t bindingsLocation = profile::registerSourceLocation("ResolveBindings", profile::Group::Scene, profile::Level::Detail);
+        profile::beginZone(bindingsLocation);
         size_t bindings = 0;
         for (auto* info : reached) {
             bindings += info->bindings.size();
@@ -1848,8 +1848,8 @@ struct WorldComposer::Impl {
     // a level that waits for packs doesn't compose its prototypes again every round. The stage's are never kept, so never let go.
     auto releaseUnreached() -> void {
         PROFILE_ZONE_DETAIL("ReleaseUnreached", Scene);
-        static const uint32_t markSite = profile::registerSite("MarkHeld", profile::Group::Scene, profile::Level::Detail);
-        profile::beginZone(markSite);
+        static const uint32_t markLocation = profile::registerSourceLocation("MarkHeld", profile::Group::Scene, profile::Level::Detail);
+        profile::beginZone(markLocation);
         std::unordered_set<const ContentInfo*> held(reached.begin(), reached.end());
         std::vector<const ContentInfo*> pending(reached.begin(), reached.end());
         for (const auto& info : contentInfo) {

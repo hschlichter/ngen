@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <vector>
 
-// Timeline state. The view is a window [viewStartNs, viewEndNs] on the CPU clock; all lanes,
+// Timeline state. The view is a window [viewStartNs, viewEndNs] on the CPU clock; all tracks,
 // including the GPU, are drawn on that axis (GPU zones are converted by the renderer). Live
 // follows the newest data; pausing freezes collection so the view can be panned and zoomed
 // over several seconds of history, Tracy-style.
@@ -18,20 +18,20 @@ struct PerformanceWindowState {
     uint64_t viewEndNs = 0;
     double viewSpanNs = 50.0e6; // width when following; zoom changes it
 
-    std::vector<profile::LaneInfo> lanes;
-    std::vector<std::vector<profile::Zone>> laneZones;
+    std::vector<profile::TrackInfo> tracks;
+    std::vector<std::vector<profile::Zone>> trackZones;
     std::vector<profile::Zone> gpuZones;
-    // Job workers merged into one lane: zones packed into rows, each tagged with its real lane.
+    // Job workers merged into one track: zones packed into rows, each tagged with its real track.
     std::vector<profile::Zone> workerZones;
-    std::vector<uint32_t> workerZoneLanes;
+    std::vector<uint32_t> workerZoneTracks;
     uint32_t workerCount = 0;
     std::vector<profile::FrameInterval> frames;
     std::vector<profile::FrameStats> history;
     bool valid = false;
 
-    // Clicked zone, shown in the detail pane. laneIndex UINT32_MAX = GPU lane.
+    // Clicked zone, shown in the detail pane. trackIndex UINT32_MAX = GPU track.
     bool hasSelection = false;
-    uint32_t selectedLane = 0;
+    uint32_t selectedTrack = 0;
     profile::Zone selectedZone;
 };
 

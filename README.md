@@ -68,7 +68,7 @@ selected pass's GPU time, reads and writes.*
 
 ![Performance window](screenshots/engine_eldermark_performance_01.png)
 
-*The Performance window: the main, render and GPU lanes on one clock, frame by frame; here the geometry pass, split by bucket.*
+*The Performance window: the main, render and GPU tracks on one clock, frame by frame; here the geometry pass, split by bucket.*
 
 ![Frame budget overlay](screenshots/engine_eldermark_budget_overlay_03.png)
 
@@ -104,7 +104,7 @@ Each library documents its design and rules in a README next to the code:
 - [`src/rendertools/README.md`](src/rendertools/README.md) — the renderer's instrumentation, a render extension: debug snapshots, the frame
   debugger, GPU counters, the texture inspector and dumps, screenshots.
 - [`src/trace/README.md`](src/trace/README.md) — the trace: `TRACE_EVENT`, the always-on ring per process, streaming events over RPC, conventions.
-- [`src/profile/README.md`](src/profile/README.md) — profiling: the markers, the built-in collector and GPU lane behind the Performance window, and
+- [`src/profile/README.md`](src/profile/README.md) — profiling: the markers, the built-in collector and GPU track behind the Performance window, and
   Tracy as a second sink.
 - [`src/jobs/README.md`](src/jobs/README.md) — the job system: the workers, frame jobs (waited for, parallel loops) and background jobs
   (polled), who may wait for what.

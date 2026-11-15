@@ -93,7 +93,7 @@ auto UiHooks::takeReadbacks(ViewFrame& frame) -> void {
 }
 
 auto UiHooks::drawUi(ViewFrame& frame) -> void {
-    static const uint32_t uiZoneId = profile::registerSite("EditorUI", profile::Group::Ui);
+    static const uint32_t uiZoneId = profile::registerSourceLocation("EditorUI", profile::Group::Ui);
     profile::beginZone(uiZoneId);
     auto& scene = frame.scene;
     {

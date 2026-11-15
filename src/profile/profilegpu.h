@@ -4,7 +4,7 @@
 // types. `name` must outlive the command buffer's execution (string literals do).
 // A detail GPU zone records only while profile::gpuDetail() is on: a timestamp makes the
 // GPU wait for earlier work at that point, so fine zones change what they measure.
-// The zone's site travels through the RHI as the zone's tag.
+// The zone's source location travels through the RHI as the zone's tag.
 
 #include "profile.h"
 #include "rhicommandbuffer.h"
@@ -16,12 +16,12 @@ struct ScopedGpuZone {
         if (level == Level::Detail && !gpuDetail()) {
             return;
         }
-        cmd->beginGpuZone(name, registerSite(name, group, level, location));
+        cmd->beginGpuZone(name, registerSourceLocation(name, group, level, location));
         active = true;
     }
-    // A site registered before (a frame-graph pass's).
-    ScopedGpuZone(RhiCommandBuffer* cmd, uint32_t siteId) : cmd(cmd) {
-        cmd->beginGpuZone(nameOf(siteId), siteId);
+    // A source location registered before (a frame-graph pass's).
+    ScopedGpuZone(RhiCommandBuffer* cmd, uint32_t locationId) : cmd(cmd) {
+        cmd->beginGpuZone(nameOf(locationId), locationId);
         active = true;
     }
     ~ScopedGpuZone() {

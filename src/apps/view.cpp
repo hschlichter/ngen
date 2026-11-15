@@ -87,7 +87,7 @@ struct WindowInput {
 // an event; then the view's controls. Z deselects, R selects the parent, F frames the selection, G toggles following the ground, Left Alt
 // starts orbiting, the right button looks, the wheel sets the fly speed, a left click picks. Then the keys held, as a camera move.
 auto pollInput(SDL_Window* window, ViewFrame& frame, ViewHooks& hooks, WindowInput& input) -> void {
-    static const uint32_t pollZoneId = profile::registerSite("PollEvents", profile::Group::Frame);
+    static const uint32_t pollZoneId = profile::registerSourceLocation("PollEvents", profile::Group::Frame);
     profile::beginZone(pollZoneId);
     uint64_t polledEvents = 0;
     // A framebuffer pixel from a point in the window (they differ on high-density displays).
