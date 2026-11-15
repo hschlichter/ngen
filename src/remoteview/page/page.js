@@ -1502,6 +1502,73 @@ function cameraSpeed() {
   return engine.status && engine.status.camera ? engine.status.camera.speed : 5;
 }
 
+// ---- the engine's own UI in the picture: its menus and windows take the pointer and the keys when they want them ----
+//
+// The page can't see where the engine's windows are, so it asks: every pointer position goes to the engine (ui.input), which answers,
+// once the frame that took it is drawn, whether the UI wants the mouse there. While it does, presses, the wheel and the keys go to the
+// UI and not to the camera, as in the view itself. The mouse's buttons go to the UI always, as its window's do, so a press on the scene
+// takes the focus from a window.
+
+const engineUi = {
+  wants: false,     // the pointer is over a window, a menu or a popup
+  keyboard: false,  // a window takes the keys
+  text: false,      // a text field has the focus
+  queue: [],        // {params, resolve}, sent one at a time, in order
+  inFlight: false,
+};
+
+// Sends the UI one piece of input; resolves with what the UI then wants, or null when it could not be sent. Positions that wait behind
+// one another are one position.
+function uiSend(params) {
+  const positionOnly = Object.keys(params).every(key => key === 'x' || key === 'y');
+  const last = engineUi.queue[engineUi.queue.length - 1];
+  if (positionOnly && last && last.positionOnly) {
+    last.params = params;
+    return last.promise;
+  }
+  const item = { params: params, positionOnly: positionOnly };
+  item.promise = new Promise(resolve => {
+    item.resolve = resolve;
+  });
+  engineUi.queue.push(item);
+  uiPump();
+  return item.promise;
+}
+
+function uiPump() {
+  if (engineUi.inFlight || engineUi.queue.length === 0) {
+    return;
+  }
+  const item = engineUi.queue.shift();
+  if (!rpc.open()) {
+    item.resolve(null);
+    uiPump();
+    return;
+  }
+  engineUi.inFlight = true;
+  rpc.call('ui.input', item.params).then(wants => {
+    engineUi.wants = wants.wantMouse;
+    engineUi.keyboard = wants.wantKeyboard;
+    engineUi.text = wants.wantText;
+    item.resolve(wants);
+  }).catch(() => {
+    item.resolve(null);
+  }).finally(() => {
+    engineUi.inFlight = false;
+    uiPump();
+  });
+}
+
+// A page point as ui.input's position: the frame's pixel there, or the pointer having left the picture.
+function uiPosition(clientX, clientY) {
+  return framePixel(clientX, clientY) || { leave: true };
+}
+
+// The browser's buttons are left, middle, right; the UI's are left, right, middle.
+function uiButton(button) {
+  return button === 2 ? 1 : (button === 1 ? 2 : 0);
+}
+
 function onPointerDown(event) {
   if (!rpc.open()) {
     return;
@@ -1513,17 +1580,59 @@ function onPointerDown(event) {
   }
   const type = event.pointerType || 'mouse';
   input.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY, type: type, button: event.button });
-  if (type === 'mouse' && event.button === 0) {
-    // The left button picks as it goes down, as the view's does.
-    input.lastPick = pickAt(event.clientX, event.clientY);
-  }
-  if (input.pointers.size === 1) {
-    input.gesture = { moved: 0, startMs: performance.now(), count: 1, x: event.clientX, y: event.clientY, type: type, button: event.button };
-  } else if (input.gesture) {
-    input.gesture.count = Math.max(input.gesture.count, input.pointers.size);
-    input.pinch = fingerDistance();
-  }
   event.preventDefault();
+  if (input.pointers.size > 1) {
+    if (input.gesture) {
+      // A second finger: two fingers are the camera's, whatever is under them.
+      input.gesture.count = Math.max(input.gesture.count, input.pointers.size);
+      input.gesture.pending = false;
+      input.pinch = fingerDistance();
+    }
+    return;
+  }
+  const gesture = { moved: 0, startMs: performance.now(), count: 1, x: event.clientX, y: event.clientY, type: type, button: event.button, ui: false, pending: false, held: { yaw: 0, pitch: 0 }, released: null };
+  input.gesture = gesture;
+  if (type === 'mouse') {
+    // The pointer has been telling the UI where it is, so what the UI wants there is known.
+    uiSend({ ...uiPosition(event.clientX, event.clientY), button: uiButton(event.button), down: true });
+    gesture.ui = engineUi.wants;
+    if (!gesture.ui && event.button === 0) {
+      // The left button picks as it goes down, as the view's does.
+      input.lastPick = pickAt(event.clientX, event.clientY);
+    }
+    return;
+  }
+  // A finger says where it is only by touching: the UI is asked what is there, and the gesture is the UI's or the camera's by its answer.
+  gesture.pending = true;
+  uiSend(uiPosition(event.clientX, event.clientY)).then(wants => {
+    if (!gesture.pending) {
+      return;
+    }
+    gesture.pending = false;
+    const pointer = [...input.pointers.values()][0] || gesture.released || gesture;
+    if (wants && wants.wantMouse) {
+      gesture.ui = true;
+      uiSend({ ...uiPosition(pointer.x, pointer.y), button: 0, down: true });
+      if (gesture.released) {
+        releaseToUi(gesture.released.x, gesture.released.y, 0, true);
+      }
+      return;
+    }
+    // The camera's: what the finger did while the answer was on its way counts.
+    input.move.yaw += gesture.held.yaw;
+    input.move.pitch += gesture.held.pitch;
+    if (gesture.released) {
+      touchReleased(gesture, gesture.released.x, gesture.released.y, gesture.released.ms);
+    }
+  });
+}
+
+// A button or a finger came up over the UI; a finger also leaves, since it hovers nothing once it is lifted.
+function releaseToUi(clientX, clientY, button, leave) {
+  uiSend({ ...uiPosition(clientX, clientY), button: button, down: false });
+  if (leave) {
+    uiSend({ leave: true });
+  }
 }
 
 function fingerDistance() {
@@ -1535,18 +1644,29 @@ function fingerDistance() {
 }
 
 function onPointerMove(event) {
-  if ((event.pointerType || 'mouse') === 'mouse') {
+  const mouse = (event.pointerType || 'mouse') === 'mouse';
+  if (mouse) {
     input.mouse = { x: event.clientX, y: event.clientY };
   }
   const pointer = input.pointers.get(event.pointerId);
-  if (!pointer || !input.gesture) {
+  const gesture = input.gesture;
+  if (!pointer || !gesture) {
+    if (mouse && rpc.open()) {
+      // Nothing held: the pointer tells the UI where it is, and learns whether the UI wants it there.
+      uiSend(uiPosition(event.clientX, event.clientY));
+    }
     return;
   }
   const dx = event.clientX - pointer.x;
   const dy = event.clientY - pointer.y;
   pointer.x = event.clientX;
   pointer.y = event.clientY;
-  input.gesture.moved += Math.abs(dx) + Math.abs(dy);
+  gesture.moved += Math.abs(dx) + Math.abs(dy);
+  event.preventDefault();
+  if (gesture.ui) {
+    uiSend(uiPosition(event.clientX, event.clientY));
+    return;
+  }
   const speed = cameraSpeed();
   if (input.pointers.size >= 2) {
     // Two fingers: their common movement moves the camera sideways and up (the world follows the fingers); their spread moves it
@@ -1560,10 +1680,11 @@ function onPointerMove(event) {
     // Only the right button looks; the left one picked when it went down.
   } else {
     const degrees = lookDegreesPerPixel[pointer.type] || lookDegreesPerPixel.mouse;
-    input.move.yaw += dx * degrees;
-    input.move.pitch -= dy * degrees;
+    // Until the UI has said whether the finger is on it, what the finger does is held back.
+    const target = gesture.pending ? gesture.held : input.move;
+    target.yaw += dx * degrees;
+    target.pitch -= dy * degrees;
   }
-  event.preventDefault();
 }
 
 function onPointerUp(event) {
@@ -1578,21 +1699,42 @@ function onPointerUp(event) {
     return;
   }
   input.gesture = null;
-  const now = performance.now();
-  // A tap is touch's way to pick; the mouse picked with its left button down.
-  const tap = event.type === 'pointerup' && gesture.type !== 'mouse' && gesture.count === 1 && gesture.moved <= tapMaxPixels && now - gesture.startMs <= tapMaxMs;
+  if (gesture.type === 'mouse') {
+    // The UI sees every button come up, as it saw it go down.
+    releaseToUi(event.clientX, event.clientY, uiButton(gesture.button), false);
+    return;
+  }
+  if (gesture.ui) {
+    releaseToUi(event.clientX, event.clientY, 0, true);
+    return;
+  }
+  if (gesture.pending) {
+    // The UI has not answered yet: its answer finishes the gesture.
+    gesture.released = { x: event.clientX, y: event.clientY, ms: performance.now(), cancelled: event.type !== 'pointerup' };
+    return;
+  }
+  if (event.type === 'pointerup') {
+    touchReleased(gesture, event.clientX, event.clientY, performance.now());
+  }
+}
+
+// A finger lifted off the scene: a tap picks, the second of two taps frames what the first picked.
+function touchReleased(gesture, clientX, clientY, now) {
+  if (gesture.released && gesture.released.cancelled) {
+    return;
+  }
+  const tap = gesture.count === 1 && gesture.moved <= tapMaxPixels && now - gesture.startMs <= tapMaxMs;
   if (!tap) {
     return;
   }
   const last = input.lastTap;
-  if (last && now - last.ms <= doubleTapMs && Math.hypot(last.x - event.clientX, last.y - event.clientY) < 30) {
-    // The second tap of two: frame what the first picked.
+  if (last && now - last.ms <= doubleTapMs && Math.hypot(last.x - clientX, last.y - clientY) < 30) {
     input.lastTap = null;
     input.lastPick.then(() => frameSelection());
     return;
   }
-  input.lastTap = { ms: now, x: event.clientX, y: event.clientY };
-  input.lastPick = pickAt(event.clientX, event.clientY);
+  input.lastTap = { ms: now, x: clientX, y: clientY };
+  input.lastPick = pickAt(clientX, clientY);
 }
 
 // A point of the page as the frame's pixel: the video is shown whole inside the pad, with bars where their shapes differ.
@@ -1630,8 +1772,31 @@ async function pickAt(clientX, clientY) {
 
 const cameraKeys = { KeyW: ['forward', 1], KeyS: ['forward', -1], KeyD: ['right', 1], KeyA: ['right', -1], KeyE: ['up', 1], KeyQ: ['up', -1] };
 
+// The keys the UI takes by name (ui.input's `key`); anything else that types a character goes as text.
+const uiKeys = new Set(['Enter', 'Escape', 'Backspace', 'Delete', 'Tab', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown', 'Control', 'Shift', 'Alt']);
+
+// A key for the UI, when a window of it has the keys: named keys go down and up, a character is typed, Ctrl with a letter is a shortcut.
+function keyToUi(event, down) {
+  if (!engineUi.keyboard && !engineUi.text) {
+    return false;
+  }
+  const shortcut = event.ctrlKey && event.key.length === 1;
+  if (uiKeys.has(event.key) || shortcut) {
+    uiSend({ key: event.key, down: down });
+  } else if (down && event.key.length === 1) {
+    uiSend({ text: event.key });
+  } else {
+    return false;
+  }
+  event.preventDefault();
+  return true;
+}
+
 function onKeyDown(event) {
   if (!rpc.open() || event.metaKey) {
+    return;
+  }
+  if (keyToUi(event, true)) {
     return;
   }
   if (event.code === 'AltLeft') {
@@ -1670,6 +1835,9 @@ function onKeyDown(event) {
 }
 
 function onKeyUp(event) {
+  if (rpc.open() && keyToUi(event, false)) {
+    return;
+  }
   input.keys.delete(event.code);
   if (event.code === 'ShiftLeft' || event.code === 'ShiftRight') {
     input.keys.delete('Shift');
@@ -1738,8 +1906,13 @@ function onWheel(event) {
   }
   // A notch of the wheel is a step: the fly speed, or toward the pivot while orbiting. Away from the user is positive, as the view's.
   const pixels = event.deltaMode === 1 ? event.deltaY * 33 : event.deltaY;
-  input.move.wheel -= pixels / 100;
   event.preventDefault();
+  if (engineUi.wants) {
+    // Over a window the wheel is the window's.
+    uiSend({ ...uiPosition(event.clientX, event.clientY), wheel: -pixels / 100 });
+    return;
+  }
+  input.move.wheel -= pixels / 100;
 }
 
 // Every animation frame: the held keys add to what the pointers moved, and what has added up goes out as one view.camera.move, with at
@@ -1806,7 +1979,8 @@ function wirePad() {
 
 async function settled() {
   for (let i = 0; i < 200; i++) {
-    if (!input.inFlight && !moveWaiting()) {
+    const waiting = input.gesture !== null && input.gesture.pending;
+    if (!input.inFlight && !moveWaiting() && !engineUi.inFlight && engineUi.queue.length === 0 && !waiting) {
       return;
     }
     await sleep(10);
@@ -2063,6 +2237,7 @@ async function runSelfTest() {
       const middle = padPoint(0.5, 0.5);
       pointer('pointerdown', kind, id, middle);
       pointer('pointerup', kind, id, middle);
+      await settled();
       const picked = await input.lastPick;
       input.lastTap = null;
       expect(picked && picked.prim, 'nothing was picked at the centre');
@@ -2075,6 +2250,51 @@ async function runSelfTest() {
       document.body.classList.remove('sheetup');
       expect(shown === picked.prim, 'the Scene panel shows "' + shown + '", picked ' + picked.prim);
       return picked.prim;
+    });
+  }
+  // The engine's own menu bar is at the picture's top left; its first menu is a few pixels in.
+  const menu = { x: 30, y: 10 };
+  const framePoint = pixel => {
+    const frame = engine.remoteview.frame;
+    const box = pad.getBoundingClientRect();
+    const scale = Math.min(box.width / video.videoWidth, box.height / video.videoHeight);
+    const shownWidth = video.videoWidth * scale;
+    const shownHeight = video.videoHeight * scale;
+    return { x: box.left + (box.width - shownWidth) / 2 + (pixel.x + 0.5) / frame.width * shownWidth, y: box.top + (box.height - shownHeight) / 2 + (pixel.y + 0.5) / frame.height * shownHeight };
+  };
+  const uiRecord = () => rpc.call('introspect.get', { name: 'ui' });
+  const selectedNow = async () => (await rpc.call('introspect.get', { name: 'status' })).selected;
+  for (const kind of ['mouse', 'touch']) {
+    await check('the engine\'s menus take the ' + kind, async () => {
+      const id = kind === 'touch' ? 11 : 1;
+      const press = async point => {
+        if (kind === 'mouse') {
+          pointer('pointermove', kind, id, point);
+          await settled();
+        }
+        pointer('pointerdown', kind, id, point);
+        pointer('pointerup', kind, id, point);
+        await settled();
+        await sleep(150);
+      };
+      await rpc.call('view.select', { prim: '' });
+      await press(framePoint(menu));
+      const opened = await uiRecord();
+      expect(opened.popup, 'a press on the menu bar opened no menu');
+      expect((await selectedNow()) === '', 'the press on the menu bar picked ' + (await selectedNow()));
+      // With a menu open the next press anywhere is the UI's: it closes the menu and picks nothing.
+      await press(padPoint(0.5, 0.5));
+      const closed = await uiRecord();
+      expect(!closed.popup, 'the menu stayed open');
+      expect((await selectedNow()) === '', 'the press that closed the menu picked ' + (await selectedNow()));
+      // And the one after that is the scene's again.
+      input.lastTap = null;
+      await press(padPoint(0.5, 0.5));
+      await input.lastPick;
+      await sleep(300);
+      const picked = await selectedNow();
+      expect(picked !== '', 'the scene was not picked once the menu had closed');
+      return 'opened, closed, then picked ' + picked;
     });
   }
   await check('R selects the parent, Z deselects', async () => {

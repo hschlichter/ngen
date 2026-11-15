@@ -32,6 +32,8 @@ accepted as recommended, with the second switch still his to overrule).
 - **The page's panels are made from what the engine describes**, and the page is three files built into the program with `#embed`.
 - **One page for a phone and a desktop**: its layout follows the window's size, its input goes through Pointer Events. On a desktop the
   panels are a dock around the video, moved by dragging and remembered by the browser.
+- **The engine's own UI takes the page's pointer and keys through `ui.input`**, which answers what the UI wants after its next frame, so
+  the page sends input to the UI or to the camera as the view itself would.
 - **The camera is moved by a relative method**, `view.camera.move`, so the page keeps no camera of its own.
 - **The page tests itself** (`#test`) and reports the results, so an agent verifies it through the `remoteview` record.
 

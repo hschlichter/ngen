@@ -332,6 +332,7 @@ frames later; record them at steady state (frame 120 or later).
 | `streamingtool` | The Streaming tool's inspection of the root at or above the selection, totals, map view. |
 | `debugcamera` | Debug camera position, yaw, pitch and the main camera's trail. |
 | `windows` | The UI's windows and whether each is open. |
+| `ui` | The UI's input: whether it wants the mouse, the keys or text now, whether a menu or popup is open, and how many `ui.input` calls it has taken (the watch page's pointer and keys). |
 | `remoteview` | The remote view: whether it listens and its URL, the watcher, the video as encoded, frames captured, replaced, encoded and sent, the last second's times, what the watch page last reported (frames decoded, latency). Also `frame` (the size `view.pick`'s pixels are in), `control` (remote control: on, the channel open, calls run and failed, the last method, the log subscribed) and in `page` the watch page's layout, pointer and self-test. |
 
 ```sh

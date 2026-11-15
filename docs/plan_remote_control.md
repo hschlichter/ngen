@@ -107,7 +107,7 @@ In:
 
 Out:
 
-- **Touch forwarded to the engine's own UI** (Dear ImGui windows used from the phone). Deferred.
+- **Touch forwarded to the engine's own UI** (Dear ImGui windows used from the phone). Deferred when planned; built since, see "Built".
 - HTTPS in the listener, more than one watcher, audio, a bitrate that follows the network.
 - The asset server and other processes: the gateway serves the view's registry only.
 
@@ -239,6 +239,10 @@ Steps 1 to 6, on 2026-11-15. What differs from the steps above:
   button looks, the wheel sets the fly speed, the left button picks as it goes down, Left Alt orbits, Z, R, F and G do what they do in
   the view. `view.camera.move` took wheel steps, turns around the pivot while orbiting and can move the controlled camera;
   `view.camera.orbit.start` and `.stop` are Left Alt as calls, held by asking again. Touch keeps its gestures.
+- **The engine's own UI is used through the page** (asked for by Henrik, 2026-11-15: the menus could not be clicked). `ui.input` gives
+  Dear ImGui a pointer position, a button, the wheel, text or a key, and answers after the next UI frame with what the UI wants; the
+  page sends presses, the wheel and the keys to the UI while it wants them and to the camera otherwise. This was the deferred "touch
+  forwarded to the engine's UI". The gizmos are not reached: they take the window's events.
 - **The wide layout is a dock** (asked for by Henrik after using the page on a desktop, 2026-11-15: the fixed column left room unused).
   Panels sit in areas left, right and under the video, or float; they are dragged by their tabs and titles, resized by the bars between,
   remembered in `localStorage`, and reset from the strip. It replaces "two side by side when there is room". A panel is still one
@@ -252,6 +256,7 @@ Debug unless it says release; headless; Firefox 160 headless on this machine; th
 |---|---|
 | Off is free | **Passed.** `--remote-view` alone: the offer has no `m=application` section and `control` false; with `remoteview.control` set, one, and true. |
 | On | **Passed.** `RemoteControlOpened` once, `control.open` true, the self-test done with 18 of 18 passed. |
+| The engine's UI | **Passed.** By mouse and by touch: a press on the menu bar opens a menu (`ui` record's `popup`) and picks nothing, the next press closes it and picks nothing, the one after picks the scene. Seen in a screenshot: Windows > Performance opened the window, and the `windows` record says so. Typing into a text field and dragging a window were not exercised. |
 | The dock | **Passed.** In the wide layout the self-test docks Cvars left, under the video and right, floats it, drags Records left by its tab and the Cvars window under the video by its title, and reads the layout back from storage; a rearranged layout was also seen to survive a reload of the page. |
 | Both sizes | **Passed.** 19 of 19 at 1920 × 1080 (wide), 18 of 18 at 500 × 758 (narrow) and at 844 × 390 (landscape), none overflowing. Firefox would not make a window narrower than 500 px, so the phone's own width is Henrik's check. |
 | Both inputs | **Passed** in each: touch drag 20° for 100 px, pinch 4.00 m; the mouse's right drag 15° and its left drag nothing; the wheel 5 → 6.25 → 5 m/s; Left Alt orbiting at a constant distance from a picked pivot, the wheel then 15 % nearer, held for 2.5 s and ended on release; R and Z; a held W 1.5 m in 0.3 s, a key in a field nothing. |

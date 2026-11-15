@@ -173,7 +173,7 @@ Known gaps, all trigger-gated ([src/rhi/README.md](../src/rhi/README.md)):
 - **Remote view** — [plan_remote_view.md](plan_remote_view.md); [ADR 88](adr/0088_remote_view_over_webrtc.md). In progress: ngen-view's image
   as live H.264 video in a browser on another device (`src/remoteview`), built and checked headless against Firefox on this machine, and
   watched by Henrik from his phone over Tailscale. Open: a run with a window, the CI job's first run. Follow-ups with triggers in the plan:
-  Vulkan Video encode, and touch forwarded to the engine's own UI. Remote control ([plan_remote_control.md](plan_remote_control.md), [ADR 89](adr/0089_remote_control_from_the_watch_page.md)) is built:
+  Vulkan Video encode. Remote control ([plan_remote_control.md](plan_remote_control.md), [ADR 89](adr/0089_remote_control_from_the_watch_page.md)) is built:
   the watch page drives the view from a phone or a desktop browser; used from Henrik's iPhone, a desktop browser by hand is open. The frame is read as soon
   as the GPU has it (`RhiDevice::fenceSignaled`): 21 ms from capture to send at the headless limit of 60 frames a second, from 92.
 - **Relocatable install** — ship the OpenUSD shared libraries next to the binaries with an `$ORIGIN`-relative rpath (recommended over a

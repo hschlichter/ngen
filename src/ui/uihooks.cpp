@@ -207,6 +207,8 @@ auto UiHooks::drawUi(ViewFrame& frame) -> void {
         PROFILE_ZONE("ImGuiRender", Ui);
         imguiSnapshot = imgui.endFrame();
     }
+    // Calls that gave the UI input (ui.input) are answered now that the frame that took it is drawn.
+    ui.answerInputWaiters();
     if (ui.wantsQuit()) {
         frame.quit = true;
     }

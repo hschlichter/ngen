@@ -172,9 +172,17 @@ own controls move), `view.pick` at the frame's pixel under the pointer, `view.ca
 asks again twice a second while it is held, so an orbit ends by itself if the page goes away), `view.select`, `view.camera.frame` and
 the `view.camera.follow` cvar.
 
+**The engine's own UI in the picture is used through the page**: its menu bar, the windows the menus open, their buttons, sliders and
+text fields. The page can't see where those are, so every pointer position goes to the engine (`ui.input`, in framebuffer pixels), and
+the engine answers, once the frame that took it is drawn, whether the UI wants the mouse there. While it does, presses and the wheel
+go to the UI and not to the camera or the pick, and while a window has the keys, the keys and typed text do, as in the view itself. A
+finger says where it is only by touching, so a touch waits for that answer (a frame and the round trip) before it is the UI's or the
+camera's; what it did meanwhile is kept. The mouse's buttons go to the UI always, so a press on the scene takes the focus from a
+window, as it does at the machine.
+
 **The page tests itself** when opened at `<address>/#test`: it runs calls, a cvar set and read back, a failing call, the
 log, synthesized touch, mouse and key input against the camera (look, fly, the wheel's speed, orbiting, R and Z), picking by both, a screenshot, a result over the message limit and, in the
-wide layout, panels docked in each area, floated, dragged by tab and by title and remembered, and puts
+wide layout, the engine's menu opened and closed by mouse and by touch with no pick through it, and panels docked in each area, floated, dragged by tab and by title and remembered, and puts
 each check's result in its report. The `remoteview` record shows it as `page.test`, so an agent verifies the page with a headless
 browser and no way to touch it.
 
@@ -210,7 +218,9 @@ the bars' colours back, which shows whether the browser honoured the stream's co
   `remoteview.grab {path}` / `remoteview-grab <path>` (what the watcher sees, after decoding, as a PNG), `remoteview.screenshot` /
   `remoteview-screenshot` (a screenshot the watch page downloads). Made for the page and useful to anyone: `console.run {line}`,
   `view.camera.move` / `camera-move`,
-  `view.camera.orbit.start` / `orbit-start`, `view.camera.orbit.stop` / `orbit-stop`.
+  `view.camera.orbit.start` / `orbit-start`, `view.camera.orbit.stop` / `orbit-stop`, and `ui.input` (the UI's input as a call; no
+  console command: it is a stream of pointer positions, not something typed).
+- **Record** `ui`: whether the UI wants the mouse, the keys or text now, whether a menu or popup is open, and the `ui.input` calls taken.
 - **Window**: Remote View, under Windows > Introspection, or `window remoteview on`; its Control section has the switch, the channel,
   the calls and the last method.
 - **Log**, category `RemoteView`: `RemoteViewListening`, `RemoteViewStopped`, `RemoteViewEncoderStarted`, `RemoteViewWatcherConnected`,
@@ -237,4 +247,7 @@ the system's OpenSSL.
 - **Remote control has no authentication**, and the page and the offer travel as plain HTTP, so someone on the path could put
   themselves in the middle. A Tailscale network encrypts the path; a shared LAN does not.
 - **Records are polled** by the page, twice a second for the open panel; nothing is subscribed to but the log.
-- **The engine's own windows can't be used from the page**: they show in the video, and a tap picks through them.
+- **The engine's own windows are used at the video's size.** At 720 lines a 1440-line frame's text is small; the strip's height choice
+  (`view`) sends it whole.
+- **With a real window that has the focus, its own mouse and the page's both move the UI's pointer**, as two mice would.
+- **The gizmos are not reached from the page**: they take the window's events, not the UI's.
