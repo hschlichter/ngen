@@ -167,7 +167,7 @@ struct LodToolState {
     };
     std::vector<OverrideRequest> overrideRequests;
     std::vector<std::string> overrideResets; // a root's overrides dropped; an empty path drops every one
-    // The viewport's layers: the LOD Level view (the G-buffer view the application sets), labels over the roots, the heuristic gizmo of the
+    // The viewport's layers: the LOD Level view (the view mode the application sets), labels over the roots, the heuristic gizmo of the
     // selected root or of every root the list shows, and the pop flash.
     bool levelView = false; // set by the application
     std::optional<bool> levelViewRequested;

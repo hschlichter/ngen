@@ -1197,7 +1197,7 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
             imageIdx,
             textureSampler,
             lighting,
-            snapshot.gbufferViewMode,
+            snapshot.viewMode,
             occlusion ? hzbHandle : FgTextureHandle{},
             snapshot.hzbLevel,
             snapshot.showBufferOverlay,

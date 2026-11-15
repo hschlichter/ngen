@@ -224,9 +224,9 @@ auto ToolsHooks::syncLodTool(ViewFrame& frame) -> void {
         scene.resetLodOverrides(root);
     }
     // The viewport's layers: the LOD Level view and the Triangle Size debug view are the view's modes.
-    lod.levelView = renderconfig::bufferView.get() == (size_t) GBufferView::LodLevel && renderconfig::debugView.get() == 0;
+    lod.levelView = renderconfig::viewMode.get() == (size_t) ViewMode::LodLevel && renderconfig::debugView.get() == 0;
     if (auto on = std::exchange(lod.levelViewRequested, std::nullopt)) {
-        (void) renderconfig::bufferView.set((size_t) (*on ? GBufferView::LodLevel : GBufferView::Lit));
+        (void) renderconfig::viewMode.set((size_t) (*on ? ViewMode::LodLevel : ViewMode::Lit));
         if (*on) {
             (void) renderconfig::debugView.set((size_t) DebugView::None);
         }

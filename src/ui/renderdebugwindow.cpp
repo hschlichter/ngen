@@ -345,13 +345,13 @@ auto drawFrameTab(const RenderDebugSnapshot& s) -> void {
 }
 
 auto drawViewTab(RenderDebugViewFlags& view) -> void {
-    ImGui::TextUnformatted("Buffer view");
+    ImGui::TextUnformatted("View mode");
     static const char* modes[] = {"Lit", "Albedo", "Normals", "Depth", "Shadow factor", "Shadow map", "Shadow UV", "World position", "Mip level", "Cascades", "LOD level", "Depth pyramid"};
     for (int i = 0; i < (int) (sizeof(modes) / sizeof(modes[0])); i++) {
         if (i % 4 != 0) {
             ImGui::SameLine();
         }
-        ImGui::RadioButton(modes[i], &view.gbufferView, i);
+        ImGui::RadioButton(modes[i], &view.viewMode, i);
     }
     ImGui::Separator();
     ImGui::TextUnformatted("Overlays");

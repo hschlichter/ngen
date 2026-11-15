@@ -90,7 +90,7 @@ substring of a library, program, tool or alias name.
 | `--camera=/camera/prim` | Start at a camera the scene authors. |
 | `--camera-frame=scene\|/prim` | What the camera frames while the scene arrives. |
 | `--select=/prim` | Select a prim (full path, instances expanded). |
-| `--view=<mode>` | Buffer view: `lit`, `albedo`, `normals`, `depth`, `shadowfactor`, `shadowmap`, `shadowuv`, `worldpos`, `miplevel`, `cascades`, `lodlevel`, `hzb`. |
+| `--view=<mode>` | View mode: `lit`, `albedo`, `normals`, `depth`, `shadowfactor`, `shadowmap`, `shadowuv`, `worldpos`, `miplevel`, `cascades`, `lodlevel`, `hzb`. |
 | `--overlay=name=on\|off,...` | Overlays: `grid`, `origin`, `gizmo`, `aabbs`, `lightgizmos`, `buffer`, `shadow`, `aa`, `cascadefrusta`. |
 | `--no-wait-resident` | Count script frames from start-up instead of from residency, to look at loading. |
 | `--validation` | Turn on the Vulkan validation layer. |
@@ -185,7 +185,7 @@ These set configuration values. `config <name> <value>` sets any value; `config-
 |---|---|
 | `config <name> <value>` | Set any configuration value (`config render.shadow.cascades 1`). |
 | `config-reset [<name or prefix>]` | Reset one value, a group, or all. |
-| `view <mode>` | Buffer view, same modes as `--view`. |
+| `view <mode>` | View mode, same modes as `--view`. |
 | `debugview <mode>` | `off`, `wireframe`, `trianglesize`, `overdraw`, `instance`, `mesh`, `material`, `primitive`, `uv`, `streaming`, `meshlet`, `meshletcull`. |
 | `overlay name=on\|off,...` | Overlays, same names as `--overlay`. |
 | `cull on\|off\|freeze\|unfreeze\|show\|hide` | Frustum culling, frozen frustum, AABB overlay. |

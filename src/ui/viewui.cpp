@@ -57,25 +57,25 @@ auto ViewUI::toggleShortcuts() -> void {
     if (pressed(ImGuiMod_Ctrl | ImGuiKey_2)) {
         renderconfig::shadowOverlay.set(!renderconfig::shadowOverlay.get());
     }
-    std::array<std::pair<ImGuiKeyChord, GBufferView>, 2> bufferViews = {{
-        {ImGuiMod_Ctrl | ImGuiKey_3, GBufferView::MipLevel},
-        {ImGuiMod_Ctrl | ImGuiKey_4, GBufferView::LodLevel},
+    std::array<std::pair<ImGuiKeyChord, ViewMode>, 2> viewModes = {{
+        {ImGuiMod_Ctrl | ImGuiKey_3, ViewMode::MipLevel},
+        {ImGuiMod_Ctrl | ImGuiKey_4, ViewMode::LodLevel},
     }};
-    for (auto [chord, view] : bufferViews) {
+    for (auto [chord, view] : viewModes) {
         if (pressed(chord)) {
-            (void) renderconfig::bufferView.set(renderconfig::bufferView.get() == (size_t) view ? (size_t) GBufferView::Lit : (size_t) view);
+            (void) renderconfig::viewMode.set(renderconfig::viewMode.get() == (size_t) view ? (size_t) ViewMode::Lit : (size_t) view);
         }
     }
     if (pressed(ImGuiMod_Ctrl | ImGuiKey_5)) {
         PlainLit now = {
-            .gbufferView = (int) renderconfig::bufferView.get(),
+            .viewMode = (int) renderconfig::viewMode.get(),
             .debugView = (int) renderconfig::debugView.get(),
             .bufferOverlay = renderconfig::bufferOverlay.get(),
             .shadowOverlay = renderconfig::shadowOverlay.get(),
         };
-        bool plain = now.gbufferView == (int) GBufferView::Lit && now.debugView == (int) DebugView::None && !now.bufferOverlay && !now.shadowOverlay;
+        bool plain = now.viewMode == (int) ViewMode::Lit && now.debugView == (int) DebugView::None && !now.bufferOverlay && !now.shadowOverlay;
         auto apply = [](const PlainLit& views) {
-            (void) renderconfig::bufferView.set((size_t) views.gbufferView);
+            (void) renderconfig::viewMode.set((size_t) views.viewMode);
             (void) renderconfig::debugView.set((size_t) views.debugView);
             renderconfig::bufferOverlay.set(views.bufferOverlay);
             renderconfig::shadowOverlay.set(views.shadowOverlay);
@@ -122,7 +122,7 @@ auto ViewUI::draw(const PrimPathOf& primPath,
     bool showCulled = toolsconfig::overlayCulled.get();
     int culledView = (int) toolsconfig::overlayCulledView.get();
     bool cascadeFrusta = toolsconfig::overlayCascadeFrusta.get();
-    int gbufferView = (int) renderconfig::bufferView.get();
+    int viewMode = (int) renderconfig::viewMode.get();
     int debugView = (int) renderconfig::debugView.get();
     bool bufferOverlay = renderconfig::bufferOverlay.get();
     bool shadowOverlay = renderconfig::shadowOverlay.get();
@@ -145,7 +145,7 @@ auto ViewUI::draw(const PrimPathOf& primPath,
         .showGuides = showGuides,
         .showProxies = showProxies,
         .depthPrepass = depthPrepass,
-        .gbufferView = gbufferView,
+        .viewMode = viewMode,
         .debugView = debugView,
         .showBufferOverlay = bufferOverlay,
         .showShadowOverlay = shadowOverlay,
@@ -194,7 +194,7 @@ auto ViewUI::draw(const PrimPathOf& primPath,
     {
         PROFILE_ZONE("RenderDebugWindow", Ui);
         RenderDebugViewFlags viewFlags = {
-            .gbufferView = gbufferView,
+            .viewMode = viewMode,
             .sampler = sampler,
             .shadow = shadow,
             .ambient = ambient,
@@ -212,7 +212,7 @@ auto ViewUI::draw(const PrimPathOf& primPath,
         }
     }
     renderconfig::depthPrepass.set(depthPrepass);
-    (void) renderconfig::bufferView.set((size_t) gbufferView);
+    (void) renderconfig::viewMode.set((size_t) viewMode);
     (void) renderconfig::debugView.set((size_t) debugView);
     renderconfig::bufferOverlay.set(bufferOverlay);
     renderconfig::shadowOverlay.set(shadowOverlay);
@@ -298,8 +298,8 @@ auto ViewUI::draw(const PrimPathOf& primPath,
         // The meshlet culling debug view is a debug view like any other; the window switches it.
         bool meshletCullView = renderconfig::debugView.get() == (size_t) DebugView::MeshletCull;
         bool meshletCullViewBefore = meshletCullView;
-        // So is the depth pyramid's buffer view, with its level.
-        bool pyramidView = renderconfig::bufferView.get() == (size_t) GBufferView::Hzb;
+        // So is the depth pyramid's view mode, with its level.
+        bool pyramidView = renderconfig::viewMode.get() == (size_t) ViewMode::Hzb;
         bool pyramidViewBefore = pyramidView;
         int pyramidLevel = (int) renderconfig::hzbLevel.get();
         drawCullingWindow(showCullingWindow,
@@ -318,7 +318,7 @@ auto ViewUI::draw(const PrimPathOf& primPath,
             (void) renderconfig::debugView.set(meshletCullView ? (size_t) DebugView::MeshletCull : (size_t) DebugView::None);
         }
         if (pyramidView != pyramidViewBefore) {
-            (void) renderconfig::bufferView.set(pyramidView ? (size_t) GBufferView::Hzb : (size_t) GBufferView::Lit);
+            (void) renderconfig::viewMode.set(pyramidView ? (size_t) ViewMode::Hzb : (size_t) ViewMode::Lit);
         }
         (void) renderconfig::hzbLevel.set(pyramidLevel);
     }

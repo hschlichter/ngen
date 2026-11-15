@@ -19,7 +19,7 @@ struct ViewMenuBarState {
     bool& showGuides;
     bool& showProxies;
     bool& depthPrepass;
-    int& gbufferView;
+    int& viewMode;
     int& debugView; // DebugView
     bool& showBufferOverlay;
     bool& showShadowOverlay;

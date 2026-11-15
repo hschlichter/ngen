@@ -267,8 +267,6 @@ sense of a map; that is a scene.
 
 - **At-start / first-use pipeline** — a pipeline whose shaders are requested at start-up, or the first time it is asked for (the debug views).
 - **Bucket** — one of four pipeline groups per view: single-sided, double-sided, and the same two for cutout materials.
-- **Buffer view** (G-buffer view) — what the lighting pass shows (`view` verb, `--view`): lit, albedo, normals, depth, shadow views, worldpos,
-  mip level, cascades, LOD level, hzb.
 - **Capture / capture watch** (`CaptureService`, `CaptureWatch`) — a copy of any frame-graph resource after a pass, read back after the fence;
   picking, the GPU Scene window and dumps use it.
 - **Cascades / shadow atlas** — cascaded shadow maps (three by default) as tiles of one atlas, fitted on the main thread.
@@ -320,6 +318,8 @@ sense of a map; that is a scene.
 - **Texture slot** — a texture's index in the bindless 1024-texture array; slot 0 is the fallback, slot 1 white.
 - **Upload budget** — bytes of queued scene uploads a frame takes (`render.upload.budgetMiB`, 64 MiB).
 - **View** (culling) — 0 the camera, 1–4 the shadow cascades, 5 the camera's second occlusion phase.
+- **View mode** — what the lighting pass shows (`view` verb, `--view`): lit, albedo, normals, depth, shadow views, worldpos,
+  mip level, cascades, LOD level, hzb.
 - **Work item** — one `{instance, meshlet}` pair in a region; a task workgroup takes 32 consecutive ones.
 
 ## RHI
@@ -417,5 +417,5 @@ sense of a map; that is a scene.
 | state | a resource state (RHI barriers); a streaming state (finest resident level); a tool's state struct |
 | tag | the LOD tag (normal alpha); a GPU zone's tag (profiler site id) |
 | variant | a build variant (platform/config); a USD variant (of a variant set) |
-| view | ngen-view; the `view` library; a culling view (camera, cascades, phase 2); a buffer view (`view` verb) or debug view (`debugview` verb) |
+| view | ngen-view; the `view` library; a culling view (camera, cascades, phase 2); a view mode (`view` verb) or debug view (`debugview` verb) |
 | version | an asset version (content hash); a World content's version (each compose); a pack rule's version; the IR and scene-pack format versions |

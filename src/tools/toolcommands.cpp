@@ -225,7 +225,7 @@ auto lodToolRecord(const ViewContext& view, const ToolsState& tools) -> Json {
         {"selectedRoot", root.empty() ? Json(nullptr) : Json(root)},
         {"inspection", inspection},
         {"tuning", lodTuningJson(view.scene.lodTuning())},
-        {"levelView", renderconfig::bufferView.get() == (size_t) GBufferView::LodLevel},
+        {"levelView", renderconfig::viewMode.get() == (size_t) ViewMode::LodLevel},
         {"pops", view.lodPops},
         {"windowRows", window.rows.size()},
     };

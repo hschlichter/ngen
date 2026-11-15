@@ -96,7 +96,7 @@ auto LightingPass::addPass(
     uint32_t imageIndex,
     RhiSampler* sampler,
     const LightingInputs& lightInputs,
-    GBufferView viewMode,
+    ViewMode viewMode,
     FgTextureHandle hzbHandle,
     int hzbLevel,
     bool showOverlay,
@@ -132,7 +132,7 @@ auto LightingPass::addPass(
             data.depth = builder.read(depthHandle, FgAccessFlags::ShaderRead);
             data.shadowMap = builder.read(shadowHandle, FgAccessFlags::ShaderRead);
             // The pyramid is read only while its view is on, so every other frame's graph is unchanged; binding 7 then holds the depth.
-            if (viewMode == GBufferView::Hzb && hzbHandle.valid()) {
+            if (viewMode == ViewMode::Hzb && hzbHandle.valid()) {
                 data.hzb = builder.read(hzbHandle, FgAccessFlags::ShaderRead);
             }
             data.sceneColor = builder.write(builder.createTexture("sceneColor", sceneColorDesc), FgAccessFlags::ColorAttachment);
@@ -284,11 +284,11 @@ auto toArray(const glm::vec3& value) -> std::array<float, 3> {
 
 } // namespace
 
-config::Enum bufferView{"render.view.buffer",
-                        std::vector<std::string>(gbufferViewNames.begin(), gbufferViewNames.end()),
-                        0,
-                        "What the lighting pass shows: the lit image, a G-buffer target, or a view of one of its inputs (shadows, mips, cascades, LOD levels)."};
-config::Int hzbLevel{"render.view.hzblevel", 0, "The level of the depth pyramid the hzb buffer view shows: 0 the finest; past the last, the last.", {.min = 0, .max = 15}};
+config::Enum viewMode{"render.view.mode",
+                      std::vector<std::string>(viewModeNames.begin(), viewModeNames.end()),
+                      0,
+                      "What the lighting pass shows: the lit image, a G-buffer target, or a view of one of its inputs (shadows, mips, cascades, LOD levels)."};
+config::Int hzbLevel{"render.view.hzblevel", 0, "The level of the depth pyramid the hzb view mode shows: 0 the finest; past the last, the last.", {.min = 0, .max = 15}};
 config::Bool bufferOverlay{"render.overlay.buffer", false, "A strip of the G-buffer targets (albedo, normals, depth, lit) along the bottom of the view."};
 config::Bool shadowOverlay{"render.overlay.shadow", false, "A strip of the shadow cascades' maps along the bottom of the view."};
 config::Vec3 ambientSky{"render.ambient.sky", toArray(AmbientSettings{}.sky), "The hemisphere ambient on faces turned up, as a fraction of the sun's radiance."};

@@ -142,7 +142,7 @@ private:
     auto toggleShortcuts() -> void;
     // What Ctrl+5 turned off, restored when it is pressed again with nothing on since.
     struct PlainLit {
-        int gbufferView = 0;
+        int viewMode = 0;
         int debugView = 0;
         bool bufferOverlay = false;
         bool shadowOverlay = false;

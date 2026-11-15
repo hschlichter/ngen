@@ -89,8 +89,9 @@ the term everywhere in scope at once: no step leaves both words in the code.
    `src/view/placement.cpp`, `src/view/viewscene.*`, `src/tools/lodtool.*`, `streamingtool.*`; the `wanted` and `selected` fields of the `lod`
    and `streaming` records (`src/tools/toolcommands.cpp`); the LOD and Streaming windows' columns. *Selected* stays for the selection, *wanted*
    for buffer growth and frame-graph passes.
-5. **View mode.** `GBufferView` → `ViewMode`, `setGBufferViewMode` → `setViewMode` (22). The `view` verb and `--view` flag keep their names:
-   they set the view mode.
+5. **View mode.** `GBufferView` → `ViewMode`, `gbufferViewMode` and the UI's `gbufferView` → `viewMode`, `renderconfig::bufferView` →
+   `renderconfig::viewMode`, the configuration value `render.view.buffer` → `render.view.mode`. The `view` verb and `--view` flag keep their
+   names: they set the view mode.
 6. **Content hash.** In `src/asset`: the stream's `version` field → `hash`, `AssetClient`'s and the server's members, the Assets window's
    column, the cache record. A pack rule's `version` keeps its name. The server and the client change together; a cache written before the
    change is repacked.
@@ -156,6 +157,7 @@ Nothing is added: no record, method, verb or window. What an agent or a script r
   → `hash`; the `culling` record's region fields → draw list; the `profile` record's lanes and sites → tracks and source locations; the scene
   counters' `changeLists*` → `sceneChanges*`; the `scene` record's `resident`, `everResident` and `lastResident` → `ready`, `everReady` and
   `lastReady`.
+- Configuration values: `render.view.buffer` → `render.view.mode`.
 - Windows: the introspect window's Trace tab → Log; column and label texts in the LOD, Streaming, Assets, GPU Scene and profiler windows; the
   Configuration window → Cvars.
 

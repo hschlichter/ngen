@@ -436,7 +436,7 @@ auto ViewFrame::buildSnapshot() -> RenderSnapshot {
         .worldUp = cam.worldUp,
         .windowWidth = width,
         .windowHeight = height,
-        .gbufferViewMode = static_cast<GBufferView>(renderconfig::bufferView.get()),
+        .viewMode = static_cast<ViewMode>(renderconfig::viewMode.get()),
         .hzbLevel = (int) renderconfig::hzbLevel.get(),
         .debugView = static_cast<DebugView>(renderconfig::debugView.get()),
         .showBufferOverlay = renderconfig::bufferOverlay.get(),

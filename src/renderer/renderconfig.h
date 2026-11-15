@@ -11,8 +11,8 @@
 namespace renderconfig {
 
 // lightingpass.cpp
-extern config::Enum bufferView; // GBufferView, by gbufferViewNames
-extern config::Int hzbLevel;    // render.view.hzblevel: the pyramid level the hzb buffer view shows
+extern config::Enum viewMode; // ViewMode, by viewModeNames
+extern config::Int hzbLevel;  // render.view.hzblevel: the pyramid level the hzb view mode shows
 extern config::Bool bufferOverlay;
 extern config::Bool shadowOverlay;
 extern config::Vec3 ambientSky;

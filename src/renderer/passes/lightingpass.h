@@ -71,10 +71,10 @@ struct LightingInputs {
     std::optional<Sky> sky;
 };
 
-// The buffer views by name, in GBufferView's order: the `render.view.buffer` configuration's choices.
-inline constexpr std::array<const char*, 12> gbufferViewNames = {"lit", "albedo", "normals", "depth", "shadowfactor", "shadowmap", "shadowuv", "worldpos", "miplevel", "cascades", "lodlevel", "hzb"};
+// The view modes by name, in ViewMode's order: the `render.view.mode` configuration's choices.
+inline constexpr std::array<const char*, 12> viewModeNames = {"lit", "albedo", "normals", "depth", "shadowfactor", "shadowmap", "shadowuv", "worldpos", "miplevel", "cascades", "lodlevel", "hzb"};
 
-enum class GBufferView : int {
+enum class ViewMode : int {
     Lit = 0,
     Albedo,
     Normals,
@@ -114,7 +114,7 @@ public:
         uint32_t imageIndex,
         RhiSampler* sampler,
         const LightingInputs& lightInputs,
-        GBufferView viewMode,
+        ViewMode viewMode,
         FgTextureHandle hzbHandle,
         int hzbLevel,
         bool showOverlay,

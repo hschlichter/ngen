@@ -19,7 +19,7 @@ layout(location = 2) out uint outInstance;
 void main() {
     // A draw is a region's meshlets, whatever their instance: the texture differs within it.
     vec4 texColor = texture(textures[nonuniformEXT(fragTexture)], fragTexCoord);
-    // Alpha carries the mip level the sampler picked, for the mip level buffer view.
+    // Alpha carries the mip level the sampler picked, for the mip level view mode.
     float lod = textureQueryLod(textures[nonuniformEXT(fragTexture)], fragTexCoord).x;
     outAlbedo = vec4(texColor.rgb * fragColor, clamp(lod / 16.0, 0.0, 1.0));
 
