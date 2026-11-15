@@ -118,8 +118,8 @@ auto RenderThread::threadLoop() -> void {
         {
             PROFILE_ZONE("SceneGpuStats", Render);
             auto stats = renderer->sceneGpuStats();
-            stats.changeListsSubmitted = submitted.load(std::memory_order_acquire);
-            stats.changeListsDrawn = appliedUpTo;
+            stats.sceneChangesSubmitted = submitted.load(std::memory_order_acquire);
+            stats.sceneChangesDrawn = appliedUpTo;
             stats.gpuIdle = renderer->sceneGpuIdle();
             std::lock_guard lock(statsMutex);
             sceneStats = stats;

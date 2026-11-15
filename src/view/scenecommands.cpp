@@ -193,7 +193,7 @@ auto gpuSceneRecord(const ViewContext& view) -> Json {
     }
     return {
         {"frame", s.frame},
-        {"changeLists", {{"submitted", s.changeListsSubmitted}, {"drawn", s.changeListsDrawn}}},
+        {"sceneChanges", {{"submitted", s.sceneChangesSubmitted}, {"drawn", s.sceneChangesDrawn}}},
         {"gpuIdle", s.gpuIdle},
         {"tables", {{"drawSlots", s.drawSlots}, {"meshes", s.meshes}, {"materials", s.materials}, {"textures", s.textures}}},
         {"uploads",
@@ -599,7 +599,7 @@ auto registerSceneCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& r
     records.add("scenethread", "the scene thread: requests, composes and placement passes, assets in flight and held, and residency (the script's hold, the load's longest frame)", [&view](RpcResponder responder) {
         responder.respond(sceneThreadRecord(view));
     });
-    records.add("gpuscene", "the GPU scene's flow: change lists taken and drawn, the upload queue and its budget, the geometry pool and what waits for room, the last frame's commands summed over its passes, and the memory heaps", [&view](RpcResponder responder) {
+    records.add("gpuscene", "the GPU scene's flow: scene changes taken and drawn, the upload queue and its budget, the geometry pool and what waits for room, the last frame's commands summed over its passes, and the memory heaps", [&view](RpcResponder responder) {
         responder.respond(gpuSceneRecord(view));
     });
     records.add("instancers", "every PointInstancer reached while drawing: its points and those shown, its prototypes, and the prims its points draw", [&view](RpcResponder responder) {

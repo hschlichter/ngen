@@ -356,12 +356,12 @@ static auto formatUploadBytes(uint64_t bytes) -> std::string {
 }
 
 auto Renderer::growTables() -> void {
-    // Each frame, not only with a change list: a growth made on a background job is taken in the frame it is ready. Grown tables are new
+    // Each frame, not only with scene changes: a growth made on a background job is taken in the frame it is ready. Grown tables are new
     // buffers: the descriptor sets naming them are rewritten this frame.
     PROFILE_ZONE("GrowTables", Render);
     gpuScene.growInstances((uint32_t) gpuInstances.size(), m_frameIndex);
     if (gpuScene.instanceGeneration() != boundInstanceGeneration) {
-        // A growth taken here, in a frame without a change list, is a new instance buffer as much as one taken with the changes.
+        // A growth taken here, in a frame without scene changes, is a new instance buffer as much as one taken with the changes.
         boundInstanceGeneration = gpuScene.instanceGeneration();
         descriptorSetsDirty = true;
     }

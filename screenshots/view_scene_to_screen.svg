@@ -96,7 +96,7 @@
   <rect x="420" y="485" width="160" height="38" rx="8" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
   <text x="430" y="501" class="s">record</text>
   <text x="472" y="501" class="m">gpuscene</text>
-  <text x="430" y="516" class="s">changeLists</text>
+  <text x="430" y="516" class="s">sceneChanges</text>
 
   <!-- Stage 4: GPU scene -->
   <rect x="604" y="96" width="176" height="437" rx="10" fill="#fff7ed" stroke="#ea580c" stroke-opacity="0.45"/>
@@ -105,7 +105,7 @@
   <text x="644" y="123" class="h" fill="#ea580c">GPU scene</text>
   <text x="618" y="144" class="s">the render thread</text>
   <rect x="612" y="158" width="160" height="60" rx="7" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
-  <text x="622" y="178" class="b">change lists applied</text>
+  <text x="622" y="178" class="b">scene changes applied</text>
   <text x="622" y="195" class="s">the tables: draw slots,</text>
   <text x="622" y="210" class="s">meshes, materials, textures</text>
   <rect x="612" y="236" width="160" height="60" rx="7" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
@@ -137,7 +137,7 @@
   <text x="814" y="225" class="s">evaluated</text>
   <rect x="804" y="251" width="160" height="75" rx="7" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
   <text x="814" y="271" class="m">sceneDrawn()</text>
-  <text x="814" y="288" class="s">every change list applied</text>
+  <text x="814" y="288" class="s">all scene changes applied</text>
   <text x="814" y="303" class="s">in a finished frame; no</text>
   <text x="814" y="318" class="s">upload or pipeline pending</text>
   <line x1="884" y1="234" x2="884" y2="249" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>

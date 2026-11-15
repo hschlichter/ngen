@@ -87,7 +87,8 @@ Every program's `main` is in `src/apps/` (the build system's and the RHI example
 - **Material pack** — a `def Material`'s `UsdPreviewSurface` network flattened: base colour (constant or texture), cutout opacity.
 - **Mesh pack** — a prim's geometry: welded vertices, 32-bit indices, submeshes per `GeomSubset`, meshlets, bounds.
 - **Pack** (verb) — turn a source file into its engine-ready form; the process inside the asset system. **Pack** (noun) — a packed file,
-  usually a scene pack (layer, mesh or material pack).
+  usually a scene pack (layer, mesh or material pack). Other engines call the process *cooking*, and mean by a pack an archive of many assets
+  (`.pak`); here a pack is one file.
 - **Packed texture** — the `NGTX` format: a 28-byte header, an optional irradiance block, every mip level.
 - **Packer** — a standalone program for one asset type, run with a fixed argument contract (`--source`, `--out`, `--depfile`, `--param`).
 - **Pack rule** — an entry in the root `pack.cpp`: extensions, packer, parameters and a version to bump on a format change. Compiled into the
@@ -117,8 +118,9 @@ Every program's `main` is in `src/apps/` (the build system's and the RHI example
 - **Layer** — one USD file. **Root layer** — the scene's file. **Layer stack** — a layer and its sublayers, strongest first.
 - **Linked** — a content is linked (an instance's `prototype`, a level stand-in's `linkedContent`) only once it is complete; until then it is
   -1 and nothing reads it.
-- **Material key** — a bound material as its pack's asset id plus its inputs' values (`<asset>?<input>=<value>&…`); one pack used with
-  different inputs is one material per set of values.
+- **Material instance** — a material pack with one set of values for its inputs; one pack used with different inputs is one material
+  instance per set of values. Its **key** (`materialInstanceKey`) is the pack's asset id plus the values (`<asset>?<input>=<value>&…`), and is
+  what a binding names.
 - **Opinion** — a value a layer authors for an attribute or metadata; the strongest wins.
 - **Payload** — an arc whose target loads separately; in the engine, payloads under LOD levels are what streams.
 - **Pcp** — OpenUSD's prim cache population, the composition engine `WorldComposer` follows.
@@ -130,6 +132,8 @@ Every program's `main` is in `src/apps/` (the build system's and the RHI example
 - **Relink / resolution** — deciding after composing which level contents LOD roots link to, without composing the stage again
   (`WorldComposer::relink`).
 - **Release** — a kept content the resolution no longer reaches is emptied in place at once.
+- **Session opinion** — a value the view holds over the scene for this run only: a gizmo drag, `translate`, the LOD tuning. Never saved.
+  What USD keeps in a stage's session layer; the view holds no layer for it.
 - **Spec** — a prim's opinions in one layer (`def`, `over`, `class`).
 - **Stage** — USD's composed scene. In the World, the stage is the content holding the root layer stack's prims.
 - **Stand-in** — the entity in a LOD root's content for one of its levels, linked to the level's own content.
@@ -137,7 +141,6 @@ Every program's `main` is in `src/apps/` (the build system's and the RHI example
   editor code.
 - **Variant set / variant / selection** — named alternatives on a prim; the strongest `variants` opinion selects one. A set with no selection
   composes no variant.
-- **View-local opinion** — a value the view holds over the scene for this run only: a gizmo drag, `translate`, the LOD tuning. Never saved.
 - **World** — the runtime scene: every prim composed from layer packs, with no USD in it. `World::visit` walks it with full paths.
 - **WorldComposer** — composes layer packs into a World as Pcp composes a stage.
 
@@ -146,13 +149,17 @@ Every program's `main` is in `src/apps/` (the build system's and the RHI example
 `src/world/README.md` ("Loading"), `src/view/README.md` (residency, switching, the LOD and Streaming tools), `src/renderer/README.md`
 ("Render LOD").
 
+A *level* in this section, and wherever the engine says level without another word before it, is a LOD level. The engine has no level in the
+sense of a map; that is a scene.
+
 - **Authoring contract** — what a streaming world's thresholds must satisfy (a threshold per level boundary, imaging threshold ≤ load radius ≤
   unload radius, a child inside its parent). Checked by `checkLodAuthoring`; a violation is a *finding*, reported, never corrected.
 - **Blend band / blend thresholds** — UsdLod's `blendThresholds`: a range past a threshold where a render-LOD group cross-fades to the next
   level; a streaming root inside one wants the finer level.
 - **Bias** — a tuning factor: every root picks as if that many times closer.
-- **Cell** — the test world's word for a streaming root's area. **Region** (1 km, levels `full` and `proxy`) and **tile** (250 m, levels
-  `full` and `simplified`) are its two cell sizes, with asset LOD roots inside tiles.
+- **Cell** — the test world's word for a streaming root's area. **Region** (1 km, levels `full`, `medium` and `proxy`) and **tile** (250 m,
+  levels `full`, `medium` and `simplified`) are its two cell sizes, with asset LOD roots inside tiles. A cell's coarse levels (`proxy`,
+  `simplified`: merged, reduced stand-ins for everything in the cell) are what other engines call HLODs.
 - **Distance heuristic / screen-size heuristic** — UsdLod's two ways to measure a root: distance to a centre or box, or the extent's
   bounding sphere as a fraction of the view window. The view's *preference* picks one when a root names both.
 - **Domain** — what a heuristic decides: `imaging` (which level is drawn) or `streaming` (which levels are resident; the engine's own domain
@@ -168,11 +175,11 @@ Every program's `main` is in `src/apps/` (the build system's and the RHI example
   was selected.
 - **Load radius / unload radius** — a streaming heuristic's thresholds (load) and `streaming:unloadThresholds` (unload): a level becomes
   resident inside its load radius and stops past its unload radius.
-- **LOD level** — one child of a LOD root, finest first; level 0 is the finest.
+- **LOD level** — one child of a LOD root, finest first; level 0 is the finest. Never a map: what other engines call a level is a scene here.
 - **LOD root** — a prim with `LODRootAPI`; its levels are its defined, active children. Either a *streaming root* or a *render-LOD root*,
   decided by whether its levels have payloads.
 - **LOD tag** — the drawn level plus flags written to the normal target's alpha, which the LOD Level view colours.
-- **LOD tuning** — view-local threshold overrides, bias, hysteresis and blending (`view.lod.tuning`); kept until the view closes.
+- **LOD tuning** — session opinions: threshold overrides, bias, hysteresis and blending (`view.lod.tuning`); kept until the view closes.
 - **Pop** — a render-LOD group's drawn level changing without a fade; counted and flashed white for half a second.
 - **Prefetched** — a finer level resident ahead of being drawn.
 - **Ready** — a level whose placement waits for nothing: linked, and every mesh, material and texture its prims want held or failed.
@@ -196,14 +203,12 @@ Every program's `main` is in `src/apps/` (the build system's and the RHI example
 
 - **Arrival** — an asset the server answered, taken by the scene thread.
 - **Batch** — one round of the scene thread: the requests and arrivals it took, a compose, a placement pass, and a publish.
-- **Change list** / **`SceneChanges`** — what a placement pass changed (draw slots added, removed and updated, meshes, materials, textures,
-  lights, LOD groups); the main thread hands it to the render thread, which changes only that on the GPU.
 - **Draw** — one prim's submesh as drawn: a slot in `RenderWorld`, an instance on the GPU.
+- **Default light** — the distant light the view adds when a scene authors none.
 - **Draw slot** — a draw's index in `RenderWorld` and the GPU instance buffer; a draw keeps its slot while it exists.
-- **Engine light** — the distant light the view adds when a scene authors none.
 - **Framing** — until the scene is first resident, the camera frames what has arrived, unless moved by hand.
 - **Handle** — a 1-based index into a library (`MeshHandle`, `MaterialHandle`, `TextureHandle`, `PrimHandle`); never reused.
-- **Held** — a library entry a placement uses (drawn or an undrawn resident level), so switching to it uploads nothing.
+- **Held** — a library entry a placement uses (drawn or an undrawn resident LOD level), so switching to it uploads nothing.
 - **Hooks** (`ViewHooks`) — the points in `ViewFrame` where the tools (`ToolsHooks`) and the UI (`UiHooks`, wrapping the tools') join the frame:
   `afterScene`, `cameras`, `event`, `afterCamera`, `debugDraw`, `wantReadbacks`, `takeReadbacks`, `drawUi`, `fillSnapshot`.
 - **Library** (`AssetLibrary`: `MeshLibrary`, `MaterialLibrary`, `TextureLibrary`) — one immutable entry per asset; new content is a new entry
@@ -216,6 +221,8 @@ Every program's `main` is in `src/apps/` (the build system's and the RHI example
 - **Placement tree** — the placements as a tree: the stage, prototypes at instances, a placement per loaded level of each streaming root.
 - **Resident** (the scene) — everything the scene wants is loaded, uploaded and drawn, on both the scene and render threads (`SceneResident`).
   Script frames count only while nothing waits for it.
+- **Scene changes** (`SceneChanges`) — what a placement pass changed (draw slots added, removed and updated, meshes, materials, textures,
+  lights, LOD groups); the main thread hands it to the render thread, which changes only that on the GPU.
 - **Scene thread** — `ViewScene`'s thread: owns the composer, the packs and the libraries; composes, places and publishes.
 - **`SceneSnapshot`** — what the scene thread publishes; the main thread takes the latest once a frame and every query reads it.
 - **Script** — `--script=<file>`, lines of `<frame> <verb> [args]`; frames count from the first residency. The *script clock* holds while
@@ -385,6 +392,7 @@ Every program's `main` is in `src/apps/` (the build system's and the RHI example
 
 | Word | Meanings |
 |---|---|
+| batch | the scene thread's batch (one round); an upload batch (`UploadBatch`); a batch of events on the trace stream |
 | bucket | a culling bucket (single/double-sided × opaque/cutout); nothing else |
 | cell, region, tile | test-world streaming areas; *region* is also a culling (view, bucket) pair, *tile* a shadow-atlas cascade tile |
 | component | a World component (lights, LOD roots, instancers, payloads); a future gameplay component; a UI or software component in prose |
@@ -399,6 +407,7 @@ Every program's `main` is in `src/apps/` (the build system's and the RHI example
 | pass | a frame-graph pass (GPU work); a placement pass (scene thread) |
 | phase | occlusion culling's first and second phase |
 | record | an RPC record (named JSON data); a GPU instance, culling or draw record; an asset cache record; the `record` verb |
+| residency | a LOD level's residency (asked for by the camera's position); a render-LOD group's residency mask (which levels' meshes are in the geometry pool) |
 | resident | the scene being resident (everything loaded, uploaded, drawn); a LOD level being resident (loaded by residency) |
 | root | a LOD root; the root layer; the asset server's working directory (asset ids are relative to it) |
 | slot | a frame slot; a draw slot; a texture slot; a streaming root's slot (streaming view) |

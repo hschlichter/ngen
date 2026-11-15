@@ -72,7 +72,7 @@ public:
     // The table's growth (BufferGrowth), for the gpuscene record.
     auto growthStatus() const -> GrowthStatus { return growth.statusOf(capacity, groups.size()); }
 
-    // Applies a change list's groups: the table grows to `count` slots and the changed slots are uploaded at the next import. True when a
+    // Applies the groups of one `SceneChanges`: the table grows to `count` slots and the changed slots are uploaded at the next import. True when a
     // buffer was replaced, so the descriptor sets naming it are rewritten.
     auto apply(std::span<const std::pair<uint32_t, RenderLodGroup>> changes, uint32_t count, uint64_t frame) -> bool;
     auto groupCount() const -> uint32_t { return (uint32_t) groups.size(); }
@@ -147,7 +147,7 @@ private:
     uint32_t capacity = 0;
     // The next size, made on a background job once the groups pass render.growth.ahead of the capacity.
     BufferGrowth growth{"gpuscene.lodgroups", BufferGrowth::Behind::GrowNow};
-    std::vector<RenderLodGroup> groups; // by group slot, as the change lists left them
+    std::vector<RenderLodGroup> groups; // by group slot, as the scene changes left them
     std::vector<uint32_t> serials;      // by group slot
     RhiBuffer* table = nullptr;
     RhiBuffer* states = nullptr;

@@ -22,7 +22,7 @@ struct VisitState {
 
 } // namespace
 
-auto materialKey(const Entity& material) -> std::string {
+auto materialInstanceKey(const Entity& material) -> std::string {
     if (material.materialInputs.empty() || material.materialAsset.empty()) {
         return material.materialAsset;
     }
@@ -37,7 +37,7 @@ auto materialKey(const Entity& material) -> std::string {
     return key;
 }
 
-auto parseMaterialKey(const std::string& key) -> MaterialUse {
+auto parseMaterialInstanceKey(const std::string& key) -> MaterialUse {
     MaterialUse use;
     auto query = key.find('?');
     use.asset = key.substr(0, query);

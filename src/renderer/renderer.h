@@ -118,7 +118,7 @@ public:
     // render thread starts.
     auto setGeometryLimit(uint64_t bytes) -> void { gpuScene.setGeometryLimit(bytes); }
     auto setUploadBudget(uint64_t bytes) -> void { gpuScene.setUploadBudget(bytes); }
-    // The GPU scene's draw slots, tables, upload queue and pool, after a frame (the change list counts are the render thread's).
+    // The GPU scene's draw slots, tables, upload queue and pool, after a frame (the scene change counts are the render thread's).
     auto sceneGpuStats() const -> SceneGpuStats;
     // The GPU's allocations as Tracy's "GPU" memory pool, while a Tracy server is connected: what changed since the last report. Without a
     // server nothing is reported, and a server that connects later is told every live allocation. Render thread.

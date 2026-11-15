@@ -64,7 +64,7 @@ struct LodOverride {
     auto operator==(const LodOverride&) const -> bool = default;
 };
 
-// The view's LOD tuning: local opinions kept until the view closes, never saved (writing them to USD is the editor's).
+// The view's LOD tuning: session opinions kept until the view closes, never saved (writing them to USD is the editor's).
 // - bias: every root picks its level as if it were `bias` times closer (2: finer everywhere). Applied to the thresholds, the same pick: a
 //   distance's times the bias, a screen size's over its square; the measures shown stay what the camera sees.
 // - hysteresis: the margin at a boundary without a blend band, a fraction of a screen size.
@@ -343,7 +343,7 @@ public:
     // changed at its source is packed again (a change notice), and ids that aren't the scene's are left alone. With it, an asset that isn't
     // the scene's (a shader) is repacked only on the server.
     auto refresh(const std::vector<std::string>& ids, bool force = true) -> void;
-    // Replaces a prim's local transform, as a gizmo drag does: a local opinion of the view, kept until it closes, never saved. Moves
+    // Replaces a prim's local transform, as a gizmo drag does: a session opinion of the view, kept until it closes, never saved. Moves
     // what is drawn under the prim; false for a prim that isn't there or takes no transform (as the current snapshot has it).
     auto setLocalTransform(const std::string& path, const glm::mat4& local) -> bool;
 
@@ -472,7 +472,7 @@ private:
     auto reportAssets() -> void;
     auto publish() -> void;
     auto drawsPurpose(Purpose purpose) const -> bool;
-    // A bound material (its key, World's materialKey): its pack, when held, and its textures with its inputs' values applied (a texture
+    // A bound material (its key, World's materialInstanceKey): its pack, when held, and its textures with its inputs' values applied (a texture
     // whose file comes from an input takes the input's value where the material is used).
     struct ResolvedMaterial {
         const MaterialPack* pack = nullptr;
@@ -641,7 +641,7 @@ private:
 
     // Content walks (placement.h), kept by content, version and inherited state.
     std::unordered_map<std::string, std::shared_ptr<const ContentWalk>> walks;
-    // A content's walk afresh; `overrideBase`, when set, is where it is placed, to apply the gizmo's local opinions. `root`, when given, walks
+    // A content's walk afresh; `overrideBase`, when set, is where it is placed, to apply the gizmo's session opinions. `root`, when given, walks
     // that entity's subtree instead (a PointInstancer's prototype), the entity's path "/".
     auto buildWalk(const WorldContent& content, bool rootIsPrim, Purpose purpose, const std::string& material, bool strong, const std::string& overrideBase, EntityId root = noEntity)
         -> std::shared_ptr<const ContentWalk>;

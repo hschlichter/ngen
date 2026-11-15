@@ -133,7 +133,7 @@ live.
 |---|---|---|
 | `select /prim` | `view.select` | Select a prim; an empty path deselects. |
 | `pick <x> <y>` | `view.pick` | Select what is drawn at a framebuffer pixel (GPU readback; the `Picked` event names it). |
-| `translate /prim dx,dy,dz` | `view.translate` | Offset a prim's local position: the view's own opinion, never saved. |
+| `translate /prim dx,dy,dz` | `view.translate` | Offset a prim's local position: a session opinion of the view, never saved. |
 | `purposes guide=on\|off,proxy=on\|off` | `view.purposes` | Draw guide and proxy prims. Holds the script until drawn. |
 | `repack <id>...\|scene` | `view.repack` | Force the asset server to repack, and rebuild the scene. Holds the script until resident. |
 | `goto-asset <id> [all]` | `view.gotoAsset` | Move the camera to an asset's next draw (nearest first) and select it; `all` frames every draw. |
@@ -303,7 +303,7 @@ frames later; record them at steady state (frame 120 or later).
 | `scene` | Layer stack, up axis and units, prims, prototypes, draws, lights, LOD levels set. |
 | `environment` | The dome light, its image and the light it casts. |
 | `scenethread` | Requests, composes, placement passes, assets in flight and held, residency. |
-| `gpuscene` | Change lists, upload queue and budget, geometry pool. |
+| `gpuscene` | Scene changes, upload queue and budget, geometry pool. |
 | `instancers` | Every PointInstancer: points, those shown, prototypes. |
 | `variants` | Every prim with variant sets: the variant composed, counts per variant. |
 | `payloads` | Every payload placement: prim, asset ids, loaded, extentsHint. |

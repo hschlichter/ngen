@@ -1738,7 +1738,7 @@ struct WorldComposer::Impl {
                     messages.push_back(std::format("{}{}: material binding names {}, which isn't there", pending.content->sourcePath == "/" ? "" : pending.content->sourcePath + " ", pending.content->path(pending.entity), pending.path));
                     continue;
                 }
-                pending.content->entities[pending.entity].binding->materialAsset = materialKey(lookIn->entities[*found]);
+                pending.content->entities[pending.entity].binding->materialAsset = materialInstanceKey(lookIn->entities[*found]);
             }
         }
         profile::zoneValue(bindings);

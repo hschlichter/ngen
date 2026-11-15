@@ -26,7 +26,7 @@ the caller feeds the composer packs from the asset server.
   prims), its authored purpose and visibility, its local transform (types that are `UsdGeomXformable`), the mesh asset its geometry is and the
   material asset it is, its variant sets as composed (`variantSelections`: each set and the variant selected), and, for a material, its
   own inputs as composed (`materialInputs`, its interface), and its material binding (the
-  bound material as a key, `materialKey`: its pack's asset id and its inputs' values, `<asset>?<input>=<value>&…`, and
+  bound material instance as a key, `materialInstanceKey`: its pack's asset id and its inputs' values, `<asset>?<input>=<value>&…`, and
   `strongerThanDescendants`). A material that references another file's network and sets its inputs (a tile setting a library
   material's texture) is that file's pack with this one's values.
 - **Components** beside the entities, per content: lights (UsdLux's inputs, with UsdLux's fallbacks; a dome's image, its `texture:format` and its

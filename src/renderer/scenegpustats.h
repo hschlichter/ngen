@@ -73,14 +73,14 @@ struct RenderGrowthStats {
     double lastWaitMs = 0.0;
 };
 
-// The GPU scene's flow, published by the render thread after every frame, whatever window is open: the change lists it took from the main
+// The GPU scene's flow, published by the render thread after every frame, whatever window is open: the scene changes it took from the main
 // thread, the upload queue, and the geometry pool.
 struct SceneGpuStats {
     uint64_t frame = 0;
-    uint64_t changeListsSubmitted = 0;
-    uint64_t changeListsDrawn = 0; // applied by a finished frame
-    bool gpuIdle = true;           // that frame left nothing to upload
-    uint32_t drawSlots = 0;        // live and dead: slots are kept until reused
+    uint64_t sceneChangesSubmitted = 0;
+    uint64_t sceneChangesDrawn = 0; // applied by a finished frame
+    bool gpuIdle = true;            // that frame left nothing to upload
+    uint32_t drawSlots = 0;         // live and dead: slots are kept until reused
     uint32_t meshes = 0;
     uint32_t textures = 0;
     uint32_t materials = 0;

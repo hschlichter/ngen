@@ -252,7 +252,7 @@ auto SceneDraws::drawsByAsset() const -> const std::unordered_map<std::string, s
     return assetIndex;
 }
 
-// A use with a gizmo's local opinion under it is walked afresh, not taken from the kept walks.
+// A use with a gizmo's session opinion under it is walked afresh, not taken from the kept walks.
 auto ViewScene::overridesUnder(const std::string& usePath) const -> bool {
     if (localOverrides.empty()) {
         return false;
@@ -2018,7 +2018,7 @@ auto ViewScene::collectLights() -> void {
         return;
     }
     if (defaultLightPrim == 0) {
-        defaultLightPrim = allocPrim("/__DefaultEngineLight");
+        defaultLightPrim = allocPrim("/__DefaultLight");
     }
     bool zUp = w.upAxis == "Z";
     auto dir = zUp ? glm::normalize(glm::vec3(1.0f, 1.0f, 2.0f)) : glm::normalize(glm::vec3(1.0f, 2.0f, 1.0f));

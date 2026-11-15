@@ -27,7 +27,7 @@ public:
     auto submitSnapshot(RenderSnapshot snapshot) -> void;
     // Scene changes are applied in the order submitted; several submitted between frames are applied together.
     auto submitSceneChanges(SceneChanges changes) -> void;
-    // Every change list submitted has been applied and drawn, with nothing left to upload and no pipeline pending, as of the last frame
+    // All scene changes submitted have been applied and drawn, with nothing left to upload and no pipeline pending, as of the last frame
     // the render thread finished.
     auto sceneDrawn() const -> bool {
         auto submittedSoFar = submitted.load(std::memory_order_acquire);
@@ -35,7 +35,7 @@ public:
         return drawnSoFar == submittedSoFar && gpuIdle.load(std::memory_order_acquire);
     }
 
-    // The GPU scene's flow after the last finished frame: change lists, upload queue, geometry pool. Always published.
+    // The GPU scene's flow after the last finished frame: scene changes, upload queue, geometry pool. Always published.
     auto latestSceneGpuStats() -> SceneGpuStats {
         std::lock_guard lock(statsMutex);
         return sceneStats;
@@ -75,8 +75,8 @@ private:
     // Scene upload slot (separate channel)
     std::mutex uploadMutex;
     std::optional<SceneChanges> pendingChanges;
-    std::atomic<uint64_t> submitted{0}; // change lists submitted
-    std::atomic<uint64_t> drawnUpTo{0}; // change lists applied by a frame the render thread finished
+    std::atomic<uint64_t> submitted{0}; // scene changes submitted
+    std::atomic<uint64_t> drawnUpTo{0}; // scene changes applied by a frame the render thread finished
     std::atomic<bool> gpuIdle{true};    // that frame left nothing to upload
     std::mutex statsMutex;
     SceneGpuStats sceneStats;

@@ -228,7 +228,7 @@ Tables:
 **Uploads** (`GpuScene::addUploadPass`, the `SceneUpload` pass, before the culling passes):
 - **Per frame.** Each frame takes queued uploads in order, up to `uploadBudget` bytes (64 MiB; at least one upload, so a large texture level still
   goes, once its own staging is made, below). A texture's levels are separate uploads.
-- **Seen from outside.** After every frame the render thread publishes `SceneGpuStats` (`RenderThread::latestSceneGpuStats`): change lists
+- **Seen from outside.** After every frame the render thread publishes `SceneGpuStats` (`RenderThread::latestSceneGpuStats`): scene changes
   submitted and drawn, the tables' sizes, the upload queue (`GpuScene::uploadStats`: queued, budget, the last pass, textures waiting for their
   slot), the geometry pool, the last frame's commands summed over the passes that ran (`frameCommands`, `FrameGraph::frameStats`) and the
   device's memory heaps (`heaps`). Then it reports the device's allocations to Tracy's "GPU" memory pool while a Tracy server is connected
@@ -283,7 +283,7 @@ A table that outgrows its buffer gets a larger one, which takes hundreds of mill
   window's worker lanes as `BufferGrowth`, with the table's name inside. The Memory window lists the buffers, not the growths: a gap.
 
 `GpuInstance` is the CPU mirror the renderer keeps (`Renderer::gpuInstances`), by draw slot, in a `ChunkedList` (chunks of 4,096 that never
-move), so a growing slot count adds chunks and copies none. A change list's slots are written on the job workers a chunk each
+move), so a growing slot count adds chunks and copies none. The slots of one `SceneChanges` are written on the job workers a chunk each
 (`CopyChangedRange`): the changes are grouped by chunk first, in list order, so a slot changed twice in one list (lists are appended) ends
 as the last change says; the bucket counts and triangles are summed per range and added after. The culling groups' boxes
 (`DrawLists::updateGroupBounds`) are recomputed on the workers too (`GroupBoundsRange`), a dirty group each.

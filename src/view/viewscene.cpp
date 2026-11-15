@@ -636,7 +636,7 @@ auto ViewScene::reportAssets() -> void {
     assetsSinceReport = 0;
 }
 
-// A gizmo's move: the view's local opinion of the prim (localOverrides), kept until the scene closes. The placements holding the prim are
+// A gizmo's move: the view's session opinion of the prim (localOverrides), kept until the scene closes. The placements holding the prim are
 // built again in this batch's pass, walking it afresh with the opinion, and what is drawn under it moves with them.
 auto ViewScene::applyTransform(const std::string& path, const glm::mat4& local) -> void {
     PROFILE_ZONE_DETAIL("ApplyTransform", Scene);
@@ -1510,7 +1510,7 @@ auto ViewScene::mesh(const std::string& meshAsset) -> MeshHandle {
 // content is the same; content that changed (a repacked material or texture) makes a new entry.
 auto ViewScene::resolveMaterial(const std::string& key) const -> ResolvedMaterial {
     ResolvedMaterial resolved;
-    auto use = parseMaterialKey(key);
+    auto use = parseMaterialInstanceKey(key);
     resolved.packId = use.asset;
     auto pack = materialPacks.find(use.asset);
     if (pack == materialPacks.end()) {

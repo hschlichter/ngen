@@ -69,13 +69,13 @@ struct Entity {
 
 // A material as a binding names it: its pack's asset id and, when it has inputs, their values, as "<asset>?<input>=<value>&<input>=<value>"
 // (inputs by name). Materials with the same pack and the same values are the same material.
-auto materialKey(const Entity& material) -> std::string;
+auto materialInstanceKey(const Entity& material) -> std::string;
 struct MaterialUse {
     std::string asset;                                       // the material pack
     std::vector<std::pair<std::string, std::string>> inputs; // its inputs' values where it is used
     auto input(const std::string& name) const -> std::optional<std::string>;
 };
-auto parseMaterialKey(const std::string& key) -> MaterialUse;
+auto parseMaterialInstanceKey(const std::string& key) -> MaterialUse;
 
 enum class LightShape : uint8_t {
     Distant,

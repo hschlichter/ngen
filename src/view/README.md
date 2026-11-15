@@ -99,7 +99,7 @@ cutout whose opacity texture is still uploading draws opaque. A material that ha
 **Resident.** The scene is resident when everything it wants is loaded, uploaded and drawn:
 - the scene thread has nothing queued, requested or unplaced, no camera posted it hasn't evaluated, and no batch it took and hasn't
   published (so a moved camera's levels count: while the camera moves, the scene isn't resident);
-- the render thread has applied every change list in a frame it finished, with no upload or pipeline pending.
+- the render thread has applied all scene changes in a frame it finished, with no upload or pipeline pending.
 
 `ViewFrame::updateResidency` checks once a frame, and traces `SceneResident` when it becomes true, with the time since start and the longest frame while
 loading.
@@ -170,7 +170,7 @@ do its draws: only where it is placed.
   levels, the hand-set levels, the tuning) is shared with the snapshot before until it changes, so a snapshot published for a camera move
   copies, and later frees, little more than the LOD choices.
 - **Freed off the main thread.** A snapshot the main thread lets go of (`update` takes the next) goes back to the scene thread, which frees
-  it on its next wake without publishing; one the main thread never took is freed after the lock, and a change list joins the pending
+  it on its next wake without publishing; one the main thread never took is freed after the lock, and a `SceneChanges` joins the pending
   one by moving its lists when that is empty. So `update` and `takeChanges` swap pointers under the lock and wait on nothing large.
 
 - **What is drawn**: entities that are active, defined and not abstract, visible (an invisible ancestor hides its subtree), not in a LOD
@@ -181,15 +181,16 @@ do its draws: only where it is placed.
   The prototype's walk (rooted at the prototype, in the instancer's content) is kept once and used per point; a point's draws have a path
   of their own, `<prototype>#<id>`, and no transform for the queries. A prototype beneath its instancer draws only through it. A level
   waits for its prototypes' meshes as for its own. An instancer is one placement, its points' draws its own.
-- **Materials**: a material is its binding's key (`parseMaterialKey`): the pack, and the values of the inputs its textures take their files from
-  (`resolveMaterial`), so one pack used with different inputs is one material per set of values. A mesh's bound material, and each `GeomSubset`'s own
+- **Materials**: a material is a material instance, named by its binding's key (`parseMaterialInstanceKey`): the pack, and the values of the
+  inputs its textures take their files from
+  (`resolveMaterial`), so one pack used with different inputs is one material instance per set of values. A mesh's bound material, and each `GeomSubset`'s own
   binding for its submesh, unless an ancestor's binding is `strongerThanDescendants`. A material's texture, else its base colour, else the mesh's
   display colour; a constant colour is a 1x1 texture. A mesh with no material bound gets one per display colour, shared. A cutout material's opacity
   texture is fetched with its base colour texture and counts as used by its draws (`drawsOf`).
 - **Transforms**: in float, parent times local, then scaled to metres by the root layer's `metersPerUnit`, as the view always drew; the
   camera's up is the scene's up axis. A prim's transform for the queries (`transform`, selection, the gizmo) is found in the published tree
   (`findTransform`): the deepest drawn placement at or above the path that holds it, the prim's transform in its walk, placed. A gizmo's
-  move is the view's local opinion of the prim; the placements holding it are built again in the same batch, and what is under it moves.
+  move is the view's session opinion of the prim; the placements holding it are built again in the same batch, and what is under it moves.
   A path's bounds (`bounds`: the selection's box and gizmo, framing, go-to) walk the published tree down to the path, not every draw:
   each placement's whole bounds are kept from one snapshot to the next (`PlacementBounds`), since a node once published is never changed in
   place, so while the camera moves only the placements a snapshot replaced are walked again. On Eldermark with `/World/Regions` selected:
@@ -319,7 +320,7 @@ do its draws: only where it is placed.
     authored root, state and why; every heuristic it authors, used or why not, its thresholds authored and in force, its measure from the
     camera now and the level it would pick under the tuning; every level's triangles and draws (a group's from its slots; a streaming
     root's drawn level only).
-  - *Tuning*, view-local opinions kept until the view closes, never saved (`LodTuning`, a `TuningRequest`): thresholds and blend thresholds
+  - *Tuning*, session opinions kept until the view closes, never saved (`LodTuning`, a `TuningRequest`): thresholds and blend thresholds
     per heuristic of an authored root (`view.lod.override`, `lod-thresholds <root> [h=<i>] <t>…`, `lod-blend-thresholds`; reset with
     `view.lod.override.reset`, `lod-override-reset [<root>]`), keyed by `lodRootKey` (the content the root is authored in and its path
     there: every instance of an instanceable asset shares one; a root reached through a plain reference is its own); a bias (`lod-bias`:
@@ -397,8 +398,8 @@ From the asset server to the screen, stage by stage in the order data flows:
 2. **Scene thread**: requests posted and applied, batches, composes and placement passes (count, whether one is needed, the placements and
    those drawn, the last changing pass's time, placements built and slots added, removed and updated, walks built and kept), assets in flight
    by kind, packs held, library entries, idle.
-3. **Change lists**: what a placement pass changed, which the main thread takes each frame and hands to the render thread.
-4. **GPU scene** (render thread): change lists submitted and drawn, the tables, the upload queue (queued, budget, the last SceneUpload pass)
+3. **Scene changes**: what a placement pass changed, which the main thread takes each frame and hands to the render thread.
+4. **GPU scene** (render thread): scene changes submitted and drawn, the tables, the upload queue (queued, budget, the last SceneUpload pass)
    and the geometry pool (use against capacity and limit, meshes waiting for room).
 5. **Residency**: resident or loading, the script's hold, and the last load's frames and longest frame.
 

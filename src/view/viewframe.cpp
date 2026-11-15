@@ -491,7 +491,7 @@ auto ViewFrame::plotFrame() -> void {
     PROFILE_PLOT("Meshes", Render, Number, gpu.meshes);
     PROFILE_PLOT("Textures", Render, Number, gpu.textures);
     PROFILE_PLOT("Materials", Render, Number, gpu.materials);
-    PROFILE_PLOT("Change lists waiting", Render, Number, gpu.changeListsSubmitted - gpu.changeListsDrawn);
+    PROFILE_PLOT("Scene changes waiting", Render, Number, gpu.sceneChangesSubmitted - gpu.sceneChangesDrawn);
     bool uploaded = gpu.uploads.lastFrame != plottedUploadFrame;
     plottedUploadFrame = gpu.uploads.lastFrame;
     PROFILE_PLOT("Upload bytes", Upload, Bytes, uploaded ? gpu.uploads.lastBytes : 0);
