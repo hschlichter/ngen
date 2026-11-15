@@ -114,11 +114,11 @@ private:
 
     // `forceRequest` is the request that forces a repack of the asset, 0 for none.
     auto subscribe(const std::string& id, Subscriber subscriber, int64_t forceRequest) -> void;
-    // Packs an asset if it is out of date: "<file>" or "<file>#<fragment>", a secondary output of <file>'s job.
+    // Packs an asset if it is out of date: "<file>" or "<file>#<fragment>", a sub-asset of <file>'s job.
     // Packs the asset when its cache is stale, or once per forcing request (`forceRequest`, 0 for none): the outputs of one file, forced
     // together, pack it once.
     auto pack(const std::string& id, int64_t forceRequest) -> Outcome;
-    // Runs a file's packer and records its outputs, primary and secondary.
+    // Runs a file's packer and records its outputs, the file's own and its sub-assets.
     auto runPacker(const std::string& primary, const PackRule& rule, uint64_t key) -> Outcome;
     auto deliver(const std::string& id, const Outcome& outcome) -> void;
     auto pump(RpcServer::ConnectionId connection) -> void;

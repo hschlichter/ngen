@@ -89,27 +89,27 @@ auto writePackerFile(const std::string& path, std::span<const std::byte> bytes) 
     return {};
 }
 
-auto secondaryOutputFile(const std::string& out, const std::string& fragment) -> std::string {
+auto subAssetPath(const std::string& out, const std::string& fragment) -> std::string {
     std::string name = fragment;
     std::ranges::replace(name, '/', '.');
     return out + "#" + name;
 }
 
-auto secondaryOutputsList(const std::string& out) -> std::string {
+auto subAssetsList(const std::string& out) -> std::string {
     return out + ".outputs";
 }
 
-auto clearSecondaryOutputs(const std::string& out) -> void {
+auto clearSubAssets(const std::string& out) -> void {
     std::error_code ec;
-    for (const auto& [id, file] : readSecondaryOutputs(out)) {
+    for (const auto& [id, file] : readSubAssets(out)) {
         std::filesystem::remove(file, ec);
     }
-    std::filesystem::remove(secondaryOutputsList(out), ec);
+    std::filesystem::remove(subAssetsList(out), ec);
 }
 
-auto writeSecondaryOutputs(const std::string& out, const std::vector<std::pair<std::string, std::string>>& outputs) -> std::expected<void, std::string> {
-    PROFILE_ZONE_DETAIL("WriteSecondaryOutputs", Io);
-    auto path = secondaryOutputsList(out);
+auto writeSubAssets(const std::string& out, const std::vector<std::pair<std::string, std::string>>& outputs) -> std::expected<void, std::string> {
+    PROFILE_ZONE_DETAIL("WriteSubAssets", Io);
+    auto path = subAssetsList(out);
     std::ofstream list(path, std::ios::trunc);
     for (const auto& [id, file] : outputs) {
         list << id << '\t' << file << '\n';
@@ -120,9 +120,9 @@ auto writeSecondaryOutputs(const std::string& out, const std::vector<std::pair<s
     return {};
 }
 
-auto readSecondaryOutputs(const std::string& out) -> std::vector<std::pair<std::string, std::string>> {
+auto readSubAssets(const std::string& out) -> std::vector<std::pair<std::string, std::string>> {
     std::vector<std::pair<std::string, std::string>> outputs;
-    std::ifstream list(secondaryOutputsList(out));
+    std::ifstream list(subAssetsList(out));
     std::string line;
     while (std::getline(list, line)) {
         auto tab = line.find('\t');

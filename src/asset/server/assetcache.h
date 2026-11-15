@@ -18,7 +18,7 @@
 // recorded file still hashes the same. A file whose size and modification time are unchanged is taken as
 // unchanged without re-hashing it.
 //
-// A job's secondary outputs ("<id>#<fragment>") are kept in its record, each with its packed file: they share the job's packer and
+// A job's sub-assets ("<id>#<fragment>") are kept in its record, each with its packed file: they share the job's packer and
 // inputs, and are up to date when those are and their own file is.
 //
 // Stored as text in .ngen-assets/<platform>/<config>/.ngen-assetcache, rewritten through a temporary file and a rename at most once a
@@ -38,7 +38,7 @@ public:
         File packer;
         std::vector<File> inputs;
         File output;
-        std::vector<std::pair<std::string, File>> secondaries; // id and packed file
+        std::vector<std::pair<std::string, File>> subAssets; // id and packed file
     };
 
     AssetCache() = default;
@@ -51,7 +51,7 @@ public:
     // Saves now when anything changed since the last save; the server calls it when it stops.
     auto flush() -> void;
 
-    // How many assets have a record, secondary outputs included.
+    // How many assets have a record, sub-assets included.
     auto size() -> size_t;
 
     // Every job's record, by its primary asset id, sorted.
@@ -60,14 +60,14 @@ public:
     // The packed file's hash when the asset is up to date for this job; nullopt otherwise.
     auto upToDate(const std::string& id, uint64_t jobKey) -> std::optional<uint64_t>;
 
-    // Records a finished job; the cache is saved within a second. `inputs` are the source and the depfile's files; `secondaries` the job's
-    // secondary outputs (id and file), kept in the job's record; they replace those an earlier run of the job wrote. Returns the packed file's hash, or nullopt when a file can't be read.
+    // Records a finished job; the cache is saved within a second. `inputs` are the source and the depfile's files; `subAssets` the job's
+    // sub-assets (id and file), kept in the job's record; they replace those an earlier run of the job wrote. Returns the packed file's hash, or nullopt when a file can't be read.
     auto record(const std::string& id,
                 uint64_t jobKey,
                 const std::string& packer,
                 const std::vector<std::string>& inputs,
                 const std::string& output,
-                const std::vector<std::pair<std::string, std::string>>& secondaries = {}) -> std::optional<uint64_t>;
+                const std::vector<std::pair<std::string, std::string>>& subAssets = {}) -> std::optional<uint64_t>;
 
     // The packed file recorded for an asset; nullopt when it has no record.
     auto outputPath(const std::string& id) -> std::optional<std::string>;
@@ -76,15 +76,15 @@ public:
     auto filesOf(const std::string& id) -> std::vector<std::string>;
 
 private:
-    // The record holding an asset (its own, or its job's for a secondary output) and the asset's packed file; null when none.
+    // The record holding an asset (its own, or its job's for a sub-asset) and the asset's packed file; null when none.
     auto find(const std::string& id) -> std::pair<const Record*, const File*>;
     auto save() -> void;
     auto saveLoop() -> void;
 
     std::mutex mutex;
     std::filesystem::path file;
-    std::unordered_map<std::string, Record> records;          // by primary id
-    std::unordered_map<std::string, std::string> secondaryOf; // secondary id to its job's primary id
+    std::unordered_map<std::string, Record> records;         // by primary id
+    std::unordered_map<std::string, std::string> subAssetOf; // sub-asset id to its job's primary id
     bool dirty = false;
     bool stopping = false;
     std::condition_variable changed;

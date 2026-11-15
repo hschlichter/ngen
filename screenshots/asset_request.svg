@@ -65,7 +65,7 @@
   <line x1="500" y1="392" x2="848" y2="392" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
   <rect x="745" y="408" width="210" height="46" rx="8" fill="#ffffff" stroke="#db2777" stroke-opacity="0.6"/>
   <text x="850" y="427" class="s" text-anchor="middle">writes --out and the depfile;</text>
-  <text x="850" y="442" class="s" text-anchor="middle">USD: secondary outputs too</text>
+  <text x="850" y="442" class="s" text-anchor="middle">USD: sub-assets too</text>
   <text x="838" y="478" class="edge" text-anchor="end">exit 0, or nonzero and its output</text>
   <line x1="850" y1="486" x2="502" y2="486" stroke="#475569" stroke-width="1.6" stroke-dasharray="6 4" marker-end="url(#arrow)"/>
   <rect x="400" y="500" width="200" height="30" rx="8" fill="#ffffff" stroke="#db2777" stroke-opacity="0.6"/>

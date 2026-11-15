@@ -311,7 +311,7 @@ auto AssetServer::addRecords() -> void {
     records.add("rules", "the pack rules from pack.cpp: extensions, packer, parameters, version", [this](RpcResponder responder) {
         responder.respond(rulesRecord());
     });
-    records.add("cache", "every packed asset: hash, packer, inputs, the packed file and its secondary outputs", [this](RpcResponder responder) {
+    records.add("cache", "every packed asset: hash, packer, inputs, the packed file and its sub-assets", [this](RpcResponder responder) {
         responder.respond(cacheRecord());
     });
     records.add("requests", "asset requests in flight, and the most recent finished ones", [this](RpcResponder responder) {
@@ -425,9 +425,9 @@ auto AssetServer::cacheRecord() -> rpc::Json {
         for (const auto& input : record.inputs) {
             inputs.push_back(fileJson(input));
         }
-        auto secondaries = rpc::Json::array();
-        for (const auto& [secondaryId, secondaryFile] : record.secondaries) {
-            secondaries.push_back({{"id", secondaryId}, {"hash", hashText(secondaryFile.hash)}, {"output", fileJson(secondaryFile)}});
+        auto subAssets = rpc::Json::array();
+        for (const auto& [subAssetId, subAssetFile] : record.subAssets) {
+            subAssets.push_back({{"id", subAssetId}, {"hash", hashText(subAssetFile.hash)}, {"output", fileJson(subAssetFile)}});
         }
         assets.push_back({
             {"id", id},
@@ -435,7 +435,7 @@ auto AssetServer::cacheRecord() -> rpc::Json {
             {"packer", fileJson(record.packer)},
             {"inputs", inputs},
             {"output", fileJson(record.output)},
-            {"secondaries", secondaries},
+            {"subAssets", subAssets},
         });
     }
     return {{"directory", cacheDirectory.string()}, {"assets", assets}};
@@ -496,7 +496,7 @@ auto AssetServer::subscribe(const std::string& id, Subscriber subscriber, int64_
 auto AssetServer::pack(const std::string& id, int64_t forceRequest) -> Outcome {
     PROFILE_ZONE("Pack", Assets);
     Outcome outcome;
-    // "<file>#<fragment>" names a secondary output of <file>'s job: a mesh or material the file defines.
+    // "<file>#<fragment>" names a sub-asset of <file>'s job: a mesh or material the file defines.
     auto hash = id.find('#');
     auto primary = id.substr(0, hash);
     if (!validId(primary)) {
@@ -600,8 +600,8 @@ auto AssetServer::runPacker(const std::string& primary, const PackRule& rule, ui
         argv.push_back("--param");
         argv.push_back(name + "=" + value);
     }
-    // A job writes its secondary outputs afresh; an earlier run's list would name files that may no longer exist.
-    clearSecondaryOutputs(output);
+    // A job writes its sub-assets afresh; an earlier run's list would name files that may no longer exist.
+    clearSubAssets(output);
     logLine("  {}  packing with {}", primary, rule.packer);
     packerRuns++;
     auto started = std::chrono::steady_clock::now();
@@ -630,9 +630,9 @@ auto AssetServer::runPacker(const std::string& primary, const PackRule& rule, ui
             inputs.push_back(dep);
         }
     }
-    auto secondaries = readSecondaryOutputs(output);
+    auto subAssets = readSubAssets(output);
     PROFILE_ZONE_DETAIL("CacheRecord", Io);
-    auto hash = cache.record(primary, key, packer, inputs, output, secondaries);
+    auto hash = cache.record(primary, key, packer, inputs, output, subAssets);
     if (!hash) {
         outcome.errors.push_back(std::format("{}: cannot hash the packer's inputs or outputs", primary));
         logWarning("  {}  failed: cannot hash the packer's inputs or outputs", primary);
@@ -644,14 +644,14 @@ auto AssetServer::runPacker(const std::string& primary, const PackRule& rule, ui
     outcome.path = output;
     std::error_code ec;
     auto size = fs::file_size(output, ec);
-    if (secondaries.empty()) {
+    if (subAssets.empty()) {
         logLine("  {}  packed in {} ms, {}, {} inputs ({})", primary, millisSince(started), bytesText(ec ? 0 : size), inputs.size(), hashText(*hash));
     } else {
         logLine("  {}  packed in {} ms, {} and {} more outputs, {} inputs ({})",
                 primary,
                 millisSince(started),
                 bytesText(ec ? 0 : size),
-                secondaries.size(),
+                subAssets.size(),
                 inputs.size(),
                 hashText(*hash));
     }

@@ -81,8 +81,7 @@ Every program's `main` is in `src/apps/` (the build system's and the RHI example
 - **Depfile** — the Make-format list of every file a packer read; with the job key, what the up-to-date check compares.
 - **Discovery** — `.ngen-discovery/<kind>-<pid>.json` files an endpoint writes in its working directory, so processes in the same directory find
   each other. See [RPC](#runtime-access-rpc-records-log-profile-cvars).
-- **Fragment / secondary output** — an asset a file's job writes besides the file itself, with the id `<file>#<fragment>`: a USD file's meshes
-  and materials are `<file>#<prim path>`.
+- **Fragment** — the part of a sub-asset's id after the `#`: for a USD file's meshes and materials, the prim path.
 - **Job** — one run of a packer for one source file; one job per file at a time, shared by every request for any of its ids.
 - **Job key** — a rule's name, version, parameters and packer name; part of the up-to-date check.
 - **Layer pack** — one USD file's own opinions, as written (no composition), in the scene pack format. The asset whose id is the file.
@@ -97,6 +96,8 @@ Every program's `main` is in `src/apps/` (the build system's and the RHI example
   asset server.
 - **Repack** — ask the server to pack assets again even when its cache is up to date (`force`); the view's Assets window and `repack` console command.
 - **Scene pack** — the binary `NGPK` format for layer, mesh and material packs: a header, a string table and typed sections.
+- **Sub-asset** — an asset a file's job writes besides the file itself, with the id `<file>#<fragment>`: a USD file's meshes and materials
+  are `<file>#<prim path>`.
 
 ## USD and composition
 

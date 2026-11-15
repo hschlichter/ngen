@@ -17,9 +17,9 @@
 // A packer reads --source, writes the packed asset to --out, and writes a Make-format depfile listing every file it
 // read to --depfile. It exits nonzero, with a message on stderr, when it fails.
 //
-// A packer may also write secondary outputs: assets the same source defines, with ids "<asset>#<fragment>". It writes
-// each to secondaryOutputFile(out, fragment) and lists them all in <out>.outputs, one "<id>\t<file>" line each
-// (writeSecondaryOutputs); the asset server records them with the job.
+// A packer may also write sub-assets: assets the same source defines, with ids "<asset>#<fragment>". It writes
+// each to subAssetPath(out, fragment) and lists them all in <out>.outputs, one "<id>\t<file>" line each
+// (writeSubAssets); the asset server records them with the job.
 struct PackerArgs {
     std::string rule;
     uint32_t ruleVersion = 0;
@@ -43,18 +43,18 @@ auto readPackerFile(const std::string& path) -> std::expected<std::vector<std::b
 // Writes a whole file; an error message when it can't.
 auto writePackerFile(const std::string& path, std::span<const std::byte> bytes) -> std::expected<void, std::string>;
 
-// Where a secondary output with this fragment goes, beside the primary output `out`: "<out>#" followed by the fragment with
+// Where a sub-asset with this fragment goes, beside the primary output `out`: "<out>#" followed by the fragment with
 // every '/' written as '.', so a prim path's outputs never collide with each other (a USD prim name has no '.').
-auto secondaryOutputFile(const std::string& out, const std::string& fragment) -> std::string;
+auto subAssetPath(const std::string& out, const std::string& fragment) -> std::string;
 
-// The list of secondary outputs, "<out>.outputs".
-auto secondaryOutputsList(const std::string& out) -> std::string;
+// The list of sub-assets, "<out>.outputs".
+auto subAssetsList(const std::string& out) -> std::string;
 
-// Removes the secondary outputs an earlier run of this job wrote, and its list.
-auto clearSecondaryOutputs(const std::string& out) -> void;
+// Removes the sub-assets an earlier run of this job wrote, and its list.
+auto clearSubAssets(const std::string& out) -> void;
 
-// Writes <out>.outputs: one "<id>\t<file>" line per secondary output.
-auto writeSecondaryOutputs(const std::string& out, const std::vector<std::pair<std::string, std::string>>& outputs) -> std::expected<void, std::string>;
+// Writes <out>.outputs: one "<id>\t<file>" line per sub-asset.
+auto writeSubAssets(const std::string& out, const std::vector<std::pair<std::string, std::string>>& outputs) -> std::expected<void, std::string>;
 
 // Reads <out>.outputs; empty when there is none.
-auto readSecondaryOutputs(const std::string& out) -> std::vector<std::pair<std::string, std::string>>;
+auto readSubAssets(const std::string& out) -> std::vector<std::pair<std::string, std::string>>;

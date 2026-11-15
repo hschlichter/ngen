@@ -22,7 +22,7 @@ else about assets.
 
 An asset's id is its source path relative to the asset server's working directory, with forward slashes, as USD names assets: `shaders/gbuffer.mesh`,
 `assets/textures/brick.png`.
-A file can define more assets than itself: a packer may write **secondary outputs**, each its own asset with the id `<file>#<fragment>`, packed by
+A file can define more assets than itself: a packer may write **sub-assets**, each its own asset with the id `<file>#<fragment>`, packed by
 the file's job. A USD file's meshes and materials are `assets/layered/base.usda#/World/Group/Own`: the file, `#`, the prim path in it.
 The id never changes when the asset's content does. The asset's **content hash** is the hash of its packed file (FNV-1a 64, `assethash.h`), sent as
 16 hex digits.
@@ -89,7 +89,7 @@ is in, `_out/<platform>/<config>/`. It uses nothing from `src/build/`: its own c
     failed, or a `<file>#<fragment>` id the file's job didn't write
 - **`asset.changed`** `{ids: [...]}`, a notification the server sends by itself: the sources of these assets, which the connection received,
   changed (below, "Change notices").
-- **Secondary outputs.** An id with a `#` is served by its file's job: the rule is the file's, and the file is packed (once, for every id of it in
+- **Sub-assets.** An id with a `#` is served by its file's job: the rule is the file's, and the file is packed (once, for every id of it in
   flight) when it is out of date. One file is packed by one job at a time.
 - **Bulk and shared.** A request's assets are packed in parallel on one worker per hardware thread. An id already being packed, for any client, is
   not packed twice; the result goes to every request that asked.
@@ -136,7 +136,7 @@ from (`server/assetcache.*`):
 
 ![The up-to-date check: the job key, then per recorded file size and mtime, then the content hash; any mismatch repacks](../../screenshots/asset_cache_check.svg)
 
-A job's secondary outputs are kept in its record, each with its packed file: they share the job's packer and inputs, and are up to date when
+A job's sub-assets are kept in its record, each with its packed file: they share the job's packer and inputs, and are up to date when
 those are and their own file is. When the file is packed again, its new list replaces the old one.
 
 The cache file is rewritten through a temporary file and a rename at most once a second while records change, and when the server stops.
@@ -158,8 +158,8 @@ It reads `--source`, writes the packed asset to `--out`, and writes a Make-forma
 nonzero, with a message on stdout or stderr, when it fails. What it prints on stdout when it succeeds is a warning, in the server's log.
 `pack/packer.h` parses the arguments.
 
-A packer with secondary outputs writes each to `secondaryOutputFile(out, fragment)` (`<out>#<fragment>`, `/` replaced by `.`) and lists them in
-`<out>.outputs`, one `<id>\t<file>` line each (`writeSecondaryOutputs`). The server records what the list names, and only that.
+A packer with sub-assets writes each to `subAssetPath(out, fragment)` (`<out>#<fragment>`, `/` replaced by `.`) and lists them in
+`<out>.outputs`, one `<id>\t<file>` line each (`writeSubAssets`). The server records what the list names, and only that.
 
 | Program | Packs | Output |
 |---|---|---|
@@ -270,4 +270,4 @@ view uses it for its scene argument, which is an id, and the USD resolver for ev
    `--depfile`.
 2. Add a program target linking the `packer` library in `build.cpp`, and make `ngen-asset-server` depend on it.
 3. Add a rule for its extensions in `pack.cpp`.
-4. If it writes secondary outputs, list them as the contract says; the server picks them up from the list.
+4. If it writes sub-assets, list them as the contract says; the server picks them up from the list.
