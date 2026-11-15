@@ -55,7 +55,7 @@ struct RendererState {
     RhiFormat swapchainFormat = RhiFormat::Undefined;
     uint32_t swapchainImages = 0;
     const GpuScene* gpuScene = nullptr;
-    const ChunkedList<GpuInstance>* instances = nullptr; // by draw slot
+    const ChunkedList<GpuInstance>* instances = nullptr; // by instance slot
     uint32_t culledInstances = 0;                        // by the camera, from the latest readback the last frame used
     uint32_t lightCount = 0;
     bool hasSun = false; // the lighting's pick in the last frame
@@ -95,7 +95,7 @@ public:
     auto pipelinesFailed() const -> bool { return pipelineRegistry.anyFailed(); }
     // Thread-safe: every pipeline and its state, for the `pipelines` record.
     auto pipelineInfos() const -> std::vector<PipelineInfo> { return pipelineRegistry.infos(); }
-    // Applies what changed in the scene to the GPU scene: meshes, textures and materials added and removed, draw slots changed, lights.
+    // Applies what changed in the scene to the GPU scene: meshes, textures and materials added and removed, instance slots changed, lights.
     // Uploads are queued and recorded a budget per frame; nothing waits.
     auto applySceneChanges(const SceneChanges& changes) -> void;
     // Records every queued upload and waits for it.
@@ -118,7 +118,7 @@ public:
     // render thread starts.
     auto setGeometryLimit(uint64_t bytes) -> void { gpuScene.setGeometryLimit(bytes); }
     auto setUploadBudget(uint64_t bytes) -> void { gpuScene.setUploadBudget(bytes); }
-    // The GPU scene's draw slots, tables, upload queue and pool, after a frame (the scene change counts are the render thread's).
+    // The GPU scene's instance slots, tables, upload queue and pool, after a frame (the scene change counts are the render thread's).
     auto sceneGpuStats() const -> SceneGpuStats;
     // The GPU's allocations as Tracy's "GPU" memory pool, while a Tracy server is connected: what changed since the last report. Without a
     // server nothing is reported, and a server that connects later is told every live allocation. Render thread.
@@ -149,8 +149,8 @@ private:
     std::vector<void*> uniformBuffersMapped;
 
     // Scene GPU resources
-    ChunkedList<GpuInstance> gpuInstances; // by draw slot; chunks, so growing moves none
-    uint64_t sceneTriangles = 0;           // every draw slot's triangles, culled or not: kept as the slots change, not summed each frame
+    ChunkedList<GpuInstance> gpuInstances; // by instance slot; chunks, so growing moves none
+    uint64_t sceneTriangles = 0;           // every instance slot's triangles, culled or not: kept as the slots change, not summed each frame
     bool descriptorSetsDirty = false;      // a buffer they name was replaced; rewritten at the next frame
     uint32_t debugCulledInstances = 0;     // from the last snapshot, for the debug window
     RhiSampler* materialSampler = nullptr;

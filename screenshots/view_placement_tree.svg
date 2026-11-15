@@ -17,7 +17,7 @@
   </defs>
   <rect x="0" y="0" width="1000" height="720" rx="14" fill="#f8fafc" stroke="#e2e8f0"/>
   <text x="28" y="40" class="title">ngen-view: the placement tree</text>
-  <text x="28" y="62" class="s" style="font-size:12px">A worked example: what a placement pass builds from the World (placement.h), and the draw slots its placements take in RenderWorld.</text>
+  <text x="28" y="62" class="s" style="font-size:12px">A worked example: what a placement pass builds from the World (placement.h), and the instance slots its placements take in RenderWorld.</text>
   <text x="40" y="106" class="h" fill="#3a4452">the tree: Placement nodes (kind, path) and a root's PlacedRoot</text>
   <text x="668" y="106" class="h" fill="#3a4452">RenderWorld</text>
 

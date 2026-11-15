@@ -118,18 +118,18 @@ count only while nothing waits for residency, so a script sees the scene loaded:
 
 What is drawn is a tree of placements (`placement.h`): a placement is a content of the World (the stage, a prototype at an instance, a LOD
 level at its root; `src/world/README.md`) at a world transform, with the state it inherits there (purpose, the material binding in force),
-or a `PointInstancer`'s points. It owns the draws of its own prims and its children: the instances and point instancers in it, and a
+or a `PointInstancer`'s points. It owns the instances of its own prims and its children: the USD instances and point instancers in it, and a
 placement per loaded level of each LOD root in it, of which only the drawn level draws. A content never changes once linked, so neither
-do its draws: only where it is placed.
+do its instances: only where it is placed.
 
-![A worked placement tree: the stage, prototypes at instances, a render-LOD group, a streaming root with a drawn and an undrawn level, a point instancer, and the draw slots they take in RenderWorld](../../screenshots/view_placement_tree.svg)
+![A worked placement tree: the stage, prototypes at USD instances, a render-LOD group, a streaming root with a drawn and an undrawn level, a point instancer, and the instance slots they take in RenderWorld](../../screenshots/view_placement_tree.svg)
 
 - **LOD roots.** A streaming root (its levels are payloads; `src/world/README.md` "Loading") is a placed root with a placement per loaded
   level, as below. A render-LOD root (levels in place) is a *group* where it is placed (`RenderLodGroup`, slots in `RenderWorld::lodGroups`
-  taken and freed with its placement, as draw slots): the bounding sphere of its heuristic's extent placed by the root's transform, as the
+  taken and freed with its placement, as instance slots): the bounding sphere of its heuristic's extent placed by the root's transform, as the
   heuristic measures it, its thresholds (up to 8 levels; levels past them aren't drawn), its default, and a forced level (hand-set by its full
-  path, else its default while the heuristic is off or it has no usable heuristic). Every level is walked and placed, its draws tagged with
-  the group and their level, and an instance or point instancer under a level passes the tag to its draws; the renderer draws the level the
+  path, else its default while the heuristic is off or it has no usable heuristic). Every level is walked and placed, its instances tagged with
+  the group and their level, and a USD instance or point instancer under a level passes the tag to its instances; the renderer draws the level the
   group picks each frame (`src/renderer/README.md`, "Render LOD"). A camera move changes nothing here. A render-LOD root has no placed root,
   no row in the `lod` and `streaming` records and no CPU evaluation; `lod` and `lod-reset` on its path and `lod-heuristic` change its group's
   forced level. A level holding it is ready once every level's meshes are held, as all of them are placed. The `renderlod` record (next
@@ -147,7 +147,7 @@ do its draws: only where it is placed.
   roots not drawing the level they want or whose loaded levels aren't linked yet), and a pass goes into a placement only when that count
   isn't 0, a root under it changed its desired level, or a gizmo moved something under it; a placed content composed again makes it look
   everywhere. A purpose shown or hidden, or a mesh, material or texture repacked, places the tree afresh.
-- **Draws.** `RenderWorld` holds a slot per draw (a prim's submesh). A placement built again puts its draws back in the slots and prim indices
+- **Instances.** `RenderWorld` holds a slot per instance (a prim's submesh). A placement built again puts its instances back in the slots and prim indices
   it had, in order, so a draw that didn't change sends nothing; others take the lowest free slot. A placement draws what is held and is
   built again as the assets it waits for arrive, so a scene opens progressively; a material not held yet draws with the display colour
   until it arrives.
@@ -157,7 +157,7 @@ do its draws: only where it is placed.
 - **Requests.** A placement asks for the meshes, materials and textures its prims want and lack when it is built, drawn or not (a level
   loading is placed undrawn), so what a level needs is requested as soon as the level is linked.
 - **Libraries.** `MeshLibrary`, `MaterialLibrary` and `TextureLibrary` keep one entry per mesh asset, per material (or display colour) and per
-  texture asset, shared by every draw using it. An entry whose asset arrives again with new content is a new entry with a new handle. An
+  texture asset, shared by every instance using it. An entry whose asset arrives again with new content is a new entry with a new handle. An
   entry is held while a placement uses it: the slots drawing it, and an undrawn placement (a level loading, a resident level coarser or finer
   than the one drawn) holding the entries its prims would draw with (`heldMeshes`, `heldMaterials`), so a root switching to a loaded
   level, finer or coarser, uploads nothing. The uses are counted as they change, so no pass looks at every slot; what no placement uses
@@ -186,12 +186,12 @@ do its draws: only where it is placed.
   (`resolveMaterial`), so one pack used with different inputs is one material instance per set of values. A mesh's bound material, and each `GeomSubset`'s own
   binding for its submesh, unless an ancestor's binding is `strongerThanDescendants`. A material's texture, else its base colour, else the mesh's
   display colour; a constant colour is a 1x1 texture. A mesh with no material bound gets one per display colour, shared. A cutout material's opacity
-  texture is fetched with its base colour texture and counts as used by its draws (`drawsOf`).
+  texture is fetched with its base colour texture and counts as used by its instances (`drawsOf`).
 - **Transforms**: in float, parent times local, then scaled to metres by the root layer's `metersPerUnit`, as the view always drew; the
   camera's up is the scene's up axis. A prim's transform for the queries (`transform`, selection, the gizmo) is found in the published tree
   (`findTransform`): the deepest drawn placement at or above the path that holds it, the prim's transform in its walk, placed. A gizmo's
   move is the view's session opinion of the prim; the placements holding it are built again in the same scene update, and what is under it moves.
-  A path's bounds (`bounds`: the selection's box and gizmo, framing, go-to) walk the published tree down to the path, not every draw:
+  A path's bounds (`bounds`: the selection's box and gizmo, framing, go-to) walk the published tree down to the path, not every instance:
   each placement's whole bounds are kept from one snapshot to the next (`PlacementBounds`), since a node once published is never changed in
   place, so while the camera moves only the placements a snapshot replaced are walked again. On Eldermark with `/World/Regions` selected:
   10 ms for the first walk; flying at 30 m/s, typically under 0.2 ms for each snapshot after (median 0.09 ms), and a few ms for a snapshot
@@ -283,8 +283,8 @@ do its draws: only where it is placed.
   - *Following the ground* (G, `camera-follow on|off|height <m>`, the configuration values `view.camera.follow` and `view.camera.followHeight`): the eye kept a height (1.8 m by default) above the
     highest drawn surface under it, set each frame with no smoothing; WASD move across the ground by yaw, Q/E change the height. The ground
     is the render geometry the main thread holds: a ray down from the height above the eye (so ground that rose by up to the height since
-    the last frame is found) through the draws whose bounds hold the camera across the up axis, the chunks of 4,096 draws skipped by the
-    bounds `SceneBoundsCache` keeps for the shadow cascades, and every triangle of the draws left, brute force (`groundBelow`); the meshes
+    the last frame is found) through the instances whose bounds hold the camera across the up axis, the chunks of 4,096 instances skipped by the
+    bounds `SceneBoundsCache` keeps for the shadow cascades, and every triangle of the instances left, brute force (`groundBelow`); the meshes
     are kept from `SceneChanges` as they pass to the renderer (`GroundMeshes`). Ground cover and roofs lift the camera, and every level of a
     render-LOD group counts; with nothing drawn under the camera it holds its height. `fly` suspends it for the main camera, orbiting for
     either. Ground from collision geometry waits for physics. The `status` record's `cameraModes` has the hit, its prim and what was tested
@@ -312,7 +312,7 @@ do its draws: only where it is placed.
 - **The LOD tool** (`src/tools/lodtool.*`: its rows, inspection and requests in `LodToolState`, which the application owns in `ToolsState`
   and the tools' hooks fill; the LOD window `src/ui/lodwindow.*` draws it and keeps only its scroll and edit buffers): one place for LOD inspection, switching and tuning, both kinds.
   - *The list*: every streaming root drawn and every render-LOD group placed (`buildLodRows` per snapshot: the roots' rows each time, the groups'
-    only when the draws, the tuning, the hand-set levels, the preference or the heuristic's state changed; a group's desired, drawn, fade
+    only when the instances, the tuning, the hand-set levels, the preference or the heuristic's state changed; a group's desired, drawn, fade
     and measure from the readback each frame while the window or a layer is shown, so the frames read every group's state back then: 16
     bytes a group). Filters by path, kind, under the selection, not drawing what it wants, fading. A level picker per row (`lod`,
     `lod-reset` on a group's path force its level), "Set shown", click selects, double-click frames.
@@ -361,7 +361,7 @@ do its draws: only where it is placed.
     state's colour (yellow with findings); the selected or every shown root's load (solid) and unload (faint) radii per boundary, its bounds
     grown by the radius in the plane across the up axis; labels under the windows (name, drawn / selected, state, its name; a click
     selects); and the streaming view (`debugview streaming`): every draw in its streaming root's state's colour at half strength over the lit image, a root with findings
-    striped yellow, grey under none. Each draw carries its streaming root's slot (`RenderMeshInstance::streamRoot`, taken by the root while
+    striped yellow, grey under none. Each instance carries its streaming root's slot (`RenderMeshInstance::streamRoot`, taken by the root while
     it is drawn, `streamRootSlot`); the main thread gives the renderer each slot's state while the view is on (`src/renderer/README.md`,
     the debug views).
 - **Point instancers and variants reached**: every PointInstancer reached while drawing (`instancers()`, the `instancers` record): its
@@ -370,7 +370,7 @@ do its draws: only where it is placed.
   level and has no row in `lodRoots()`: the heuristic doesn't choose per point (the composer says so once per instancer).
 - **Payload placements**: every prim with payloads reached while drawing (`payloads()`, the `payloads` record): its asset ids, whether
   they are loaded, and its `extentsHint` in world metres. A level not loaded isn't reached, so what is under it isn't listed; its root's
-  `levelPayloads` name the level's own payloads. Each draw carries the drawn level of the nearest LOD root above it,
+  `levelPayloads` name the level's own payloads. Each instance carries the drawn level of the nearest LOD root above it,
   which the `lodlevel` view colours by. The LOD window lists the roots with a level picker per row, "Set shown" for every row its filter
   shows (default, coarsest or one level), a click to select a root and a double-click to frame it; it highlights the root at or above the
   selection, and marks a root still loading the level it wants.

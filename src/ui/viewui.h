@@ -45,7 +45,7 @@ enum class ViewEditRequest : uint8_t {
 
 // ngen-view's UI: the menu bar (the overlays' switches among it), the status bar, the camera window and the introspection windows (frame graph,
 // performance, render debug, culling, capture, frame debugger, GPU scene, counters, memory). It edits the settings the view renders
-// with; the view reads them each frame. Prims are named by the path `primPath` gives for a draw's prim index.
+// with; the view reads them each frame. Prims are named by the path `primPath` gives for an instance's prim index.
 class ViewUI {
 public:
     // `hasSelection` enables the Edit menu's selection items.
@@ -180,7 +180,7 @@ private:
     std::optional<uint32_t> fgSelectedResource;
     PerformanceWindowState performanceState;
     std::optional<RenderDebugSnapshot> renderDebugLast;
-    uint32_t renderDebugSelectedPrim = 0; // a draw picked in the Render Debug window's list
+    uint32_t renderDebugSelectedPrim = 0; // an instance picked in the Render Debug window's list
     IntrospectionFlags introspectionFlags;
     MemoryWindowState memoryWindowState;
     CaptureWindowState captureWindowState;

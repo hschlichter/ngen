@@ -90,9 +90,9 @@ struct LodInspection {
     };
     struct Level {
         std::string name;
-        uint64_t triangles = 0; // of its draws; for a streaming root, only the drawn level's are known
+        uint64_t triangles = 0; // of its instances; for a streaming root, only the drawn level's are known
         uint32_t draws = 0;
-        bool known = false; // its draws are counted
+        bool known = false; // its instances are counted
         bool loaded = false;
     };
     std::string path;

@@ -106,7 +106,7 @@
   <text x="618" y="144" class="s">the render thread</text>
   <rect x="612" y="158" width="160" height="60" rx="7" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
   <text x="622" y="178" class="b">scene changes applied</text>
-  <text x="622" y="195" class="s">the tables: draw slots,</text>
+  <text x="622" y="195" class="s">the tables: instance slots,</text>
   <text x="622" y="210" class="s">meshes, materials, textures</text>
   <rect x="612" y="236" width="160" height="60" rx="7" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
   <text x="622" y="256" class="b">upload queue</text>

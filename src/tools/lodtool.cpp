@@ -238,7 +238,7 @@ auto buildLodRows(const ViewScene& scene, LodToolState& state) -> void {
         .heuristic = snapshot.lodHeuristic,
     };
     // The LOD roots' rows change with every snapshot (their measures and choices follow the camera); the render-LOD groups' rows only with
-    // what they are built from, and their live state comes from the GPU each frame (updateLodRows). The roots come with the draws, so
+    // what they are built from, and their live state comes from the GPU each frame (updateLodRows). The roots come with the instances, so
     // while the group rows are kept the roots' count is too, and their rows are replaced in place.
     bool groupsKept = source == state.groupRowsSource && state.rootRowCount == scene.lodRoots().size();
     std::vector<LodRow> rootRows;
@@ -461,7 +461,7 @@ auto inspectLodRoot(const ViewScene& scene, const CullResult& cull, const std::s
             }
         }
     }
-    // The draws: a group's slots by level; a streaming root's drawn level, its slots under the root's path.
+    // The instances: a group's slots by level; a streaming root's drawn level, its slots under the root's path.
     for (const auto& instance : draws.drawn.meshInstances) {
         if (!instance.alive || instance.lodLevel == 0) {
             continue;

@@ -162,10 +162,10 @@ image, because present consumes it per image.
 ## Scene data on the GPU
 
 `GpuScene` owns the scene's GPU tables, and changes them piece by piece. The view hands the renderer `SceneChanges` (`renderworld.h`): meshes,
-textures and materials added and removed, draw slots changed, the lights. `Renderer::applySceneChanges` applies them in a fixed order:
+textures and materials added and removed, instance slots changed, the lights. `Renderer::applySceneChanges` applies them in a fixed order:
 - **Removals first**, so what is added reuses their pool ranges, table entries and texture slots. A whole-scene repack then doesn't grow the pool.
 - **Then textures, meshes and materials**, before the draws that name them.
-- **Then the draw slots.**
+- **Then the instance slots.**
 
 Applying only queues uploads. Nothing waits.
 
@@ -182,7 +182,7 @@ Tables:
     The old contents are copied on the GPU before the next frame's uploads, and the old buffer is retired.
   - **Limit.** No pool buffer grows past the device's largest buffer (`RhiDeviceLimits::maxBufferBytes`, whole MiBs), or a smaller limit
     (`setGeometryLimit`, ngen-view's `--geometry-limit=<MiB>`). The vertex stream reaches it before the position stream and sets the vertex capacity
-    of both. A mesh that doesn't fit waits, with an empty mesh table entry, so its draws draw nothing while the rest of the scene draws; the
+    of both. A mesh that doesn't fit waits, with an empty mesh table entry, so its instances draw nothing while the rest of the scene draws; the
     first one traces `GeometryPoolFull` (a warning). Once a frame after removals freed ranges, the waiting meshes that fit are placed, in
     arrival order (`GeometryPoolFits` when none is left). The `memory` record's `geometryPool` has the limit, capacities, use and what waits.
   - **Addressing.** A meshlet's vertex indices stay mesh-local and the shader adds the mesh's `vertexOffset` (the vertex and position pools share
@@ -202,14 +202,14 @@ Tables:
     texture's channel), the channel and raw flag (`opacityInfo`), and the threshold.
   - **Rewritten when a texture it names takes its slot.** Until then it samples the white texture, and a cutout whose opacity texture is still
     uploading draws opaque.
-- **Instance buffer.** One `GpuInstanceRecord` (128 bytes, std430) per draw slot.
+- **Instance buffer.** One `GpuInstanceRecord` (128 bytes, std430) per instance slot.
   - **Contents**: model matrix, material entry, mesh index, the submesh's meshlets (`meshletOffset` from the mesh's first, `meshletCount`) and
     `triangleCount`, world bounds (the submesh's box: `SubMesh::bounds`, from its triangles when the view loads the mesh), flags
     (`doubleSided`, `boundsValid`, `cutout`), the drawn LOD level + 1 of the LOD root above it (0 under none), which the geometry pass
     writes to the normal target's alpha for the LOD level view (with its group's flags: "Render LOD", the LOD tag), its render-LOD group + 1
     (0 for none), its streaming root's slot + 1 (`streamRoot`, 0 under none) for the streaming view, and how many LOD roots it is under
     (`lodDepth`, 0 under none) for the LOD level view.
-  - **Slots.** A draw keeps its slot while it exists. A removed one is dead (mesh index past the table, so culling never draws it) until a new draw
+  - **Slots.** An instance keeps its slot while it exists. A removed one is dead (mesh index past the table, so culling never draws it) until a new instance
     takes it.
   - **Reading it.** The task and mesh shaders read it at the slot their draw command names.
   - **Uploads.** Only the changed records go up: packed in the slot's kept staging buffer (`gpuscene.instances.staging`, grown ahead up to 64
@@ -282,7 +282,7 @@ A table that outgrows its buffer gets a larger one, which takes hundreds of mill
   last waited. `render.growth.ahead` is a configuration value (0 grows only when needed, still on a job). The jobs show in the Performance
   window's worker tracks as `BufferGrowth`, with the table's name inside. The Memory window lists the buffers, not the growths: a gap.
 
-`GpuInstance` is the CPU mirror the renderer keeps (`Renderer::gpuInstances`), by draw slot, in a `ChunkedList` (chunks of 4,096 that never
+`GpuInstance` is the CPU mirror the renderer keeps (`Renderer::gpuInstances`), by instance slot, in a `ChunkedList` (chunks of 4,096 that never
 move), so a growing slot count adds chunks and copies none. The slots of one `SceneChanges` are written on the job workers a chunk each
 (`CopyChangedRange`): the changes are grouped by chunk first, in list order, so a slot changed twice in one list (lists are appended) ends
 as the last change says; the bucket counts and triangles are summed per range and added after. The culling groups' boxes
@@ -448,7 +448,7 @@ meshoptimizer; `src/asset/README.md`). Every mesh pass draws them with task and 
 ## Render LOD
 
 A render-LOD root (a UsdLod root whose levels aren't payloads; `src/world/README.md` "Loading") where the view places it is a *group*
-(`RenderLodGroup`, slots in `SceneChanges::lodGroups` beside the draw slots): the heuristic the view's preference chose for it, in the GPU's
+(`RenderLodGroup`, slots in `SceneChanges::lodGroups` beside the instance slots): the heuristic the view's preference chose for it, in the GPU's
 units (`RenderLodKind`: a screen size, the bounding sphere of its extent in world metres; or a distance, the root's transform and its inverse,
 the heuristic's center and its bounding box, thresholds in metres), its thresholds and blend thresholds (up to 8 levels), its default and a
 forced level (hand-set, or the default while the heuristic is off or the group has none usable). Every level's draws are slots tagged with the
@@ -662,7 +662,7 @@ points of `Renderer::render`, in the order added; each hook does nothing unless 
   tools make counters from them.
 - **Culling introspection.** `instancecull.comp` writes, next to the visibility bits, the frustum plane that rejected each instance in each view
   (`cullPlanes`, 4 bits per view: plane 0–5, `D` a render-LOD level its group doesn't draw, `E` visible, `F` not tested). The readback keeps every view's visibility bit (`CullResult::viewBits`) when it reads them.
-- **The scene's triangles** (`CullResult::sceneTriangles`, the status bar and the `culling` record) are kept as draw slots change, never summed
+- **The scene's triangles** (`CullResult::sceneTriangles`, the status bar and the `culling` record) are kept as instance slots change, never summed
   over the slots each frame (14 ms at 2.4 million).
 - **Trace events** (Render category, conventions in `src/trace/README.md`). The renderer traces flow and problems, never per-frame data:
   `ShaderLoaded` per startup shader, `FirstFramePresented` once (ms since the process started), `SceneUploaded` when an upload changes geometry (instances, meshes, textures, ms; a transform edit is silent), `SwapchainRecreate` and

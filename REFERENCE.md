@@ -136,7 +136,7 @@ live.
 | `translate /prim dx,dy,dz` | `view.translate` | Offset a prim's local position: a session opinion of the view, never saved. |
 | `purposes guide=on\|off,proxy=on\|off` | `view.purposes` | Draw guide and proxy prims. Holds the script until drawn. |
 | `repack <id>...\|scene` | `view.repack` | Force the asset server to repack, and rebuild the scene. Holds the script until resident. |
-| `goto-asset <id> [all]` | `view.gotoAsset` | Move the camera to an asset's next draw (nearest first) and select it; `all` frames every draw. |
+| `goto-asset <id> [all]` | `view.gotoAsset` | Move the camera to an asset's next instance (nearest first) and select it; `all` frames every instance. |
 | `assets-of [/prim]` | `view.assetsOf` | The assets drawn at or under a prim, or the selection. |
 | `wait-resident` | `view.waitResident` | Hold the script until the scene is resident. |
 | `quit` | `view.quit` | Stop the view after this frame. |

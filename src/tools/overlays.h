@@ -15,7 +15,7 @@ class DebugDraw;
 struct RenderWorld;
 
 // The viewport's overlays, drawn with DebugDraw: a ground grid, the origin, every instance's bounds, the instances' bounds by their GPU cull
-// result (`visible`: a byte per draw, nonzero for drawn; empty for none), the frozen culling frustum, each shadow cascade's light frustum,
+// result (`visible`: a byte per instance, nonzero for drawn; empty for none), the frozen culling frustum, each shadow cascade's light frustum,
 // the lights' directions floating before `eye`, and the selection's bounds (null for none).
 auto drawOverlays(DebugDraw& draw,
                   const RenderWorld& world,

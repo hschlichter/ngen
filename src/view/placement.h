@@ -192,16 +192,16 @@ struct Placement {
     Purpose purpose = Purpose::Default;
     std::string material;
     bool strong = false;
-    uint32_t lodTag = 0;     // the drawn level + 1 of the nearest LOD root above, for the draws
-    uint32_t lodDepth = 0;   // how many LOD roots it is under (1 under a root that is under none), for the draws
-    uint32_t streamRoot = 0; // the nearest streaming root's slot + 1, for the draws (RenderMeshInstance::streamRoot)
+    uint32_t lodTag = 0;     // the drawn level + 1 of the nearest LOD root above, for the instances
+    uint32_t lodDepth = 0;   // how many LOD roots it is under (1 under a root that is under none), for the instances
+    uint32_t streamRoot = 0; // the nearest streaming root's slot + 1, for the instances (RenderMeshInstance::streamRoot)
     bool drawn = true;       // false: a loaded level not drawn (the floor under a finer one, a finer one loading), and everything in it
     std::vector<PlacementSegment> segments;
-    std::vector<uint32_t> slots;     // its draws
+    std::vector<uint32_t> slots;     // its instances
     std::vector<uint32_t> prims;     // prim indices of its drawn prims and lights
     std::vector<uint32_t> lodGroups; // the render-LOD groups of the render-LOD roots in it, by group slot
     // Under a level of a render-LOD root of the placement above (an instance in an asset's level): that group slot + 1 and the level, which
-    // its draws are tagged with; 0 for none.
+    // its instances are tagged with; 0 for none.
     uint32_t lodGroup = 0;
     uint32_t lodGroupLevel = 0;
     std::vector<RenderLight> lights;  // its distant lights
@@ -237,7 +237,7 @@ struct PlacementRecords {
 };
 auto gatherRecords(const Placement& tree) -> PlacementRecords;
 
-// Free indices (draw slots, prim indices, LOD group slots), taken lowest first so a scene placed afresh fills them in tree order: a bit per
+// Free indices (instance slots, prim indices, LOD group slots), taken lowest first so a scene placed afresh fills them in tree order: a bit per
 // index and the lowest word that may hold one. Freeing and taking allocate nothing.
 class LowestFreeList {
 public:

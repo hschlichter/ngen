@@ -514,7 +514,7 @@ auto ViewScene::allocPrim(const std::string& path) -> uint32_t {
     return prim;
 }
 
-// Its path stays until the index is taken again: clearing it would copy the path chunk a published snapshot shares, and only a live draw's
+// Its path stays until the index is taken again: clearing it would copy the path chunk a published snapshot shares, and only a live instance's
 // prim is named. Its assets go, as what a drawn prim uses.
 auto ViewScene::freePrim(uint32_t prim) -> void {
     if (assetsByPrim[prim - 1]) {
@@ -930,7 +930,7 @@ auto ViewScene::syncPlacement(const std::shared_ptr<Placement>& node, const Plac
     if (!rebuild) {
         rebuild = std::ranges::any_of(node->waiting, [this](const std::string& asset) { return arrived.contains(asset); });
     }
-    // Drawn before and not now, and nothing else changed: its draws go, their entries held, without building it again.
+    // Drawn before and not now, and nothing else changed: its instances go, their entries held, without building it again.
     bool undraw = rebuild && node && node->drawn && !spec.drawn;
     if (undraw) {
         auto drawnSpec = spec;
@@ -1064,7 +1064,7 @@ auto ViewScene::undrawPlacement(const std::shared_ptr<Placement>& node, bool min
 auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const PlacementSpec& spec, uint64_t version, bool mine) -> std::shared_ptr<Placement> {
     passBuilt++;
     const auto& w = composer->world();
-    // Its draws are placed again in the slots and prim indices it had, in order, so a draw that didn't change changes nothing for the
+    // Its instances are placed again in the slots and prim indices it had, in order, so an instance that didn't change changes nothing for the
     // renderer; what it has left over is freed, what it lacks is taken from the free lists.
     std::vector<uint32_t> oldSlots;
     std::vector<uint32_t> oldPrims;
@@ -1258,10 +1258,10 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
                 const auto& item = items[i];
                 auto world = item.absolute ? item.world : segment.world * item.world;
                 auto path = primpath::join(segment.path, item.path);
-                // The render-LOD group and level its draws are tagged with: its root's in this segment, else the one this placement is under.
+                // The render-LOD group and level its instances are tagged with: its root's in this segment, else the one this placement is under.
                 uint32_t tagGroup = spec.lodGroup;
                 uint32_t tagLevel = spec.lodGroupLevel;
-                // How many LOD roots its draws are under: the placement's, and one more under a root in this segment.
+                // How many LOD roots its instances are under: the placement's, and one more under a root in this segment.
                 uint32_t tagDepth = spec.lodDepth;
                 if (item.lodRootItem >= 0) {
                     auto group = groupOfItem.find(item.lodRootItem);
@@ -1779,7 +1779,7 @@ auto ViewScene::place() -> void {
     }
     static const uint32_t libraryInUseLocation = profile::registerSourceLocation("LibraryInUse", profile::Group::Scene, profile::Level::Detail);
     profile::beginZone(libraryInUseLocation);
-    // Library entries first, so the draws below name only what the renderer has been told about.
+    // Library entries first, so the instances below name only what the renderer has been told about.
     std::set<uint32_t> meshesNow;
     std::set<uint32_t> materialsNow;
     std::set<uint32_t> texturesNow;
@@ -1916,9 +1916,9 @@ auto ViewScene::place() -> void {
     auto ms = msSince(start);
     stats.lastPlaceMs = ms;
     stats.placementsBuilt = passBuilt;
-    stats.slotsAdded = added;
-    stats.slotsRemoved = removed;
-    stats.slotsUpdated = updated;
+    stats.instancesAdded = added;
+    stats.instancesRemoved = removed;
+    stats.instancesUpdated = updated;
     stats.placements = placementCount;
     stats.placementsDrawn = drawnPlacementCount;
     stats.walksKept = walks.size();

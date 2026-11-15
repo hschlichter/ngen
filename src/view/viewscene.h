@@ -85,7 +85,7 @@ auto lodOverrideOf(const LodTuning& tuning, const std::string& rootKey, uint32_t
 // A heuristic as the view picks with it under the tuning: the override's thresholds, the bias applied to them, no bands with blending off.
 auto tunedLodHeuristic(const LodHeuristic& heuristic, const LodOverride* override, const LodTuning& tuning) -> LodHeuristic;
 
-// What the view knows of a render-LOD group's root, published with the draws for the inspector: its authored root (lodRootKey), its levels'
+// What the view knows of a render-LOD group's root, published with the instances for the inspector: its authored root (lodRootKey), its levels'
 // names finest first, and every heuristic it authors.
 struct LodGroupSource {
     std::string key;
@@ -164,9 +164,9 @@ struct SceneThreadStats {
     uint64_t places = 0;
     double lastPlaceMs = 0.0;
     uint32_t placementsBuilt = 0;
-    uint32_t slotsAdded = 0;
-    uint32_t slotsRemoved = 0;
-    uint32_t slotsUpdated = 0;
+    uint32_t instancesAdded = 0;
+    uint32_t instancesRemoved = 0;
+    uint32_t instancesUpdated = 0;
     uint32_t placements = 0;       // in the tree, drawn or not
     uint32_t placementsDrawn = 0;  // of them, drawn
     uint64_t walksBuilt = 0;       // content walks built (new, composed again, or with a gizmo's opinion in them), since the scene opened
@@ -215,7 +215,7 @@ struct SceneDraws {
     ChunkedList<std::shared_ptr<const std::vector<std::string>>> assetsByPrim; // by prim index - 1: the assets a drawn prim's draws use
     ChunkedList<std::string> lodGroupPaths;                                    // by render-LOD group slot (RenderWorld::lodGroups): the root's full path; empty when free
     ChunkedList<std::shared_ptr<const LodGroupSource>> lodGroupSources;        // by render-LOD group slot: its root's levels and heuristics; null when free
-    // Asset id to the prims whose draws use it, built from assetsByPrim on the first query.
+    // Asset id to the prims whose instances use it, built from assetsByPrim on the first query.
     auto drawsByAsset() const -> const std::unordered_map<std::string, std::vector<uint32_t>>&;
     // The drawn placements' cameras, LOD roots, payload placements, point instancers and prims with variant sets, in tree order, gathered
     // from the tree on the first query.
@@ -286,7 +286,7 @@ extern config::Bool purposeProxy; // scene.purposes.proxy
 } // namespace viewconfig
 
 // The scene ngen-view shows: its World, composed from the scene's packs, and the renderer's inputs placed from it: a tree of placements of
-// the World's contents (placement.h), whose draws are RenderWorld's slots (one per prim submesh), and the meshes, materials and textures they
+// the World's contents (placement.h), whose instances are RenderWorld's slots (one per prim submesh), and the meshes, materials and textures they
 // use, each kept by asset. Everything comes from the asset server; nothing of USD. See src/view/README.md.
 //
 // Nothing here waits. A scene thread owns the composer, the packs and the libraries: it takes requests (open, LOD, purposes, refresh,
@@ -381,7 +381,7 @@ public:
     auto instancePath(uint32_t instance) const -> std::string;
     // The world bounds of what is drawn at or under a path; invalid when nothing is.
     auto bounds(const std::string& path) const -> AABB;
-    // The draws (prim indices, for primPath and primBounds) that use an asset: a mesh's prims, a material's or a texture's users, the prims
+    // The instances (prim indices, for primPath and primBounds) that use an asset: a mesh's prims, a material's or a texture's users, the prims
     // drawing the meshes a USD file defines. Empty for an asset nothing draws (a shader, a file that only overrides or arranges others).
     auto drawsOf(const std::string& assetId) const -> std::vector<uint32_t>;
     auto drawCount(const std::string& assetId) const -> size_t;
@@ -688,7 +688,7 @@ private:
     auto allocPrim(const std::string& path) -> uint32_t;
     auto freePrim(uint32_t prim) -> void;
     auto touchSlot(uint32_t slot) -> void;
-    // Render-LOD group slots (RenderWorld::lodGroups), taken and freed like draw slots, with what the view knows of each: the root's full
+    // Render-LOD group slots (RenderWorld::lodGroups), taken and freed like instance slots, with what the view knows of each: the root's full
     // path, its default level, whether its heuristic is usable, and its level count; and by path.
     struct LodGroupInfo {
         std::string path;
@@ -699,7 +699,7 @@ private:
         std::string key;                     // its authored root (lodRootKey)
     };
     std::vector<LodGroupInfo> lodGroupInfo;
-    ChunkedList<std::string> lodGroupPaths; // published with the draws
+    ChunkedList<std::string> lodGroupPaths; // published with the instances
     ChunkedList<std::shared_ptr<const LodGroupSource>> lodGroupSources;
     std::unordered_map<std::string, uint32_t> lodGroupByPath;
     LowestFreeList freeLodGroups;
@@ -728,7 +728,7 @@ private:
     std::string passFirstSwitched;
     bool resetPlacements = false;            // the tree is released and placed afresh: a purpose shown or hidden, a mesh or material repacked
     std::vector<std::string> overridesMoved; // the gizmo's moves since the last pass: the placements holding them are built again
-    // A mesh where it is drawn with a material binding: the materials of its submeshes, whether each cuts, and the assets its draws use (the
+    // A mesh where it is drawn with a material binding: the materials of its submeshes, whether each cuts, and the assets its instances use (the
     // mesh, the file defining it, each material and its textures). Shared, this pass, by the prims drawing the same mesh and binding.
     struct ResolvedDraw {
         std::vector<MaterialHandle> materials;

@@ -113,8 +113,8 @@ private:
     size_t count = 0;
 };
 
-// One draw: a submesh of a placed mesh. Draws live in slots that keep their index while they exist; a removed draw's slot is dead (alive
-// false) until a new draw reuses it.
+// One instance: a submesh of a placed mesh. Instances live in slots that keep their index while they exist; a removed instance's slot is dead (alive
+// false) until a new instance reuses it.
 struct RenderMeshInstance {
     MeshHandle mesh;
     MaterialHandle material;
@@ -170,7 +170,7 @@ enum class RenderLodKind : uint32_t {
 
 // A render-LOD root where it is placed: the renderer picks its level each frame from the camera (shaders/lodselect.comp), by the heuristic the
 // view chose for it, and draws the slots tagged with it and that level; inside an authored blend band it draws the next level too, the two
-// cross-faded. Slots in RenderWorld::lodGroups, like draw slots.
+// cross-faded. Slots in RenderWorld::lodGroups, like instance slots.
 struct RenderLodGroup {
     static constexpr uint32_t maxLevels = 8;
     RenderLodKind kind = RenderLodKind::ScreenSize;
@@ -224,10 +224,10 @@ struct SceneChanges {
     std::vector<TextureHandle> texturesRemoved;
     std::vector<std::pair<MaterialHandle, MaterialDesc>> materialsChanged; // added, or with new content
     std::vector<MaterialHandle> materialsRemoved;
-    // Draws whose slot changed: added, updated or removed (alive false). slotCount is the slot list's length afterwards.
+    // Instances whose slot changed: added, updated or removed (alive false). slotCount is the slot list's length afterwards.
     std::vector<std::pair<uint32_t, RenderMeshInstance>> instances;
     uint32_t slotCount = 0;
-    // Render-LOD groups whose slot changed, applied with the draws; lodGroupCount is the group list's length afterwards.
+    // Render-LOD groups whose slot changed, applied with the instances; lodGroupCount is the group list's length afterwards.
     std::vector<std::pair<uint32_t, RenderLodGroup>> lodGroups;
     uint32_t lodGroupCount = 0;
     bool lightsChanged = false;

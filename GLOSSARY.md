@@ -203,25 +203,26 @@ sense of a map; that is a scene.
 `src/view/README.md`.
 
 - **Arrival** — an asset the server answered, taken by the scene thread.
-- **Draw** — one prim's submesh as drawn: a slot in `RenderWorld`, an instance on the GPU.
 - **Default light** — the distant light the view adds when a scene authors none.
-- **Draw slot** — a draw's index in `RenderWorld` and the GPU instance buffer; a draw keeps its slot while it exists.
 - **Framing** — until the scene is first resident, the camera frames what has arrived, unless moved by hand.
 - **Handle** — a 1-based index into a library (`MeshHandle`, `MaterialHandle`, `TextureHandle`, `PrimHandle`); never reused.
 - **Held** — a library entry a placement uses (drawn or an undrawn resident LOD level), so switching to it uploads nothing.
 - **Hooks** (`ViewHooks`) — the points in `ViewFrame` where the tools (`ToolsHooks`) and the UI (`UiHooks`, wrapping the tools') join the frame:
   `afterScene`, `cameras`, `event`, `afterCamera`, `debugDraw`, `wantReadbacks`, `takeReadbacks`, `drawUi`, `fillSnapshot`.
+- **Instance** (`RenderMeshInstance`) — one prim's submesh as drawn: a slot in `RenderWorld`, a record in the GPU's instance buffer. Not a USD
+  instance; where both could be meant the text says "USD instance". A *draw* is a draw call: one per draw list.
+- **Instance slot** — an instance's index in `RenderWorld` and the GPU instance buffer; an instance keeps its slot while it exists.
 - **Library** (`AssetLibrary`: `MeshLibrary`, `MaterialLibrary`, `TextureLibrary`) — one immutable entry per asset; new content is a new entry
   with a new handle.
 - **Main thread** — runs `ViewFrame`'s steps, the commands, the tools and the UI; never waits for the scene or render threads.
 - **Placement** — a content placed at a world transform with the state it inherits there (or a PointInstancer's points); owns its prims'
-  draws.
+  instances.
 - **Placement pass** — after a compose, relink, level evaluation, arrivals or a gizmo move, placing the stage as the World is now; rebuilds only
   the placements whose inputs changed.
 - **Placement tree** — the placements as a tree: the stage, prototypes at instances, a placement per loaded level of each streaming root.
 - **Resident** (the scene) — everything the scene wants is loaded, uploaded and drawn, on both the scene and render threads (`SceneResident`).
   Script frames count only while nothing waits for it.
-- **Scene changes** (`SceneChanges`) — what a placement pass changed (draw slots added, removed and updated, meshes, materials, textures,
+- **Scene changes** (`SceneChanges`) — what a placement pass changed (instance slots added, removed and updated, meshes, materials, textures,
   lights, LOD groups); the main thread hands it to the render thread, which changes only that on the GPU.
 - **Scene update** — one round of the scene thread: the requests and arrivals it took, a compose, a placement pass, and a publish.
 - **Scene thread** — `ViewScene`'s thread: owns the composer, the packs and the libraries; composes, places and publishes.
@@ -292,7 +293,7 @@ sense of a map; that is a scene.
 - **GPU scene** (`GpuScene`) — the scene's GPU tables: geometry pool, mesh table, material table, texture array, instance buffer, LOD groups.
 - **Imported / transient resource** — a frame-graph resource from outside the graph (backbuffer, persistent buffers; all buffers are imported),
   or a texture the graph allocates and pools for the frame.
-- **Instance** (GPU) — one draw slot's record in the instance buffer (`GpuInstanceRecord`, 128 bytes, with a 48-byte culling record after the
+- **Instance** (GPU) — one instance slot's record in the instance buffer (`GpuInstanceRecord`, 128 bytes, with a 48-byte culling record after the
   draw records). Not a USD instance.
 - **Meshlet** — at most 64 vertices and 124 triangles of one submesh, with a bounding sphere and a normal cone; the unit the renderer draws
   and culls.
@@ -301,7 +302,7 @@ sense of a map; that is a scene.
   pack's triangles. Every mesh pass draws this way; there is no vertex-shader path.
 - **Occlusion culling, two-phase** — the first phase draws what showed last frame (the *history*), builds the depth pyramid, and the second
   phase draws what the pyramid newly shows (view 5). Runs in the geometry pass by default, in the depth prepass when it is on.
-- **Ordered compaction** — culling's reduce-then-scan that writes draws in instance order, so output is deterministic (no atomic appends).
+- **Ordered compaction** — culling's reduce-then-scan that writes draw records in instance order, so output is deterministic (no atomic appends).
 - **Pass** — a node of the frame graph (`SceneUpload`, `InstanceCull`, `ShadowPass`, `GeometryPass`, `LightingPass`, `AAPass`, …).
 - **Pipeline registry** — creates every pipeline from shader ids; nothing waits for a shader, a pass stays out until its pipelines are
   ready, and shaders hot-reload on change notices.
@@ -314,7 +315,7 @@ sense of a map; that is a scene.
   inspector and dumps, screenshots, Tracy frame images. Free when off.
 - **`RenderSnapshot`** — the main thread's per-frame hand-off to the render thread: camera, view modes, culling frustum, cascades, debug lines,
   extensions' data. One slot with back-pressure.
-- **`RenderWorld`** — the renderer's scene input: draw slots, LOD groups, lights, environment.
+- **`RenderWorld`** — the renderer's scene input: instance slots, LOD groups, lights, environment.
 - **Reversed-Z** — camera depth `near / distance`, 1 at the near plane and 0 at infinity; no far plane.
 - **Texture slot** — a texture's index in the bindless 1024-texture array; slot 0 is the fallback, slot 1 white.
 - **Upload budget** — bytes of queued scene uploads a frame takes (`render.upload.budgetMiB`, 64 MiB).
@@ -404,7 +405,7 @@ sense of a map; that is a scene.
 | group | a render-LOD group (GPU-picked LOD root); a profile group (zone colour); a config group (name prefix); a workgroup of 256 culling slots (group box) |
 | history | occlusion culling's per-instance visibility from last frame; the profiler's seconds of zones (`profile.history.seconds`) |
 | hooks | `ViewHooks` (main-thread frame steps); `RenderExtension` hooks (render-thread frame points) |
-| instance | a USD instance (shares a prototype); a GPU instance (one draw slot's record); a point of a PointInstancer is neither |
+| instance | a USD instance (shares a prototype); an instance the renderer draws (one prim's submesh, `RenderMeshInstance`) and its GPU record; a point of a PointInstancer is neither |
 | level | a LOD level; a mip level; a profile level (guide/detail); a depth pyramid level |
 | pack | to pack (the process); a pack (a packed scene file: layer, mesh, material pack); a meshlet pack (task shader output) |
 | pass | a frame-graph pass (GPU work); a placement pass (scene thread) |
@@ -413,7 +414,7 @@ sense of a map; that is a scene.
 | residency | a LOD level's residency (asked for by the camera's position); a render-LOD group's residency mask (which levels' meshes are in the geometry pool) |
 | resident | the scene being resident (everything loaded, uploaded, drawn); a LOD level being resident (loaded by residency) |
 | root | a LOD root; the root layer; the asset server's working directory (asset ids are relative to it) |
-| slot | a draw slot; a texture slot; a streaming root's slot (streaming view) |
+| slot | an instance slot; a texture slot; a streaming root's slot (streaming view) |
 | snapshot | `SceneSnapshot` (scene thread → main); `RenderSnapshot` (main → render); a debug snapshot (render tools → main) |
 | state | a resource state (RHI barriers); a streaming state (finest resident level); a tool's state struct |
 | tag | the LOD tag (normal alpha); a GPU zone's tag (its source location's id) |

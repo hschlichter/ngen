@@ -617,7 +617,7 @@ auto Renderer::sceneGpuStats() const -> SceneGpuStats {
     }
     return {
         .frame = m_frameIndex,
-        .drawSlots = (uint32_t) gpuInstances.size(),
+        .instanceSlots = (uint32_t) gpuInstances.size(),
         .meshes = (uint32_t) gpuScene.meshRanges().size(),
         .textures = (uint32_t) gpuScene.textures().size(),
         .materials = gpuScene.materialCount(),
@@ -678,7 +678,7 @@ auto Renderer::flushSceneUploads() -> void {
     descriptorSetsDirty = false;
     auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
     TRACE_EVENT("Render", "SceneUploaded", "RenderWorld")
-        .text(std::format("scene on the GPU: {} draw slots, {} meshes, {} textures ({}) in {:.0f} ms", gpuInstances.size(), gpuScene.meshRanges().size(), gpuScene.textures().size(), formatUploadBytes(bytes), ms))
+        .text(std::format("scene on the GPU: {} instance slots, {} meshes, {} textures ({}) in {:.0f} ms", gpuInstances.size(), gpuScene.meshRanges().size(), gpuScene.textures().size(), formatUploadBytes(bytes), ms))
         .field("instances", (int64_t) gpuInstances.size())
         .field("meshes", (int64_t) gpuScene.meshRanges().size())
         .field("textures", (int64_t) gpuScene.textures().size())

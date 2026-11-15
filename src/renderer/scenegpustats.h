@@ -80,7 +80,7 @@ struct SceneGpuStats {
     uint64_t sceneChangesSubmitted = 0;
     uint64_t sceneChangesDrawn = 0; // applied by a finished frame
     bool gpuIdle = true;            // that frame left nothing to upload
-    uint32_t drawSlots = 0;         // live and dead: slots are kept until reused
+    uint32_t instanceSlots = 0;     // live and dead: slots are kept until reused
     uint32_t meshes = 0;
     uint32_t textures = 0;
     uint32_t materials = 0;

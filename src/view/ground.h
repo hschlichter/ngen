@@ -36,7 +36,7 @@ struct CameraModesState {
 };
 
 // The ground under a camera, for following it (src/view/README.md, "Camera modes"): the render geometry the main thread holds, tested
-// naively: the chunks of draws whose bounds (SceneBoundsCache, kept for the shadow cascades) hold the camera across the up axis, in them the
+// naively: the chunks of instances whose bounds (SceneBoundsCache, kept for the shadow cascades) hold the camera across the up axis, in them the
 // draws whose bounds do, every triangle of theirs.
 
 struct GroundHit {
@@ -45,12 +45,12 @@ struct GroundHit {
 };
 
 struct GroundTestCounts {
-    uint32_t chunks = 0;    // chunks of draws whose bounds held the camera
+    uint32_t chunks = 0;    // chunks of instances whose bounds held the camera
     uint32_t draws = 0;     // draws whose bounds held the camera
     uint64_t triangles = 0; // their triangles, tested
 };
 
-// The meshes the draws use, by MeshHandle index, kept from the scene's changes as the main thread passes them to the renderer.
+// The meshes the instances use, by MeshHandle index, kept from the scene's changes as the main thread passes them to the renderer.
 class GroundMeshes {
 public:
     auto apply(const SceneChanges& changes) -> void;

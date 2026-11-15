@@ -369,7 +369,7 @@ auto GpuScene::addMesh(MeshHandle handle, std::shared_ptr<const MeshDesc> mesh) 
     if (!handle || mesh == nullptr || mesh->vertices.empty() || mesh->meshlets.empty()) {
         return;
     }
-    // The table entry exists either way: a mesh that waits has an empty one, and its draws draw nothing.
+    // The table entry exists either way: a mesh that waits has an empty one, and its instances draw nothing.
     ensureTable(meshTable, meshTableGrowth, ((uint64_t) handle.index + 1) * sizeof(GpuMeshEntry));
     if (placeMesh(handle, mesh)) {
         return;

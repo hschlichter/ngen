@@ -97,7 +97,7 @@
   <text x="368" y="452" class="f">triangleCount</text>
 
   <rect x="540" y="350" width="198" height="106" rx="8" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
-  <text x="552" y="370" class="t" font-weight="700">Per draw slot</text>
+  <text x="552" y="370" class="t" font-weight="700">Per instance slot</text>
   <text x="552" y="388" class="f" font-weight="700">GpuInstanceRecord</text>
   <text x="726" y="388" class="fs" text-anchor="end">128 B</text>
   <text x="552" y="403" class="s">model, material, its meshlets;</text>
@@ -112,7 +112,7 @@
   <!-- 3 Instance culling -->
   <rect x="28" y="500" width="724" height="244" rx="10" fill="#fff7ed" stroke="#ea580c" stroke-opacity="0.45"/>
   <text x="44" y="524" class="h">3  Instance culling</text>
-  <text x="44" y="542" class="s">compute, shaders/instancecull.comp; every draw slot, every view at once</text>
+  <text x="44" y="542" class="s">compute, shaders/instancecull.comp; every instance slot, every view at once</text>
 
   <rect x="42" y="554" width="218" height="78" rx="8" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
   <text x="54" y="573" class="lib">InstanceCull</text>
@@ -240,7 +240,7 @@
   <text x="790" y="112" class="t" font-weight="700">Test world, flight_10</text>
   <text x="790" y="130" class="s">release, AMD Radeon 890M</text>
   <text x="790" y="158" class="t"><tspan font-weight="700">about 3 million</tspan></text>
-  <text x="790" y="174" class="s">draw slots culled every frame</text>
+  <text x="790" y="174" class="s">instance slots culled every frame</text>
   <text x="790" y="200" class="t"><tspan font-weight="700">4.95 million</tspan></text>
   <text x="790" y="216" class="s">triangles drawn</text>
   <text x="790" y="242" class="t"><tspan font-weight="700">15.2 ms</tspan> GPU frame</text>

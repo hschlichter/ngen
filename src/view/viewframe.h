@@ -93,7 +93,7 @@ public:
     auto deselect() -> void;
     auto selectParent() -> void;
     auto frameSelected() -> void;
-    // Frames every draw of the scene.
+    // Frames every instance of the scene.
     auto frameScene() -> void;
     // What the following frames: the frame target once something of it is drawn, else the whole scene.
     auto frameArrived() -> void;
@@ -166,13 +166,13 @@ public:
 
     // Everything drawn, as of the last cascade fit: the cascades are fitted to it and the renderer is handed it.
     AABB sceneWorldBounds = {.min = glm::vec3(1e30f), .max = glm::vec3(-1e30f)};
-    // The scene's bounds by chunk of draws, for the cascades and the ground test, read again only for the chunks that changed.
+    // The scene's bounds by chunk of instances, for the cascades and the ground test, read again only for the chunks that changed.
     SceneBoundsCache sceneBounds;
     DebugDraw debugDraw;
     FrameReadbacks readbacks;
 
 private:
-    // The meshes the draws use, for the ground test: kept from the scene's changes as they pass to the renderer.
+    // The meshes the instances use, for the ground test: kept from the scene's changes as they pass to the renderer.
     GroundMeshes groundMeshes;
     // The main camera's pose after the scene update, to see whether the commands moved it.
     glm::vec3 poseBeforeCommands = glm::vec3(0.0f);

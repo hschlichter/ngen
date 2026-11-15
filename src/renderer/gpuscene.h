@@ -172,7 +172,7 @@ private:
 //   - the mesh table, indexed by MeshHandle::index, for the culling passes;
 //   - textures, one per TextureHandle, with a slot in the texture array once uploaded;
 //   - the material table, an entry per MaterialHandle;
-//   - the instance buffer, a record per draw slot.
+//   - the instance buffer, a record per instance slot.
 // Changes queue uploads; recordUploads copies them in the frame's command buffer, within a byte budget, with barriers against the
 // frames before (on one queue, a barrier covers earlier submissions), so nothing waits. flushUploads does the same on the uploader's
 // command buffer and waits, for start-up.
@@ -269,7 +269,7 @@ public:
     auto texturedMaterialCount() const -> uint32_t; // base colour from a texture bigger than 1x1
     auto cutoutMaterialCount() const -> uint32_t;
 
-    // The instance buffer: a record per draw slot. updateInstances marks the changed slots for upload. growInstances, each frame, grows it
+    // The instance buffer: a record per instance slot. updateInstances marks the changed slots for upload. growInstances, each frame, grows it
     // towards `count` slots (BufferGrowth): a grown buffer is a new one (instanceGeneration() changes) with the old records copied in.
     // Slots past instanceSlots() wait, dirty and undrawn, until the growth is ready.
     auto updateInstances(const ChunkedList<GpuInstance>& instances, std::span<const uint32_t> changedSlots, uint64_t frame) -> void;
@@ -430,7 +430,7 @@ private:
 
     std::deque<Upload> queue;
 
-    // Instance buffer: one GpuInstanceRecord per draw slot, which the task and mesh shaders read at the slot a work item names, then one
+    // Instance buffer: one GpuInstanceRecord per instance slot, which the task and mesh shaders read at the slot a work item names, then one
     // GpuCullRecord per slot from cullRecordsOffset, which the culling passes read. The access it was left in carries into the next frame's
     // graph so the upload syncs with the previous frame's reads.
     RhiBuffer* instances = nullptr;

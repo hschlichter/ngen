@@ -7,7 +7,7 @@
 class ViewScene;
 struct Camera;
 
-// Where "go to asset" is: the asset, the order it steps through its draws (nearest to the camera first, as they were at its first go-to),
+// Where "go to asset" is: the asset, the order it steps through its instances (nearest to the camera first, as they were at its first go-to),
 // and the step. A rebuilt scene (another revision) starts the order again.
 struct AssetGoToState {
     std::string assetId;
@@ -24,6 +24,6 @@ struct AssetGoToResult {
     std::string error;
 };
 
-// Moves the camera to an asset (view.gotoAsset, the Assets window): the next of its draws (the first go-to picks the nearest), framed and
-// its prim selected into `selectedPath`, or with `all` every draw framed together.
+// Moves the camera to an asset (view.gotoAsset, the Assets window): the next of its instances (the first go-to picks the nearest), framed and
+// its prim selected into `selectedPath`, or with `all` every instance framed together.
 auto goToAsset(AssetGoToState& state, Camera& camera, const ViewScene& scene, std::string& selectedPath, const std::string& assetId, bool all) -> AssetGoToResult;
