@@ -146,14 +146,14 @@ class RhiDevice;
 // One region per (view, bucket): the camera, then each shadow cascade, then the camera's late phase (occlusion culling's second phase),
 // each split into single-sided and double-sided, opaque and cutout. A cutout bucket's pipelines discard where the material's opacity is
 // below its threshold. A region is drawn by one indirect mesh-task draw over its meshlet work items, every visible instance's meshlets in
-// instance order, which share the frame slot's one work item buffer.
+// instance order, which share the frame context's one work item buffer.
 //
 // A region holds as many draw records as instances can land in it: each live instance is in one bucket, the same in every view, known
 // from its flags, so the regions are sized from counts kept as instances change (countInstance) and packed one after another (writeParams).
 //
-// Owns the frame slot's buffers the culling passes read and write, and the readback that brings counts and visibility back to the CPU
+// Owns the frame context's buffers the culling passes read and write, and the readback that brings counts and visibility back to the CPU
 // once the slot's fence has passed, with the draw records too, into a buffer of their own, while the render debugger is open. Everything
-// read back is one frame-slot cycle old. Also the occlusion history, kept across frames: per instance slot, whether the camera saw it
+// read back is one frame-context cycle old. Also the occlusion history, kept across frames: per instance slot, whether the camera saw it
 // last frame.
 class DrawLists {
 public:
@@ -228,14 +228,14 @@ public:
     static auto countInto(const GpuInstance& instance, int delta, Counts& counts) -> void;
     auto addCounts(const Counts& counts) -> void;
     // Recomputes the boxes of the culling workgroups holding the changed slots (and of every group past a change in the slot count); the
-    // next writeParams copies them to the frame slot's buffer.
+    // next writeParams copies them to the frame context's buffer.
     auto updateGroupBounds(const ChunkedList<GpuInstance>& instances, std::span<const uint32_t> changedSlots) -> void;
     // The draw records the buffer must hold for the instances counted: their buckets' sizes, once per view.
     auto commandsNeeded() const -> uint64_t;
     // Every live instance's meshlets, as counted.
     auto liveMeshlets() const -> uint64_t { return liveMeshletCount; }
 
-    auto init(RhiDevice* device, uint32_t frameSlots, DeletionQueue* deletionQueue) -> void;
+    auto init(RhiDevice* device, uint32_t frameContexts, DeletionQueue* deletionQueue) -> void;
     auto destroy() -> void;
 
     // Grows every slot's buffers to hold `instanceCount` instances and `commandCount` draw records. Returns true when buffers were
@@ -259,7 +259,7 @@ public:
         uint32_t hzbWidth = 1;
         uint32_t hzbHeight = 1;
     };
-    auto writeParams(uint32_t frameSlot, uint32_t instanceCount, const glm::mat4& cameraViewProj, std::span<const ShadowCascade> cascades, bool cullEnabled, Occlusion occlusion) -> uint32_t;
+    auto writeParams(uint32_t frameContext, uint32_t instanceCount, const glm::mat4& cameraViewProj, std::span<const ShadowCascade> cascades, bool cullEnabled, Occlusion occlusion) -> uint32_t;
     static auto groupCountFor(uint32_t instanceCount) -> uint32_t;
 
     struct Handles {
@@ -282,7 +282,7 @@ public:
     };
     // Imports the slot's buffers; the slot's fence guards them, so no earlier access carries over. The history is imported with the access
     // the last frame left it in.
-    auto import(FrameGraph& fg, uint32_t frameSlot) -> Handles;
+    auto import(FrameGraph& fg, uint32_t frameContext) -> Handles;
     // Stores the access the history is left in for the next frame's import.
     auto afterExecute(const FrameGraph& fg) -> void;
     // A history buffer made since it was last cleared: the culling clears it first (InstanceCullPass), then this is called.
@@ -292,9 +292,9 @@ public:
     // Copies the counts and the meshlet counts into the slot's readback buffer, with readVisibility every instance's visibility bits too,
     // and with captureCommands the draw records into the slot's commands readback, made when it is asked for and let go (at `frame`,
     // through the deletion queue) the first frame it isn't.
-    auto addReadbackPass(FrameGraph& fg, const Handles& handles, uint32_t frameSlot, bool readVisibility, bool captureCommands, uint64_t frame) -> void;
+    auto addReadbackPass(FrameGraph& fg, const Handles& handles, uint32_t frameContext, bool readVisibility, bool captureCommands, uint64_t frame) -> void;
     // Once the slot's fence has passed: parses what that slot's frame read back.
-    auto parseReadback(uint32_t frameSlot, uint64_t slotFrame) -> void;
+    auto parseReadback(uint32_t frameContext, uint64_t contextFrame) -> void;
 
     // Buffers for the culling passes' descriptor sets.
     struct SlotBuffers {
@@ -310,8 +310,8 @@ public:
         RhiBuffer* regionWork = nullptr;
         RhiBuffer* workItems = nullptr;
     };
-    auto slotBuffers(uint32_t frameSlot) const -> SlotBuffers;
-    auto frameSlots() const -> uint32_t { return (uint32_t) slots.size(); }
+    auto slotBuffers(uint32_t frameContext) const -> SlotBuffers;
+    auto frameContexts() const -> uint32_t { return (uint32_t) slots.size(); }
 
     // A region's draw records, as the frame's writeParams laid them out: its first and how many fit; its draw count is at countOffset in
     // the counts.
@@ -327,7 +327,7 @@ public:
     // the pass and cascade zones that say whose view. A literal.
     static auto drawName(uint32_t region) -> const char*;
 
-    // Latest readback (one frame-slot cycle old).
+    // Latest readback (one frame-context cycle old).
     auto readbackFrame() const -> uint64_t { return latest.frame; }
     auto drawsIn(uint32_t region) const -> uint32_t { return latest.totals[counterDraws + region]; }
     auto primitivesIn(uint32_t region) const -> uint64_t { return latest.totals[counterPrimitives + region]; }

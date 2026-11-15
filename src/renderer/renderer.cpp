@@ -176,22 +176,22 @@ auto Renderer::init(RhiDevice* rhiDevice, AssetClient* shaders, RhiExtent2D wind
     cmdBuffers.resize(imgCount);
     for (uint32_t i = 0; i < imgCount; i++) {
         cmdBuffers[i] = device->createCommandBuffer();
-        device->setDebugName(cmdBuffers[i], std::format("frameslot{}.cmd", i).c_str());
+        device->setDebugName(cmdBuffers[i], std::format("framecontext{}.cmd", i).c_str());
     }
 
     imageAvailableSemaphores.resize(imgCount);
     renderFinishedSemaphores.resize(imgCount);
     inflightFences.resize(imgCount);
-    slotFrame.assign(imgCount, 0);
+    contextFrame.assign(imgCount, 0);
     slotSubmitNs.assign(imgCount, 0);
     slotDrawLogs.resize(imgCount);
     for (uint32_t i = 0; i < imgCount; i++) {
         imageAvailableSemaphores[i] = device->createSemaphore();
         renderFinishedSemaphores[i] = device->createSemaphore();
         inflightFences[i] = device->createFence(true);
-        device->setDebugName(imageAvailableSemaphores[i], std::format("frameslot{}.imageavailable", i).c_str());
+        device->setDebugName(imageAvailableSemaphores[i], std::format("framecontext{}.imageavailable", i).c_str());
         device->setDebugName(renderFinishedSemaphores[i], std::format("swapchainimage{}.renderfinished", i).c_str());
-        device->setDebugName(inflightFences[i], std::format("frameslot{}.inflight", i).c_str());
+        device->setDebugName(inflightFences[i], std::format("framecontext{}.inflight", i).c_str());
     }
 
     if (!device->limits().timestamps) {
@@ -213,7 +213,7 @@ auto Renderer::init(RhiDevice* rhiDevice, AssetClient* shaders, RhiExtent2D wind
         .uploader = uploader,
         .textureSampler = textureSampler,
         .previews = previewTextures,
-        .frameSlots = imgCount,
+        .frameContexts = imgCount,
         .colorFormat = swapchain->colorFormat(),
     };
     for (auto* extension : extensions) {
@@ -281,7 +281,7 @@ static auto toRenderDebug(const GpuScene::GeometryPoolStats& pool) -> RenderDebu
 // buffer are complete. Top-level zones are the frame graph passes; nested ones belong to
 // whatever a pass timed inside itself.
 auto Renderer::readGpuTimings(uint32_t slot) -> void {
-    if (!device->limits().timestamps || slotFrame[slot] == 0) {
+    if (!device->limits().timestamps || contextFrame[slot] == 0) {
         return;
     }
     if (!device->collectGpuZones(cmdBuffers[slot], gpuZoneScratch) || gpuZoneScratch.empty()) {
@@ -298,7 +298,7 @@ auto Renderer::readGpuTimings(uint32_t slot) -> void {
         }
     }
     lastGpuFrameMs = (double) (maxEnd - minStart) * 1e-6;
-    lastGpuFrame = slotFrame[slot];
+    lastGpuFrame = contextFrame[slot];
 
     lastDrawLog = slotDrawLogs[slot];
 
@@ -732,7 +732,7 @@ auto Renderer::rebuildGeometryDescriptorSets() -> void {
         return;
     }
 
-    // One set per frame slot: the slot's UBO and culling buffers plus the scene
+    // One set per frame context: the slot's UBO and culling buffers plus the scene
     // tables and the geometry pool. Every texture-array element is written: the slot's texture or the fallback.
     PROFILE_ZONE_DETAIL("GeometryDescriptors", Render);
     auto imgCount = swapchain->imageCount();
@@ -898,7 +898,7 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
     }
     RenderFrame current = {
         .frame = frame,
-        .slot = currentFrame,
+        .frameContext = currentFrame,
     };
     for (auto* extension : extensions) {
         profile::ScopedZone hookZone(extension->hookZoneIds[RenderExtension::HookBeginFrame]);
@@ -910,14 +910,14 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
         device->waitForFence(inflightFences[currentFrame]);
     }
     // This slot's previous frame is done, and so is everything submitted before it.
-    deletionQueue.flush(slotFrame[currentFrame]);
+    deletionQueue.flush(contextFrame[currentFrame]);
     {
         PROFILE_ZONE("ReadGpuTimings", Render);
         readGpuTimings(currentFrame);
     }
     {
         PROFILE_ZONE("ParseReadback", Render);
-        drawLists.parseReadback(currentFrame, slotFrame[currentFrame]);
+        drawLists.parseReadback(currentFrame, contextFrame[currentFrame]);
         // Commands dropped past their region's end mean the CPU's bucket counts disagree with the cull shader's rule: draws are missing.
         if (auto overflow = drawLists.regionOverflow(); overflow != reportedRegionOverflow) {
             // While the draw records wait for a growth, the regions are cut to the capacity on purpose (GrowthBehind said so).
@@ -928,7 +928,7 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
             }
             reportedRegionOverflow = overflow;
         }
-        lodGroups.parseReadback(currentFrame, slotFrame[currentFrame]);
+        lodGroups.parseReadback(currentFrame, contextFrame[currentFrame]);
         // Meshlets that didn't fit the work items weren't drawn: grow past them before the next frame builds.
         if (auto overflow = drawLists.workOverflow(); overflow > 0) {
             auto before = drawLists.workCapacity();
@@ -1011,7 +1011,7 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
     gpuScene.addUploadPass(frameGraph, m_frameIndex, currentFrame);
     profile::endZone();
     // Per-frame resources (UBOs, descriptor sets, dynamic vertex buffers) are owned by
-    // the frame slot whose fence guards them, not by the swapchain image.
+    // the frame context whose fence guards them, not by the swapchain image.
     auto imageIdx = currentFrame;
     // The slots the GPU tables hold: past them, slots wait for a growth, undrawn.
     auto instanceCount = std::min({(uint32_t) gpuInstances.size(), gpuScene.instanceSlots(), drawLists.instanceCapacity()});
@@ -1255,7 +1255,7 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
         frameGraph.compile();
     }
 
-    // Command buffer and fence belong to the frame slot; the render-finished semaphore
+    // Command buffer and fence belong to the frame context; the render-finished semaphore
     // belongs to the swapchain image, since present consumes it per image.
     auto* cmd = cmdBuffers[currentFrame];
     {
@@ -1302,7 +1302,7 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
         PROFILE_ZONE("Submit", Render);
         device->submitCommandBuffer(cmd, submitInfo);
     }
-    slotFrame[currentFrame] = frame;
+    contextFrame[currentFrame] = frame;
     slotSubmitNs[currentFrame] = profile::now();
 
     for (auto* extension : extensions) {
@@ -1343,7 +1343,7 @@ auto Renderer::waitForFrame() -> void {
 auto Renderer::state() const -> RendererState {
     return {
         .frame = m_frameIndex,
-        .slot = currentFrame,
+        .frameContext = currentFrame,
         .device = device,
         .swapchainExtent = swapchain->extent(),
         .swapchainFormat = swapchain->colorFormat(),

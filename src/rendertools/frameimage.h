@@ -17,7 +17,7 @@ class RhiTexture;
 // when the swapchain's size changes.
 class FrameImages {
 public:
-    auto init(RhiDevice* device, uint32_t frameSlots) -> void;
+    auto init(RhiDevice* device, uint32_t frameContexts) -> void;
     // Render thread, afterExecute: the backbuffer is in PresentSrc and goes back there. `profileFrame` is the main thread's frame (frameMarks).
     auto record(RhiCommandBuffer* cmd, const RenderFrame& frame, RhiFormat backbufferFormat, uint64_t profileFrame) -> void;
     // Render thread, afterFence: the slot's image, if it recorded one, goes to Tracy.

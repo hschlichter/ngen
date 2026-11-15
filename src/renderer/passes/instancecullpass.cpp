@@ -113,7 +113,7 @@ auto InstanceCullPass::rebuildDescriptors(RhiDevice* device, const DrawLists& li
     if (scene.instanceBuffer() == nullptr || scene.meshTableBuffer() == nullptr || pyramid.texture() == nullptr) {
         return;
     }
-    auto slotCount = lists.frameSlots();
+    auto slotCount = lists.frameContexts();
     pool = device->createDescriptorPool(slotCount, cullBindings);
     device->setDebugName(pool, "cull.sets.pool");
     sets.assign(slotCount, nullptr);
@@ -147,10 +147,10 @@ auto InstanceCullPass::rebuildDescriptors(RhiDevice* device, const DrawLists& li
     }
 }
 
-auto InstanceCullPass::addPasses(FrameGraph& fg, DrawLists& lists, const DrawLists::Handles& handles, const LodGroups::Handles& lodHandles, FgBufferHandle instanceBuffer, FgTextureHandle hzb, uint32_t groupCount, uint32_t frameSlot)
+auto InstanceCullPass::addPasses(FrameGraph& fg, DrawLists& lists, const DrawLists::Handles& handles, const LodGroups::Handles& lodHandles, FgBufferHandle instanceBuffer, FgTextureHandle hzb, uint32_t groupCount, uint32_t frameContext)
     -> void {
     auto* pip = registry->get(pipelineHandle);
-    auto* set = frameSlot < sets.size() ? sets[frameSlot] : nullptr;
+    auto* set = frameContext < sets.size() ? sets[frameContext] : nullptr;
     auto dispatchMode = [pip, set](FrameGraphContext& ctx, CullMode mode, uint32_t phase, uint32_t groups) {
         auto* cmd = ctx.cmd();
         cmd->bindPipeline(pip);
@@ -240,9 +240,9 @@ auto InstanceCullPass::addPasses(FrameGraph& fg, DrawLists& lists, const DrawLis
         [dispatchMode, groupCount](FrameGraphContext& ctx, const ScatterPassData&) { dispatchMode(ctx, CullMode::Scatter, 0, groupCount); });
 }
 
-auto InstanceCullPass::addLatePasses(FrameGraph& fg, const DrawLists::Handles& handles, FgBufferHandle instanceBuffer, FgTextureHandle hzb, uint32_t groupCount, uint32_t frameSlot) -> void {
+auto InstanceCullPass::addLatePasses(FrameGraph& fg, const DrawLists::Handles& handles, FgBufferHandle instanceBuffer, FgTextureHandle hzb, uint32_t groupCount, uint32_t frameContext) -> void {
     auto* pip = registry->get(pipelineHandle);
-    auto* set = frameSlot < sets.size() ? sets[frameSlot] : nullptr;
+    auto* set = frameContext < sets.size() ? sets[frameContext] : nullptr;
     auto dispatchMode = [pip, set](FrameGraphContext& ctx, CullMode mode, uint32_t phase, uint32_t groups) {
         auto* cmd = ctx.cmd();
         cmd->bindPipeline(pip);

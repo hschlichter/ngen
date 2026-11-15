@@ -71,7 +71,7 @@ auto GeometryPass::descriptorBindings() -> std::array<RhiDescriptorBinding, 16> 
         {.binding = 7, .type = StorageBuffer, .stage = shaders},
         {.binding = 8, .type = StorageBuffer, .stage = shaders},
         {.binding = 9, .type = StorageBuffer, .stage = shaders},
-        // The frame slot's culling buffers: the meshlet work items, the culling parameters, the meshlet counts.
+        // The frame context's culling buffers: the meshlet work items, the culling parameters, the meshlet counts.
         {.binding = 10, .type = StorageBuffer, .stage = shaders},
         {.binding = 11, .type = StorageBuffer, .stage = shaders},
         {.binding = 12, .type = StorageBuffer, .stage = shaders},

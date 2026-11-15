@@ -38,7 +38,7 @@ struct RenderExtensionContext {
     GpuUploader& uploader;
     RhiSampler* textureSampler = nullptr;
     PreviewTextures* previews = nullptr; // none: no previews
-    uint32_t frameSlots = 0;
+    uint32_t frameContexts = 0;
     RhiFormat colorFormat = RhiFormat::Undefined;
 };
 
@@ -46,7 +46,7 @@ struct RenderExtensionContext {
 // before addOverlayPasses.
 struct RenderFrame {
     uint64_t frame = 0;
-    uint32_t slot = 0; // the frame slot: its command buffer, fence and per-slot buffers
+    uint32_t frameContext = 0; // its command buffer, fence and per-context buffers
     RhiExtent2D extent = {};
     RhiTexture* backbuffer = nullptr;
     FgTextureHandle color; // the backbuffer in the frame graph
@@ -71,8 +71,8 @@ public:
     // First in every call to Renderer::render, whether it records or not: the extension takes its data from the snapshot (what a frame that
     // doesn't record asked for waits for the next that does).
     virtual auto beginFrame(Renderer& /*renderer*/, RenderSnapshot& /*snapshot*/, RenderFrame& /*frame*/) -> void {}
-    // A frame slot's fence passed: what that slot's frame recorded can be read.
-    virtual auto afterFence(Renderer& /*renderer*/, uint32_t /*slot*/) -> void {}
+    // A frame context's fence passed: what its frame recorded can be read.
+    virtual auto afterFence(Renderer& /*renderer*/, uint32_t /*frameContext*/) -> void {}
     // Passes on the backbuffer after the debug lines, before present.
     virtual auto addOverlayPasses(Renderer& /*renderer*/, RenderSnapshot& /*snapshot*/, const RenderFrame& /*frame*/) -> void {}
     // On the frame's command buffer: before it is reset and the graph recorded, and right after the graph is recorded.

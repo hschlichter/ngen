@@ -64,7 +64,7 @@ auto AAPass::destroy(RhiDevice* dev) -> void {
     dev->destroyDescriptorSetLayout(setLayout);
 }
 
-auto AAPass::addPass(FrameGraph& fg, FgTextureHandle input, RhiExtent2D extent, uint32_t frameSlot, RhiSampler* sampler, bool enabled) -> const AAPassData& {
+auto AAPass::addPass(FrameGraph& fg, FgTextureHandle input, RhiExtent2D extent, uint32_t frameContext, RhiSampler* sampler, bool enabled) -> const AAPassData& {
     if (!computeSupported) {
         FgTextureDesc desc = {
             .width = extent.width,
@@ -97,14 +97,14 @@ auto AAPass::addPass(FrameGraph& fg, FgTextureHandle input, RhiExtent2D extent, 
             data.sceneColor = builder.read(input, FgAccessFlags::ShaderRead);
             data.sceneColorAA = builder.write(builder.createTexture("sceneColorAA", desc), FgAccessFlags::StorageWrite);
         },
-        [this, pipeline = registry->get(pipelineHandle), extent, frameSlot, sampler, enabled](FrameGraphContext& ctx, const AAPassData& data) {
+        [this, pipeline = registry->get(pipelineHandle), extent, frameContext, sampler, enabled](FrameGraphContext& ctx, const AAPassData& data) {
             // Transient textures come from the pool and may differ per frame, so the
             // slot's set is rewritten here. The slot's fence guarantees nothing in flight binds it.
             std::array<RhiDescriptorWrite, 2> writes = {{
                 {.binding = 0, .type = RhiDescriptorType::CombinedImageSampler, .texture = ctx.texture(data.sceneColor), .sampler = sampler},
                 {.binding = 1, .type = RhiDescriptorType::StorageImage, .texture = ctx.texture(data.sceneColorAA)},
             }};
-            device->updateDescriptorSet(sets[frameSlot], writes);
+            device->updateDescriptorSet(sets[frameContext], writes);
 
             FxaaPush push = {
                 .inverseSize = {1.0f / (float) extent.width, 1.0f / (float) extent.height},
@@ -112,7 +112,7 @@ auto AAPass::addPass(FrameGraph& fg, FgTextureHandle input, RhiExtent2D extent, 
             };
             auto* cmd = ctx.cmd();
             cmd->bindPipeline(pipeline);
-            cmd->bindDescriptorSet(pipeline, 0, sets[frameSlot]);
+            cmd->bindDescriptorSet(pipeline, 0, sets[frameContext]);
             cmd->pushConstants(pipeline, RhiShaderStage::Compute, 0, sizeof(push), &push);
             cmd->dispatch((extent.width + 7) / 8, (extent.height + 7) / 8, 1);
         });

@@ -267,7 +267,7 @@
   <line x1="860" y1="606" x2="860" y2="626" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
   <rect x="28" y="628" width="944" height="360" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-opacity="0.45"/>
   <text x="42" y="652" class="h">cull.commands</text>
-  <text x="160" y="652" class="s">draw records, per frame slot: each region as large as its bucket's CPU count (DrawLists::countInstance), at</text>
+  <text x="160" y="652" class="s">draw records, per frame context: each region as large as its bucket's CPU count (DrawLists::countInstance), at</text>
   <text x="160" y="668" class="s"><tspan class="m">CullParams::regionOffsets</tspan> from <tspan class="m">writeParams</tspan>; filled to its count. A DrawRecord: instance, meshlets, first item (for the tools).</text>
   <rect x="42" y="710" width="121" height="20" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.8"/>
   <rect x="44" y="713" width="9" height="14" rx="2" fill="#86efac"/>

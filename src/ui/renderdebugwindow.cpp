@@ -279,7 +279,7 @@ auto drawDrawList(const RenderDebugSnapshot& s, const PrimPathOf& primPath, uint
 auto drawFrameTab(const RenderDebugSnapshot& s) -> void {
     const auto& t = s.frameTotals;
     ImGui::Text("Frame #%llu: %u draws, %u dispatches, %u barriers, %u pipeline binds, %u descriptor binds, %u copies, %llu primitives", (unsigned long long) s.frameIndex, t.draws, t.dispatches, t.barriers, t.pipelineBinds, t.descriptorBinds, t.copies, (unsigned long long) t.primitives);
-    ImGui::Text("Swapchain %ux%u %s, %u images, slot %u", s.swapchainExtent.width, s.swapchainExtent.height, toString(s.swapchainFormat), s.swapchainImages, s.currentSlot);
+    ImGui::Text("Swapchain %ux%u %s, %u images, slot %u", s.swapchainExtent.width, s.swapchainExtent.height, toString(s.swapchainFormat), s.swapchainImages, s.currentFrameContext);
     ImGui::Separator();
 
     if (ImGui::BeginTable("##passes", 8, ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_SizingStretchProp)) {

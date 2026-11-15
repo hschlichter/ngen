@@ -148,5 +148,5 @@
 
   <text x="816" y="660" class="s">A slot comes round</text>
   <text x="816" y="676" class="s">again a slot cycle</text>
-  <text x="816" y="692" class="s">later (Frame slots)</text>
+  <text x="816" y="692" class="s">later (Frame contexts)</text>
 </svg>

@@ -1,6 +1,6 @@
 // RHI example: GPU timestamps.
 //
-// Adds to compute: a query pool per frame slot, reset and written on the command
+// Adds to compute: a query pool per frame context, reset and written on the command
 // buffer around a deliberately heavy compute dispatch, read back once the slot's
 // fence has signalled, converted with limits().timestampPeriodNs. The measured
 // time is printed every 30 frames; --check asserts it is positive and plausible.
@@ -154,7 +154,7 @@ protected:
         device().updateDescriptorSet(sets[0], storageWrite);
         device().updateDescriptorSet(sets[1], sampledWrite);
 
-        // One pool per frame slot: two timestamps around the dispatch, two around the draw.
+        // One pool per frame context: two timestamps around the dispatch, two around the draw.
         queryPools.resize(frameCount());
         for (auto& qp : queryPools) {
             qp = device().createQueryPool(4);
@@ -163,7 +163,7 @@ protected:
     }
 
     auto record(RhiCommandBuffer* cmd, RhiTexture* backbuffer, RhiExtent2D extent) -> void override {
-        auto slot = frameSlot();
+        auto slot = frameContext();
         auto* qp = queryPools[slot];
 
         // The base waited on this slot's fence, so the slot's previous results are complete.

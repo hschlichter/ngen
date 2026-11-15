@@ -17,11 +17,11 @@
 
   <rect x="0" y="0" width="1000" height="770" rx="14" fill="#f8fafc" stroke="#e2e8f0"/>
   <text x="28" y="40" class="title">RHI: frame pacing, as the integrator provides it</text>
-  <text x="28" y="62" class="s" style="font-size:12px">What belongs to a frame slot and what to a swapchain image, and one frame from acquire to present (rhiexample.h).</text>
+  <text x="28" y="62" class="s" style="font-size:12px">What belongs to a frame context and what to a swapchain image, and one frame from acquire to present (rhiexample.h).</text>
 
-  <!-- Per frame slot -->
+  <!-- Per frame context -->
   <rect x="28" y="88" width="462" height="178" rx="10" fill="#f1f5f9" stroke="#64748b" stroke-opacity="0.45"/>
-  <text x="44" y="112" class="h">Per frame slot</text>
+  <text x="44" y="112" class="h">Per frame context</text>
   <text x="44" y="130" class="s">indexed by slot; slot = (slot + 1) % N after each frame</text>
   <rect x="44" y="142" width="136" height="62" rx="7" fill="#ffffff" stroke="#64748b" stroke-opacity="0.6"/>
   <text x="56" y="162" class="m">commandBuffers</text>

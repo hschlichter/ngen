@@ -95,14 +95,14 @@ auto PoolAllocator::grow(uint64_t capacity) -> void {
     free(first, added);
 }
 
-auto GpuScene::init(RhiDevice* rhiDevice, uint32_t frameSlots, DeletionQueue* queue, RhiTexture* fallback, RhiTexture* pending) -> void {
+auto GpuScene::init(RhiDevice* rhiDevice, uint32_t frameContexts, DeletionQueue* queue, RhiTexture* fallback, RhiTexture* pending) -> void {
     device = rhiDevice;
     deletionQueue = queue;
     fallbackTexture = fallback;
     pendingTexture = pending;
     slots = {fallback, pending};
-    uploadRing.assign(frameSlots, {});
-    instanceStaging.assign(frameSlots, {});
+    uploadRing.assign(frameContexts, {});
+    instanceStaging.assign(frameContexts, {});
     // The mesh shaders pull vertices and meshlets from storage buffers.
     vertices = {.usage = RhiBufferUsage::Storage, .readState = RhiBufferState::StorageRead, .name = "gpuscene.pool.vertices"};
     positions = {.usage = RhiBufferUsage::Storage, .readState = RhiBufferState::StorageRead, .name = "gpuscene.pool.positions"};
@@ -1060,7 +1060,7 @@ auto GpuScene::updateInstanceStaging(uint64_t bytes) -> void {
     instanceStagingGrowth.update(device, bytes, instanceStagingBytes, grownCapacity, describe, install);
 }
 
-auto GpuScene::addUploadPass(FrameGraph& fg, uint64_t frame, uint32_t frameSlot) -> void {
+auto GpuScene::addUploadPass(FrameGraph& fg, uint64_t frame, uint32_t frameContext) -> void {
     currentFrame = frame;
     updateUploadRing();
     updateLargeStaging();
@@ -1073,11 +1073,11 @@ auto GpuScene::addUploadPass(FrameGraph& fg, uint64_t frame, uint32_t frameSlot)
         "SceneUpload",
         profile::Group::Upload,
         [](FrameGraphBuilder& builder, SceneUploadData&) { builder.setSideEffects(true); },
-        [this, frame, frameSlot](FrameGraphContext& ctx, const SceneUploadData&) {
+        [this, frame, frameContext](FrameGraphContext& ctx, const SceneUploadData&) {
             PROFILE_ZONE("SceneUpload", Upload);
-            auto acquire = [this, frameSlot](uint64_t bytes) -> Staging {
-                if (frameSlot < uploadRing.size() && bytes <= uploadRingBytes && uploadRing[frameSlot].buffer != nullptr) {
-                    return {.buffer = uploadRing[frameSlot].buffer, .mapped = static_cast<std::byte*>(uploadRing[frameSlot].mapped)};
+            auto acquire = [this, frameContext](uint64_t bytes) -> Staging {
+                if (frameContext < uploadRing.size() && bytes <= uploadRingBytes && uploadRing[frameContext].buffer != nullptr) {
+                    return {.buffer = uploadRing[frameContext].buffer, .mapped = static_cast<std::byte*>(uploadRing[frameContext].mapped)};
                 }
                 if (largeStaging.buffer != nullptr && bytes <= largeStagingBytes) {
                     // The one upload larger than the ring: its own buffer, made for it on a background job, retired after this copy.
@@ -1203,7 +1203,7 @@ auto GpuScene::installInstances(uint32_t capacity, RhiBuffer* buffer, uint32_t c
     }
 }
 
-auto GpuScene::addInstanceUploadPasses(FrameGraph& fg, const ChunkedList<GpuInstance>& sceneInstances, uint32_t frameSlot) -> FgBufferHandle {
+auto GpuScene::addInstanceUploadPasses(FrameGraph& fg, const ChunkedList<GpuInstance>& sceneInstances, uint32_t frameContext) -> FgBufferHandle {
     // Imported with the access the previous frame left it in, so this frame's upload waits for last frame's reads.
     FgBufferDesc desc = {
         .size = instanceBufferBytes(),
@@ -1276,9 +1276,9 @@ auto GpuScene::addInstanceUploadPasses(FrameGraph& fg, const ChunkedList<GpuInst
     {
         PROFILE_ZONE_DETAIL("InstanceStaging", Upload);
         updateInstanceStaging(bytes);
-        if (bytes <= instanceStagingBytes && frameSlot < instanceStaging.size() && instanceStaging[frameSlot].buffer != nullptr) {
-            buffer = instanceStaging[frameSlot].buffer;
-            mapped = instanceStaging[frameSlot].mapped;
+        if (bytes <= instanceStagingBytes && frameContext < instanceStaging.size() && instanceStaging[frameContext].buffer != nullptr) {
+            buffer = instanceStaging[frameContext].buffer;
+            mapped = instanceStaging[frameContext].mapped;
         } else {
             buffer = device->createBuffer({.size = bytes, .usage = RhiBufferUsage::TransferSrc, .memory = RhiMemoryUsage::CpuToGpu, .debugName = "gpuscene.instances.staging.large"});
             mapped = device->mapBuffer(buffer);
@@ -1391,7 +1391,7 @@ namespace renderconfig {
 config::Int uploadBudgetMiB{"render.upload.budgetMiB",
                             (int64_t) (GpuScene::defaultUploadBudget / (1024 * 1024)),
                             "MiB the scene's uploads may copy per frame (the SceneUpload pass); the rest waits for the next frame. The staging ring "
-                            "holds this much, mapped, per frame slot.",
+                            "holds this much, mapped, per frame context.",
                             {.min = 1, .max = 1024}};
 config::Int geometryLimitMiB{"render.geometry.limitMiB",
                              0,

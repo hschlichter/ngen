@@ -67,7 +67,7 @@ auto RenderTools::fillSnapshot(RenderSnapshot& snapshot) -> void {
 auto RenderTools::init(const RenderExtensionContext& extensionContext) -> bool {
     context.emplace(extensionContext);
     previews.init(&context->device, context->previews, context->textureSampler, &context->deletionQueue);
-    frameImages.init(&context->device, context->frameSlots);
+    frameImages.init(&context->device, context->frameContexts);
     return true;
 }
 
@@ -287,7 +287,7 @@ auto RenderTools::buildRenderDebugSnapshot(const Renderer& renderer) const -> Re
     snap.swapchainExtent = state.swapchainExtent;
     snap.swapchainFormat = state.swapchainFormat;
     snap.swapchainImages = state.swapchainImages;
-    snap.currentSlot = state.slot;
+    snap.currentFrameContext = state.frameContext;
     state.device->allocations(snap.allocations);
     state.device->memoryHeaps(snap.heaps);
     snap.geometryPool = renderer.sceneGpuStats().geometryPool;

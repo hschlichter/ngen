@@ -10,10 +10,10 @@
 #include <algorithm>
 #include <cstring>
 
-auto DrawLists::init(RhiDevice* rhiDevice, uint32_t frameSlots, DeletionQueue* queue) -> void {
+auto DrawLists::init(RhiDevice* rhiDevice, uint32_t frameContexts, DeletionQueue* queue) -> void {
     device = rhiDevice;
     deletionQueue = queue;
-    slots.assign(frameSlots, {});
+    slots.assign(frameContexts, {});
     ensureCapacity(0, 0, 0);
     ensureWorkCapacity(0, 0);
 }
@@ -198,7 +198,7 @@ auto DrawLists::ensureCapacity(uint32_t instanceCount, uint64_t commandCount, ui
         replaced |= instanceGrowth.update(device, instanceCount, capacity, grownInstances, instanceDescs, installInstancesNow);
     }
 
-    // The draw records, every region's, per slot.
+    // The draw records, every region's, per frame context.
     auto commandDescs = [this](uint64_t grown) -> std::vector<GrowthBufferDesc> {
         std::vector<GrowthBufferDesc> descs;
         for (size_t s = 0; s < slots.size(); s++) {
@@ -325,7 +325,7 @@ auto DrawLists::growthStatus() const -> std::array<GrowthStatus, 3> {
     };
 }
 
-auto DrawLists::writeParams(uint32_t frameSlot, uint32_t instanceCount, const glm::mat4& cameraViewProj, std::span<const ShadowCascade> cascades, bool cullEnabled, Occlusion occlusion)
+auto DrawLists::writeParams(uint32_t frameContext, uint32_t instanceCount, const glm::mat4& cameraViewProj, std::span<const ShadowCascade> cascades, bool cullEnabled, Occlusion occlusion)
     -> uint32_t {
     CullParams params;
     params.instanceCount = instanceCount;
@@ -371,24 +371,24 @@ auto DrawLists::writeParams(uint32_t frameSlot, uint32_t instanceCount, const gl
     for (uint32_t p = 0; p < 6; p++) {
         params.planes[(lateView * 6) + p] = params.planes[p];
     }
-    std::memcpy(slots[frameSlot].paramsMapped, &params, sizeof(params));
+    std::memcpy(slots[frameContext].paramsMapped, &params, sizeof(params));
     // The groups' boxes as the slots are now; a group past the boxes computed (none yet) is tested slot by slot.
-    auto* boxes = static_cast<GroupBox*>(slots[frameSlot].groupBoundsMapped);
+    auto* boxes = static_cast<GroupBox*>(slots[frameContext].groupBoundsMapped);
     for (uint32_t g = 0; g < params.groupCount; g++) {
         boxes[g] = g < groupBoxes.size() ? groupBoxes[g] : GroupBox{.min = glm::vec4(0.0f, 0.0f, 0.0f, groupBoxUnbounded)};
     }
-    slots[frameSlot].instanceCount = instanceCount;
-    slots[frameSlot].viewCount = params.viewCount;
-    slots[frameSlot].occlusion = occlusion.enabled;
-    slots[frameSlot].occlusionCullCamera = occlusion.enabled && occlusion.cullCamera;
-    slots[frameSlot].workCapacity = workItemCapacity;
-    slots[frameSlot].offsets = frameOffsets;
-    slots[frameSlot].capacities = frameCapacities;
+    slots[frameContext].instanceCount = instanceCount;
+    slots[frameContext].viewCount = params.viewCount;
+    slots[frameContext].occlusion = occlusion.enabled;
+    slots[frameContext].occlusionCullCamera = occlusion.enabled && occlusion.cullCamera;
+    slots[frameContext].workCapacity = workItemCapacity;
+    slots[frameContext].offsets = frameOffsets;
+    slots[frameContext].capacities = frameCapacities;
     return params.groupCount;
 }
 
-auto DrawLists::import(FrameGraph& fg, uint32_t frameSlot) -> Handles {
-    const auto& slot = slots[frameSlot];
+auto DrawLists::import(FrameGraph& fg, uint32_t frameContext) -> Handles {
+    const auto& slot = slots[frameContext];
     auto groups = groupCountFor(capacity);
     return {
         .params = fg.importBuffer("cullParams", slot.params, {.size = sizeof(CullParams), .usage = RhiBufferUsage::Storage}),
@@ -432,8 +432,8 @@ struct CullReadbackPassData {
 };
 } // namespace
 
-auto DrawLists::addReadbackPass(FrameGraph& fg, const Handles& handles, uint32_t frameSlot, bool readVisibility, bool captureCommands, uint64_t frame) -> void {
-    auto& slot = slots[frameSlot];
+auto DrawLists::addReadbackPass(FrameGraph& fg, const Handles& handles, uint32_t frameContext, bool readVisibility, bool captureCommands, uint64_t frame) -> void {
+    auto& slot = slots[frameContext];
     if (!captureCommands && slot.commandsReadback != nullptr) {
         // The render debugger closed: the slot's last commands readback was parsed before this frame (after the slot's fence), so it goes.
         deletionQueue->deferBuffer(frame, slot.commandsReadback);
@@ -484,14 +484,14 @@ auto DrawLists::addReadbackPass(FrameGraph& fg, const Handles& handles, uint32_t
         });
 }
 
-auto DrawLists::parseReadback(uint32_t frameSlot, uint64_t slotFrame) -> void {
-    auto& slot = slots[frameSlot];
+auto DrawLists::parseReadback(uint32_t frameContext, uint64_t contextFrame) -> void {
+    auto& slot = slots[frameContext];
     if (!slot.pending || slot.readbackMapped == nullptr) {
         return;
     }
     slot.pending = false;
     const auto* bytes = static_cast<const std::byte*>(slot.readbackMapped);
-    latest.frame = slotFrame;
+    latest.frame = contextFrame;
     latest.instanceCount = slot.instanceCount;
     latest.viewCount = slot.viewCount;
     latest.occlusion = slot.occlusion;
@@ -525,8 +525,8 @@ auto DrawLists::parseReadback(uint32_t frameSlot, uint64_t slotFrame) -> void {
     }
 }
 
-auto DrawLists::slotBuffers(uint32_t frameSlot) const -> SlotBuffers {
-    const auto& slot = slots[frameSlot];
+auto DrawLists::slotBuffers(uint32_t frameContext) const -> SlotBuffers {
+    const auto& slot = slots[frameContext];
     return {
         .params = slot.params,
         .groupBounds = slot.groupBounds,

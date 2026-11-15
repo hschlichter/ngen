@@ -7,9 +7,9 @@
 
 #include <array>
 
-auto FrameImages::init(RhiDevice* rhiDevice, uint32_t frameSlots) -> void {
+auto FrameImages::init(RhiDevice* rhiDevice, uint32_t frameContexts) -> void {
     device = rhiDevice;
-    slots.resize(frameSlots);
+    slots.resize(frameContexts);
 }
 
 auto FrameImages::release(Slot& slot) -> void {
@@ -23,7 +23,7 @@ auto FrameImages::release(Slot& slot) -> void {
 }
 
 auto FrameImages::record(RhiCommandBuffer* cmd, const RenderFrame& frame, RhiFormat backbufferFormat, uint64_t profileFrame) -> void {
-    if (frame.slot >= slots.size() || frame.backbuffer == nullptr || frame.extent.width == 0) {
+    if (frame.frameContext >= slots.size() || frame.backbuffer == nullptr || frame.extent.width == 0) {
         return;
     }
     // Tracy takes images whose sides are multiples of 4.
@@ -36,7 +36,7 @@ auto FrameImages::record(RhiCommandBuffer* cmd, const RenderFrame& frame, RhiFor
     bool srgb = backbufferFormat == RhiFormat::B8G8R8A8_SRGB || backbufferFormat == RhiFormat::R8G8B8A8_SRGB;
     auto format = srgb ? RhiFormat::R8G8B8A8_SRGB : RhiFormat::R8G8B8A8_UNORM;
     // This slot's fence has passed (afterFence came first), so its target and buffer are free to remake.
-    auto& slot = slots[frame.slot];
+    auto& slot = slots[frame.frameContext];
     slot.pending = false;
     if (slot.target == nullptr || slot.height != height || slot.format != format) {
         release(slot);

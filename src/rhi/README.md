@@ -265,13 +265,13 @@ program can check.
 `src/rhi/examples/common/rhiexample.h` is the reference implementation of this list, numbered sections in run order.
 `src/rhi/examples/triangle.cpp` is the smallest program on top of it: shaders, pipeline, draw, checks.
 
-![Frame pacing (point 3): command buffer, fence and image-available semaphore per frame slot, render-finished semaphore per swapchain image, and one frame from waitForFence through acquire and submit to present](../../screenshots/rhi_frame_pacing.svg)
+![Frame pacing (point 3): command buffer, fence and image-available semaphore per frame context, render-finished semaphore per swapchain image, and one frame from waitForFence through acquire and submit to present](../../screenshots/rhi_frame_pacing.svg)
 
 1. A window and an `RhiWindow` filled from it.
 2. A concrete backend instance, `init(window, options)`, then `createSwapchain(extent)` with the framebuffer size in pixels.
    `options.onMessage` takes the backend's messages; leave it unset for stdout and stderr.
-3. Frame pacing: N command buffers, N fences, semaphores per frame slot and per swapchain image, and the decision of
-   which resource is indexed by which. Fences and command buffers belong to the frame slot; the render-finished
+3. Frame pacing: N command buffers, N fences, semaphores per frame context and per swapchain image, and the decision of
+   which resource is indexed by which. Fences and command buffers belong to the frame context; the render-finished
    semaphore belongs to the swapchain image because `present` consumes it per image.
 4. An upload path: staging buffers, `copyBuffer` / `copyBufferToTexture` on a command buffer, barriers
    `Undefined -> TransferDst -> ShaderReadOnly` for textures, a submit and a fence wait.
@@ -370,7 +370,7 @@ Examples, each adding one concept to the previous:
 | `ngen-example-triangle` | pipeline, draw, clear, present, resize, `RhiCommandStats` counts |
 | `ngen-example-quad` | staging upload, vertex attributes, `drawIndexed` with uint16 and uint32 |
 | `ngen-example-texture` | `copyBufferToTexture`, samplers, descriptor sets |
-| `ngen-example-uniforms` | per-frame-slot uniform buffer, `bufferOffset`, `minUniformBufferOffsetAlignment` |
+| `ngen-example-uniforms` | per-frame-context uniform buffer, `bufferOffset`, `minUniformBufferOffsetAlignment` |
 | `ngen-example-depth` | example-owned depth texture, `resized()`, four `RhiDepthState`s including `Equal`, `supportsTextureFormat`, compare sampler |
 | `ngen-example-rendertarget` | render to texture, sample it, `blitTexture`, every layout transition |
 | `ngen-example-pushconstants` | one push constant range read by both stages, `maxPushConstantSize` |

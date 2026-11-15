@@ -157,7 +157,7 @@ auto DebugViewPass::addPass(
     DebugView view,
     FgTextureHandle depthHandle,
     RhiExtent2D extent,
-    uint32_t frameSlot,
+    uint32_t frameContext,
     FgBufferHandle instanceBuffer,
     const DrawLists& lists,
     DrawLists::Handles drawHandles,
@@ -295,21 +295,21 @@ auto DebugViewPass::addPass(
                 data.lit = builder.read(litHandle, FgAccessFlags::ShaderRead);
             }
         },
-        [this, mode, extent, frameSlot, streamingStates, overLit](FrameGraphContext& ctx, const DebugViewPassData& data) {
-            // The streaming view's root states, for this frame slot's buffer: what the GPU read from it last was this slot's previous frame.
+        [this, mode, extent, frameContext, streamingStates, overLit](FrameGraphContext& ctx, const DebugViewPassData& data) {
+            // The streaming view's root states, for this frame context's buffer: what the GPU read from it last was this slot's previous frame.
             auto count = (uint32_t) std::min<size_t>(streamingStates.size(), maxStreamingRoots);
             if (mode == (uint32_t) DebugView::Streaming) {
-                auto* states = static_cast<uint32_t*>(streamingMapped[frameSlot]);
+                auto* states = static_cast<uint32_t*>(streamingMapped[frameContext]);
                 std::copy_n(streamingStates.begin(), count, states);
             }
             auto* lit = overLit ? ctx.texture(data.lit) : ctx.texture(data.value);
             std::array<RhiDescriptorWrite, 4> writes = {{
                 {.binding = 0, .type = RhiDescriptorType::CombinedImageSampler, .texture = ctx.texture(data.value), .sampler = pointSampler},
                 {.binding = 1, .type = RhiDescriptorType::StorageImage, .texture = ctx.texture(data.color)},
-                {.binding = 2, .type = RhiDescriptorType::StorageBuffer, .buffer = streamingBuffers[frameSlot], .bufferRange = (uint64_t) maxStreamingRoots * sizeof(uint32_t)},
+                {.binding = 2, .type = RhiDescriptorType::StorageBuffer, .buffer = streamingBuffers[frameContext], .bufferRange = (uint64_t) maxStreamingRoots * sizeof(uint32_t)},
                 {.binding = 3, .type = RhiDescriptorType::CombinedImageSampler, .texture = lit, .sampler = pointSampler},
             }};
-            device->updateDescriptorSet(resolveSets[frameSlot], writes);
+            device->updateDescriptorSet(resolveSets[frameContext], writes);
             ResolvePush push = {
                 .size = {extent.width, extent.height},
                 .mode = mode,
@@ -319,7 +319,7 @@ auto DebugViewPass::addPass(
             auto* cmd = ctx.cmd();
             auto* resolve = registry->get(resolvePipeline);
             cmd->bindPipeline(resolve);
-            cmd->bindDescriptorSet(resolve, 0, resolveSets[frameSlot]);
+            cmd->bindDescriptorSet(resolve, 0, resolveSets[frameContext]);
             cmd->pushConstants(resolve, RhiShaderStage::Compute, 0, sizeof(push), &push);
             cmd->dispatch((extent.width + 7) / 8, (extent.height + 7) / 8, 1);
         });

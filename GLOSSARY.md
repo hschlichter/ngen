@@ -279,11 +279,11 @@ sense of a map; that is a scene.
 - **Deferred shading** — the geometry pass writes the G-buffer; a fullscreen lighting pass shades it.
 - **Deletion queue** — the renderer's deferred destroys, each held until the frame that last used the resource has passed its fence.
 - **Depth pyramid / HZB** — occlusion's hierarchical depth: each level the farthest depth of the 2×2 below.
-- **Draw log** — per-draw records read back while the render debugger asks; lags a frame-slot cycle.
+- **Draw log** — per-draw records read back while the render debugger asks; lags a frame-context cycle.
 - **Draw record** (`DrawRecord`) — one per drawn instance per region: instance, meshlets, first work item.
+- **Frame context** — the per-frame resources (command buffer, fence, UBO, staging, culling and readback buffers), one per swapchain image;
+  everything the CPU shows about the GPU arrives one cycle of frame contexts late.
 - **Frame graph** — a frame's passes and resources: orders passes, culls unused ones, pools transient textures and records every barrier.
-- **Frame slot** — the per-frame resources (command buffer, fence, UBO, staging, culling and readback buffers), one per swapchain image;
-  everything the CPU shows about the GPU arrives one slot cycle late.
 - **G-buffer** — albedo, normals, instance id and depth, written by the geometry pass.
 - **Geometry pool** — one vertex buffer, one position buffer and the meshlet buffers for every mesh; ranges per mesh, grows by doubling.
 - **GPU-driven** — the only path: persistent GPU tables, visibility and draw lists made on the GPU, one indirect call per region.
@@ -330,7 +330,7 @@ sense of a map; that is a scene.
 - **Barrier / state** — synchronisation as resource-state transitions (`RhiTextureState`, `RhiBufferState`); the backend derives layouts,
   stages and accesses. The caller tracks state.
 - **Desc** — a `*Desc` struct with defaults, filled with designated initializers, that `RhiDevice::createX` takes.
-- **Frame pacing** — command buffers, fences and semaphores per frame slot and per swapchain image; the integrator's, not the RHI's.
+- **Frame pacing** — command buffers, fences and semaphores per frame context and per swapchain image; the integrator's, not the RHI's.
 - **GPU zone** — a named, nested timestamp range on a command buffer (`beginGpuZone`/`endGpuZone`); the profiler's GPU track.
 - **Integrator** — whatever sits on the RHI (the engine, an example); provides the window, frame pacing, uploads, deferred destruction.
 - **Lavapipe** — Mesa's software Vulkan driver, which CI runs the RHI examples on.
@@ -399,7 +399,7 @@ sense of a map; that is a scene.
 | cell, region, tile | test-world streaming areas; *region* is also a culling (view, bucket) pair, *tile* a shadow-atlas cascade tile |
 | component | a World component (lights, LOD roots, instancers, payloads); a future gameplay component; a UI or software component in prose |
 | content | a World content (stage, prototype, level); "content developers" means the people authoring worlds |
-| frame | the main thread's `ViewFrame`; a render frame on a frame slot; an RPC frame (length-prefixed message); a script's frame number |
+| frame | the main thread's `ViewFrame`; a render frame on a frame context; an RPC frame (length-prefixed message); a script's frame number |
 | group | a render-LOD group (GPU-picked LOD root); a profile group (zone colour); a config group (name prefix); a workgroup of 256 culling slots (group box) |
 | history | occlusion culling's per-instance visibility from last frame; the profiler's seconds of zones (`profile.history.seconds`) |
 | hooks | `ViewHooks` (main-thread frame steps); `RenderExtension` hooks (render-thread frame points) |
@@ -412,7 +412,7 @@ sense of a map; that is a scene.
 | residency | a LOD level's residency (asked for by the camera's position); a render-LOD group's residency mask (which levels' meshes are in the geometry pool) |
 | resident | the scene being resident (everything loaded, uploaded, drawn); a LOD level being resident (loaded by residency) |
 | root | a LOD root; the root layer; the asset server's working directory (asset ids are relative to it) |
-| slot | a frame slot; a draw slot; a texture slot; a streaming root's slot (streaming view) |
+| slot | a draw slot; a texture slot; a streaming root's slot (streaming view) |
 | snapshot | `SceneSnapshot` (scene thread → main); `RenderSnapshot` (main → render); a debug snapshot (render tools → main) |
 | state | a resource state (RHI barriers); a streaming state (finest resident level); a tool's state struct |
 | tag | the LOD tag (normal alpha); a GPU zone's tag (its source location's id) |

@@ -39,7 +39,7 @@ public:
         DebugView view,
         FgTextureHandle depthHandle,
         RhiExtent2D extent,
-        uint32_t frameSlot,
+        uint32_t frameContext,
         FgBufferHandle instanceBuffer,
         const DrawLists& lists,
         DrawLists::Handles drawHandles,
@@ -67,8 +67,8 @@ private:
     RhiDescriptorSetLayout* resolveLayout = nullptr;
     PipelineHandle resolvePipeline;
     RhiDescriptorPool* resolvePool = nullptr;
-    std::vector<RhiDescriptorSet*> resolveSets; // one per frame slot; rewritten at execute
-    // Per frame slot, the streaming view's root states, written by the CPU when the frame is recorded.
+    std::vector<RhiDescriptorSet*> resolveSets; // one per frame context; rewritten at execute
+    // Per frame context, the streaming view's root states, written by the CPU when the frame is recorded.
     std::vector<RhiBuffer*> streamingBuffers;
     std::vector<void*> streamingMapped;
     RhiSampler* pointSampler = nullptr;

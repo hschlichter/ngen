@@ -75,7 +75,7 @@ struct RenderDebugSnapshot {
     RhiExtent2D swapchainExtent = {};
     RhiFormat swapchainFormat = RhiFormat::Undefined;
     uint32_t swapchainImages = 0;
-    uint32_t currentSlot = 0;
+    uint32_t currentFrameContext = 0;
 
     // Scene
     uint32_t instanceCount = 0;

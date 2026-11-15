@@ -48,8 +48,8 @@ struct PassGpuTime {
 
 // What the renderer holds and last did, for the instrumentation (src/rendertools): read on the render thread, between its hooks.
 struct RendererState {
-    uint64_t frame = 0; // the last frame recorded
-    uint32_t slot = 0;  // the frame slot being recorded, or recorded last
+    uint64_t frame = 0;        // the last frame recorded
+    uint32_t frameContext = 0; // the one being recorded, or recorded last
     const RhiDevice* device = nullptr;
     RhiExtent2D swapchainExtent = {};
     RhiFormat swapchainFormat = RhiFormat::Undefined;
@@ -112,7 +112,7 @@ public:
     auto setDrawLogEnabled(bool enabled) -> void { drawLogEnabled = enabled; }
     // Waits until the frame just submitted has finished on the GPU (an extension's afterSubmit).
     auto waitForFrame() -> void;
-    // A frame slot's command buffer: what its frame recorded, read after its fence (pipeline statistics).
+    // A frame context's command buffer: what its frame recorded, read after its fence (pipeline statistics).
     auto commandBuffer(uint32_t slot) const -> RhiCommandBuffer* { return cmdBuffers[slot]; }
     // The most each geometry pool buffer may take, in bytes; 0 for the device's largest buffer (GpuScene::setGeometryLimit). Before the
     // render thread starts.
@@ -125,7 +125,7 @@ public:
     auto reportGpuAllocations() -> void;
     // Asset ids whose sources changed: the ones that are shaders are requested again and their pipelines recreated when they arrive.
     auto reloadShaders(std::span<const std::string> ids) -> void { pipelineRegistry.reload(ids); }
-    // Latest GPU culling readback (one frame-slot cycle old), for the editor.
+    // Latest GPU culling readback (one frame-context cycle old), for the editor.
     auto cullResult() const -> CullResult;
     // The capture results that came back (the watches arrive with the snapshot).
     auto takeCaptureResults() -> std::vector<CaptureResult> { return captureService.takeResults(); }
@@ -199,7 +199,7 @@ private:
     std::vector<RhiSemaphore*> renderFinishedSemaphores;
     std::vector<RhiFence*> inflightFences;
     // Monotonic frame number last submitted through each slot; 0 = never.
-    std::vector<uint64_t> slotFrame;
+    std::vector<uint64_t> contextFrame;
     std::vector<uint64_t> slotSubmitNs; // profile::now() at submit, matches GPU zones to CPU frames
     uint32_t currentFrame = 0;
 
@@ -238,7 +238,7 @@ private:
     bool drawLogEnabled = false;
     // The frame recorded by render(), its parts after the fence wait and the acquire.
     auto renderFrame(RenderSnapshot& snapshot) -> void;
-    std::vector<std::vector<FgDrawRecord>> slotDrawLogs; // per frame slot, joined with GPU zones after the fence
+    std::vector<std::vector<FgDrawRecord>> slotDrawLogs; // per frame context, joined with GPU zones after the fence
     std::vector<FgDrawRecord> lastDrawLog;
     // Last frame's lighting pick, kept for the debug snapshot.
     bool debugHasSun = false;

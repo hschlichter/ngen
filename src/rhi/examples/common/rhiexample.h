@@ -99,7 +99,7 @@ protected:
     auto frameCount() const -> uint32_t { return slotCount; }
     auto options() const -> const RhiExampleOptions& { return opts; }
     // Valid inside record(): which slot's resources this frame owns, and the frame number (0-based).
-    auto frameSlot() const -> uint32_t { return currentSlot; }
+    auto frameContext() const -> uint32_t { return currentFrameContext; }
     auto frameIndex() const -> uint64_t { return currentFrame; }
 
     // One pixel assertion; linear colour is encoded to what the swapchain stores.
@@ -140,7 +140,7 @@ private:
     std::vector<RhiSemaphore*> imageAvailable;
     std::vector<RhiSemaphore*> renderFinished;
     bool resizePending = false;
-    uint32_t currentSlot = 0;
+    uint32_t currentFrameContext = 0;
     uint64_t currentFrame = 0;
 };
 
@@ -235,7 +235,7 @@ inline auto RhiExample::run(int argc, char** argv, const char* name) -> int {
 
     // 5. Frame pacing. The RHI has no frame concept; this program decides how many
     //    frames are in flight. Command buffers, fences and the image-available
-    //    semaphore belong to the frame slot. The render-finished semaphore belongs
+    //    semaphore belong to the frame context. The render-finished semaphore belongs
     //    to the swapchain image, because present consumes it per image.
     slotCount = rhiSwapchain->imageCount();
     commandBuffers.resize(slotCount);
@@ -311,7 +311,7 @@ inline auto RhiExample::run(int argc, char** argv, const char* name) -> int {
         bool isLastFrame = opts.frames > 0 && renderedFrames + 1 == opts.frames;
         bool readbackThisFrame = wantReadback && isLastFrame;
 
-        currentSlot = slot;
+        currentFrameContext = slot;
         currentFrame = renderedFrames;
 
         cmd->reset();

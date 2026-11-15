@@ -1,9 +1,9 @@
 // RHI example: uniform buffers updated every frame.
 //
 // Adds to texture: a host-visible uniform buffer mapped once and rewritten each
-// frame, one region per frame slot so the CPU never writes what an in-flight
+// frame, one region per frame context so the CPU never writes what an in-flight
 // frame still reads, regions placed at minUniformBufferOffsetAlignment, and a
-// descriptor set per slot pointing at its region via bufferOffset.
+// descriptor set per frame context pointing at its region via bufferOffset.
 //
 // A quad is drawn at an offset read from the UBO, with a colour that steps
 // through a palette every 30 frames. --check asserts the palette entry for the
@@ -119,7 +119,7 @@ protected:
             upload.finish();
         }
 
-        // One host-visible buffer, one region per frame slot. Regions start at a
+        // One host-visible buffer, one region per frame context. Regions start at a
         // multiple of the device's UBO offset alignment; the descriptor for slot i
         // points at region i. Mapped once, written every frame.
         auto alignment = device().limits().minUniformBufferOffsetAlignment;
@@ -160,7 +160,7 @@ protected:
             .offset = {quadOffset[0], quadOffset[1]},
             .pad = {},
         };
-        memcpy(uniformMapped + (size_t) frameSlot() * regionStride, &params, sizeof(params));
+        memcpy(uniformMapped + (size_t) frameContext() * regionStride, &params, sizeof(params));
 
         std::array<RhiRenderingAttachmentInfo, 1> colorAttachments = {{
             {.texture = backbuffer, .state = RhiTextureState::ColorAttachment, .clear = true, .clearColor = clearColor},
@@ -171,7 +171,7 @@ protected:
         cmd->bindPipeline(pipeline);
         cmd->bindVertexBuffer(vertexBuffer);
         cmd->bindIndexBuffer(indexBuffer, RhiIndexType::Uint16);
-        cmd->bindDescriptorSet(pipeline, 0, descriptorSets[frameSlot()]);
+        cmd->bindDescriptorSet(pipeline, 0, descriptorSets[frameContext()]);
         cmd->drawIndexed(6, 1, 0, 0, 0);
         cmd->endRendering();
     }

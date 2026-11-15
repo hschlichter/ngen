@@ -1,5 +1,5 @@
 // Meshlet drawing, shared by the task shader (meshlet.task) and the mesh shaders of every mesh pass (src/renderer/README.md, "Meshlets").
-// The geometry set (GeometryPass::descriptorBindings): the view, the scene tables, the geometry pool and the frame slot's culling buffers.
+// The geometry set (GeometryPass::descriptorBindings): the view, the scene tables, the geometry pool and the frame context's culling buffers.
 //
 // A draw is one region (instancecull.comp lays out every drawn instance's meshlets as work items, in instance order); each task workgroup
 // takes 32 work items, whatever their instance, tests them and launches a mesh workgroup per meshlet that survives, in order.

@@ -96,7 +96,7 @@ auto BufferGrowth::ahead() -> double {
 }
 
 // The next capacity at least: half as much again. Doubling would hold twice the memory a table needs right after it grows, which the tables
-// kept per frame slot (draw records, meshlet work) pay three times over.
+// kept per frame context (draw records, meshlet work) pay three times over.
 auto BufferGrowth::step(uint64_t capacity) -> uint64_t {
     return capacity + std::max<uint64_t>(capacity / 2, 1);
 }
