@@ -369,7 +369,7 @@ auto assetsRecord(const ViewContext& view) -> Json {
             {"id", entry.id},
             {"state", state},
             {"packed", entry.packed},
-            {"version", entry.version},
+            {"hash", entry.hash},
             {"bytes", entry.bytes},
             {"requests", entry.requests},
             {"requestedMs", entry.requestedMs},

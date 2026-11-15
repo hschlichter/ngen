@@ -309,7 +309,7 @@ frames later; record them at steady state (frame 120 or later).
 | `payloads` | Every payload placement: prim, asset ids, loaded, extentsHint. |
 | `assets` | What the view asked the asset server for: per asset state, size, times. |
 | `culling` | Per view: instances drawn and culled, meshlets culled by frustum, cone and depth, triangles. |
-| `pipelines` | Every pipeline: state, shaders and versions, last error. |
+| `pipelines` | Every pipeline: state, shaders and hashes, last error. |
 | `render` | Device, swapchain, scene tables, per-pass stats, draw log (next frames). |
 | `memory` | Every allocation and memory heap (next frames). |
 | `counters` | GPU zones and pipeline statistics per pass (next frames). |

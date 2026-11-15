@@ -100,9 +100,9 @@ auto PipelineRegistry::module(const ShaderRef& shader, std::string& error) -> Rh
     }
     {
         std::lock_guard lock(infoMutex);
-        modules[shader.id] = {.module = created, .version = asset->version};
+        modules[shader.id] = {.module = created, .hash = asset->hash};
     }
-    TRACE_EVENT("Render", "ShaderLoaded", shader.id).text(std::format("loaded shader {} ({})", shader.id, asset->version)).field("version", asset->version);
+    TRACE_EVENT("Render", "ShaderLoaded", shader.id).text(std::format("loaded shader {} ({})", shader.id, asset->hash)).field("hash", asset->hash);
     return created;
 }
 
@@ -327,9 +327,9 @@ auto PipelineRegistry::finishReload(const std::string& id, uint64_t frame) -> vo
     if (moduleIt == modules.end()) {
         return;
     }
-    auto oldVersion = moduleIt->second.version;
+    auto oldHash = moduleIt->second.hash;
     if (auto errors = source->errors(id); !errors.empty()) {
-        std::string text = std::format("shader {} failed to reload; the pipelines keep version {}", id, oldVersion);
+        std::string text = std::format("shader {} failed to reload; the pipelines keep hash {}", id, oldHash);
         for (const auto& line : errors) {
             text += "\n  " + line;
         }
@@ -346,15 +346,15 @@ auto PipelineRegistry::finishReload(const std::string& id, uint64_t frame) -> vo
     if (asset == nullptr) {
         return;
     }
-    if (asset->version == oldVersion) {
-        // Back to the version the pipelines have (a broken edit undone): an earlier reload's error no longer holds.
+    if (asset->hash == oldHash) {
+        // Back to the content the pipelines have (a broken edit undone): an earlier reload's error no longer holds.
         std::lock_guard lock(infoMutex);
         for (auto& entry : entries) {
             if (entry.state == PipelineState::Ready && std::ranges::any_of(shadersOf(entry), [&](const ShaderRef& shader) { return shader.id == id; })) {
                 entry.error.clear();
             }
         }
-        TRACE_EVENT("Render", "ShaderReloaded", id).text(std::format("shader {} is back to the version its pipelines have ({}): nothing to recreate", id, oldVersion)).field("version", oldVersion).field("pipelines", (int64_t) 0);
+        TRACE_EVENT("Render", "ShaderReloaded", id).text(std::format("shader {} is back to the content its pipelines have ({}): nothing to recreate", id, oldHash)).field("version", oldHash).field("pipelines", (int64_t) 0);
         return;
     }
     std::optional<ShaderRef> ref;
@@ -375,13 +375,13 @@ auto PipelineRegistry::finishReload(const std::string& id, uint64_t frame) -> vo
     };
     auto* created = device->createShaderModule(desc);
     if (created == nullptr) {
-        TRACE_WARNING("Render", "ShaderReloadFailed", id).text(std::format("shader {} ({}): cannot create the shader module; the pipelines keep version {}", id, asset->version, oldVersion));
+        TRACE_WARNING("Render", "ShaderReloadFailed", id).text(std::format("shader {} ({}): cannot create the shader module; the pipelines keep hash {}", id, asset->hash, oldHash));
         return;
     }
     auto* oldModule = moduleIt->second.module;
     {
         std::lock_guard lock(infoMutex);
-        moduleIt->second = {.module = created, .version = asset->version};
+        moduleIt->second = {.module = created, .hash = asset->hash};
     }
     uint32_t recreated = 0;
     uint32_t failed = 0;
@@ -404,7 +404,7 @@ auto PipelineRegistry::finishReload(const std::string& id, uint64_t frame) -> vo
         auto* pipeline = build(entry, error);
         std::lock_guard lock(infoMutex);
         if (pipeline == nullptr) {
-            entry.error = std::format("recreating it for {} ({}) failed, it keeps the old pipeline: {}", id, asset->version, error);
+            entry.error = std::format("recreating it for {} ({}) failed, it keeps the old pipeline: {}", id, asset->hash, error);
             TRACE_WARNING("Render", "PipelineRecreateFailed", entry.name).text(std::format("pipeline {}: {}", entry.name, entry.error));
             failed++;
             continue;
@@ -418,8 +418,8 @@ auto PipelineRegistry::finishReload(const std::string& id, uint64_t frame) -> vo
     }
     retired->defer(frame, [rhiDevice = device, oldModule] { rhiDevice->destroyShaderModule(oldModule); });
     TRACE_EVENT("Render", "ShaderReloaded", id)
-        .text(std::format("shader {} reloaded ({} to {}): {} pipeline{} recreated{}", id, oldVersion, asset->version, recreated, recreated == 1 ? "" : "s", failed > 0 ? std::format(", {} kept the old one", failed) : ""))
-        .field("version", asset->version)
+        .text(std::format("shader {} reloaded ({} to {}): {} pipeline{} recreated{}", id, oldHash, asset->hash, recreated, recreated == 1 ? "" : "s", failed > 0 ? std::format(", {} kept the old one", failed) : ""))
+        .field("hash", asset->hash)
         .field("pipelines", (int64_t) recreated)
         .field("failed", (int64_t) failed);
 }
@@ -480,7 +480,7 @@ auto PipelineRegistry::infos() const -> std::vector<PipelineInfo> {
         info.error = entry.error;
         for (const auto& shader : shadersOf(entry)) {
             auto it = modules.find(shader.id);
-            info.shaders.emplace_back(shader.id, it != modules.end() ? it->second.version : std::string());
+            info.shaders.emplace_back(shader.id, it != modules.end() ? it->second.hash : std::string());
         }
         out.push_back(std::move(info));
     }

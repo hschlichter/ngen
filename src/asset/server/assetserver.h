@@ -64,7 +64,7 @@ private:
         bool ok = false;
         bool packed = false; // a packer ran for it; false when the cache was up to date
         double ms = 0.0;     // the server's time for it: the cache check, and packing when it ran (waiting for the file's job included)
-        uint64_t version = 0;
+        uint64_t hash = 0;
         std::string path;
         std::vector<std::string> errors;
     };
@@ -72,13 +72,13 @@ private:
     struct Subscriber {
         RpcServer::ConnectionId connection = 0;
         int64_t request = 0;
-        std::optional<std::string> held; // the version the client already has
+        std::optional<std::string> held; // the hash the client already has
     };
 
     struct Outgoing {
         int64_t request = 0;
         std::string id;
-        std::string version;
+        std::string hash;
         bool packed = false;
         double ms = 0.0;
         std::shared_ptr<const std::vector<std::byte>> bytes;

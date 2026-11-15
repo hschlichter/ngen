@@ -291,7 +291,7 @@ auto drawAssetsWindow(bool& show, const std::vector<AssetLogEntry>& log, AssetsW
                 }
                 ImGui::PopID();
                 if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("%s\nversion %s", entry.id.c_str(), entry.version.empty() ? "-" : entry.version.c_str());
+                    ImGui::SetTooltip("%s\nhash %s", entry.id.c_str(), entry.hash.empty() ? "-" : entry.hash.c_str());
                 }
                 ImGui::TableSetColumnIndex(ColumnState);
                 if (entry.state == AssetLogState::Failed) {

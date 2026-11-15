@@ -369,7 +369,7 @@ auto ViewScene::applyOpen(const std::string& sceneId) -> void {
     meshPacks.clear();
     materialPacks.clear();
     texturePacks.clear();
-    packVersions.clear();
+    packHashes.clear();
     failedAssets.clear();
     refreshing.clear();
     composeReported = false;
@@ -450,7 +450,7 @@ auto ViewScene::applyRefresh(const std::vector<std::string>& ids, bool force) ->
 }
 
 // What the asset server answered for an asset this thread asked for: stored by its kind, or a failure. A refreshed one replaces what the
-// scene held; a mesh or texture that arrives unchanged (the same version) keeps its library entry, so nothing is uploaded again.
+// scene held; a mesh or texture that arrives unchanged (the same hash) keeps its library entry, so nothing is uploaded again.
 auto ViewScene::receive(const std::string& assetId) -> void {
     PROFILE_ZONE_DETAIL("AssetReceive", Assets);
     auto it = inFlight.find(assetId);
@@ -486,8 +486,8 @@ auto ViewScene::receive(const std::string& assetId) -> void {
         return;
     }
     failedAssets.erase(assetId);
-    bool unchanged = refreshed && packVersions[assetId] == asset->version;
-    packVersions[assetId] = asset->version;
+    bool unchanged = refreshed && packHashes[assetId] == asset->hash;
+    packHashes[assetId] = asset->hash;
     auto packKind = scenePackKind(asset->bytes);
     if (packKind && *packKind == ScenePackKind::Layer) {
         if (auto error = composer->addPack(assetId, asset->bytes)) {

@@ -249,7 +249,7 @@ auto AssetCache::record(const std::string& id,
         }
         record.secondaries.emplace_back(secondaryId, *secondaryOutput);
     }
-    auto version = record.output.hash;
+    auto hash = record.output.hash;
     {
         std::lock_guard lock(mutex);
         if (auto old = records.find(id); old != records.end()) {
@@ -264,7 +264,7 @@ auto AssetCache::record(const std::string& id,
         dirty = true;
     }
     changed.notify_all();
-    return version;
+    return hash;
 }
 
 auto AssetCache::outputPath(const std::string& id) -> std::optional<std::string> {

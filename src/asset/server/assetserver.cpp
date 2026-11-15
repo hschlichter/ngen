@@ -311,7 +311,7 @@ auto AssetServer::addRecords() -> void {
     records.add("rules", "the pack rules from pack.cpp: extensions, packer, parameters, version", [this](RpcResponder responder) {
         responder.respond(rulesRecord());
     });
-    records.add("cache", "every packed asset: version, packer, inputs, the packed file and its secondary outputs", [this](RpcResponder responder) {
+    records.add("cache", "every packed asset: hash, packer, inputs, the packed file and its secondary outputs", [this](RpcResponder responder) {
         responder.respond(cacheRecord());
     });
     records.add("requests", "asset requests in flight, and the most recent finished ones", [this](RpcResponder responder) {
@@ -427,11 +427,11 @@ auto AssetServer::cacheRecord() -> rpc::Json {
         }
         auto secondaries = rpc::Json::array();
         for (const auto& [secondaryId, secondaryFile] : record.secondaries) {
-            secondaries.push_back({{"id", secondaryId}, {"version", hashText(secondaryFile.hash)}, {"output", fileJson(secondaryFile)}});
+            secondaries.push_back({{"id", secondaryId}, {"hash", hashText(secondaryFile.hash)}, {"output", fileJson(secondaryFile)}});
         }
         assets.push_back({
             {"id", id},
-            {"version", hashText(record.output.hash)},
+            {"hash", hashText(record.output.hash)},
             {"packer", fileJson(record.packer)},
             {"inputs", inputs},
             {"output", fileJson(record.output)},
@@ -535,12 +535,12 @@ auto AssetServer::pack(const std::string& id, int64_t forceRequest) -> Outcome {
     std::lock_guard jobLock(*fileLock);
 
     auto upToDate = [&]() -> bool {
-        auto version = cache.upToDate(id, key);
-        if (!version) {
+        auto hash = cache.upToDate(id, key);
+        if (!hash) {
             return false;
         }
         outcome.ok = true;
-        outcome.version = *version;
+        outcome.hash = *hash;
         outcome.path = cache.outputPath(id).value_or((cacheDirectory / id).string());
         return true;
     };
@@ -556,7 +556,7 @@ auto AssetServer::pack(const std::string& id, int64_t forceRequest) -> Outcome {
     }
     if (!forced && upToDate()) {
         outcome.packed = packedByThisRequest;
-        traceLine("  {}  {} ({})", id, packedByThisRequest ? "packed by this forced request" : "up to date", hashText(outcome.version));
+        traceLine("  {}  {} ({})", id, packedByThisRequest ? "packed by this forced request" : "up to date", hashText(outcome.hash));
         return outcome;
     }
     if (forced) {
@@ -632,20 +632,20 @@ auto AssetServer::runPacker(const std::string& primary, const PackRule& rule, ui
     }
     auto secondaries = readSecondaryOutputs(output);
     PROFILE_ZONE_DETAIL("CacheRecord", Io);
-    auto version = cache.record(primary, key, packer, inputs, output, secondaries);
-    if (!version) {
+    auto hash = cache.record(primary, key, packer, inputs, output, secondaries);
+    if (!hash) {
         outcome.errors.push_back(std::format("{}: cannot hash the packer's inputs or outputs", primary));
         traceWarning("  {}  failed: cannot hash the packer's inputs or outputs", primary);
         return outcome;
     }
     outcome.ok = true;
     outcome.packed = true;
-    outcome.version = *version;
+    outcome.hash = *hash;
     outcome.path = output;
     std::error_code ec;
     auto size = fs::file_size(output, ec);
     if (secondaries.empty()) {
-        traceLine("  {}  packed in {} ms, {}, {} inputs ({})", primary, millisSince(started), bytesText(ec ? 0 : size), inputs.size(), hashText(*version));
+        traceLine("  {}  packed in {} ms, {}, {} inputs ({})", primary, millisSince(started), bytesText(ec ? 0 : size), inputs.size(), hashText(*hash));
     } else {
         traceLine("  {}  packed in {} ms, {} and {} more outputs, {} inputs ({})",
                   primary,
@@ -653,7 +653,7 @@ auto AssetServer::runPacker(const std::string& primary, const PackRule& rule, ui
                   bytesText(ec ? 0 : size),
                   secondaries.size(),
                   inputs.size(),
-                  hashText(*version));
+                  hashText(*hash));
     }
     return outcome;
 }
@@ -666,7 +666,7 @@ auto AssetServer::deliver(const std::string& id, const Outcome& outcome) -> void
         subscribers = std::move(inFlight[id]);
         inFlight.erase(id);
     }
-    auto version = hashText(outcome.version);
+    auto hash = hashText(outcome.hash);
     std::shared_ptr<const std::vector<std::byte>> bytes;
     for (const auto& subscriber : subscribers) {
         // Answered, sent, held or failed: a failed repack leaves the client with what it had, and a fix to the source is a change too.
@@ -676,11 +676,11 @@ auto AssetServer::deliver(const std::string& id, const Outcome& outcome) -> void
             answered(subscriber.request, Answer::Failed, 0);
             continue;
         }
-        if (subscriber.held == version) {
+        if (subscriber.held == hash) {
             std::error_code ec;
             auto size = fs::file_size(outcome.path, ec);
             rpc.send(subscriber.connection,
-                     rpc::makeNotification("asset.ready", {{"request", subscriber.request}, {"id", id}, {"version", version}, {"size", ec ? 0 : size}, {"sent", false}, {"packed", outcome.packed}, {"ms", outcome.ms}}));
+                     rpc::makeNotification("asset.ready", {{"request", subscriber.request}, {"id", id}, {"hash", hash}, {"size", ec ? 0 : size}, {"sent", false}, {"packed", outcome.packed}, {"ms", outcome.ms}}));
             answered(subscriber.request, Answer::Held, 0);
             continue;
         }
@@ -706,7 +706,7 @@ auto AssetServer::deliver(const std::string& id, const Outcome& outcome) -> void
             streams[subscriber.connection].queue.push_back(Outgoing{
                 .request = subscriber.request,
                 .id = id,
-                .version = version,
+                .hash = hash,
                 .packed = outcome.packed,
                 .ms = outcome.ms,
                 .bytes = bytes,
@@ -737,7 +737,7 @@ auto AssetServer::pump(RpcServer::ConnectionId connection) -> void {
                                            {
                                                {"request", outgoing.request},
                                                {"id", outgoing.id},
-                                               {"version", outgoing.version},
+                                               {"hash", outgoing.hash},
                                                {"offset", outgoing.offset},
                                                {"total", bytes.size()},
                                            }),
@@ -748,7 +748,7 @@ auto AssetServer::pump(RpcServer::ConnectionId connection) -> void {
         if (outgoing.offset == bytes.size()) {
             rpc.send(connection,
                      rpc::makeNotification("asset.ready",
-                                           {{"request", outgoing.request}, {"id", outgoing.id}, {"version", outgoing.version}, {"size", bytes.size()}, {"sent", true}, {"packed", outgoing.packed}, {"ms", outgoing.ms}}));
+                                           {{"request", outgoing.request}, {"id", outgoing.id}, {"hash", outgoing.hash}, {"size", bytes.size()}, {"sent", true}, {"packed", outgoing.packed}, {"ms", outgoing.ms}}));
             answered(outgoing.request, Answer::Sent, bytes.size());
             stream.queue.pop_front();
             continue;

@@ -154,8 +154,8 @@ auto pipelinesRecord(const ViewContext& view) -> Json {
     auto pipelines = Json::array();
     for (const auto& info : view.renderer.pipelineInfos()) {
         auto shaders = Json::array();
-        for (const auto& [id, version] : info.shaders) {
-            shaders.push_back({{"id", id}, {"version", version}});
+        for (const auto& [id, hash] : info.shaders) {
+            shaders.push_back({{"id", id}, {"hash", hash}});
         }
         const char* state = info.state == PipelineState::Ready ? "ready" : (info.state == PipelineState::Failed ? "failed" : "pending");
         pipelines.push_back({
@@ -292,7 +292,7 @@ auto registerDisplayCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords&
                 [&view](RpcResponder responder) {
                     responder.respond(cullingRecord(view));
                 });
-    records.add("pipelines", "every pipeline the renderer registered: start-up or first use, state, shaders and their versions, the last error", [&view](RpcResponder responder) {
+    records.add("pipelines", "every pipeline the renderer registered: start-up or first use, state, shaders and their hashes, the last error", [&view](RpcResponder responder) {
         responder.respond(pipelinesRecord(view));
     });
     records.add("render", "the render debug snapshot: device, swapchain, scene tables, per-pass stats, draw log (next frames)", [&view](RpcResponder responder) {

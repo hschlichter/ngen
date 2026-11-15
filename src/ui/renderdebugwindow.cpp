@@ -456,7 +456,7 @@ auto pipelineStateName(PipelineState state) -> const char* {
     return "pending";
 }
 
-// Every pipeline the passes registered: when it is created (start-up or first use), its state, and its shaders with their versions.
+// Every pipeline the passes registered: when it is created (start-up or first use), its state, and its shaders with their hashes.
 auto drawPipelinesTab(const RenderDebugSnapshot& s) -> void {
     ImGui::Text("%zu pipelines", s.pipelines.size());
     if (!ImGui::BeginTable("##pipelines", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingStretchProp, ImVec2(0, 360.0f))) {
@@ -477,8 +477,8 @@ auto drawPipelinesTab(const RenderDebugSnapshot& s) -> void {
         ImGui::TableSetColumnIndex(2);
         ImGui::TextUnformatted(pipelineStateName(p.state));
         ImGui::TableSetColumnIndex(3);
-        for (const auto& [id, version] : p.shaders) {
-            ImGui::Text("%s %s", id.c_str(), version.empty() ? "(not arrived)" : version.c_str());
+        for (const auto& [id, hash] : p.shaders) {
+            ImGui::Text("%s %s", id.c_str(), hash.empty() ? "(not arrived)" : hash.c_str());
         }
         if (!p.error.empty()) {
             ImGui::TextWrapped("%s", p.error.c_str());

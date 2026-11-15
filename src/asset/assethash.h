@@ -9,7 +9,7 @@
 #include <string>
 #include <string_view>
 
-// FNV-1a 64: the content hash the asset server records and uses as an asset's version.
+// FNV-1a 64: the content hash the asset server records for an asset: what a client compares what it holds by.
 
 inline constexpr uint64_t fnv1a64Seed = 14695981039346656037ull;
 
@@ -44,7 +44,7 @@ inline auto hashFile(const std::string& path) -> std::optional<uint64_t> {
     return hash;
 }
 
-// A hash as 16 lowercase hex digits: how versions travel in messages.
+// A hash as 16 lowercase hex digits: how hashes travel in messages.
 inline auto hashText(uint64_t hash) -> std::string {
     return std::format("{:016x}", hash);
 }

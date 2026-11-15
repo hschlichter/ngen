@@ -566,12 +566,12 @@ private:
     size_t assetsSinceReport = 0;
     std::chrono::steady_clock::time_point openedAt;
 
-    // Packed assets as they arrived, by asset id; a failed one is absent and listed in `failedAssets`. Versions, to keep a library entry
+    // Packed assets as they arrived, by asset id; a failed one is absent and listed in `failedAssets`. Hashes, to keep a library entry
     // whose asset arrives again unchanged.
     std::unordered_map<std::string, MeshPack> meshPacks;
     std::unordered_map<std::string, MaterialPack> materialPacks;
     std::unordered_map<std::string, std::shared_ptr<const TextureDesc>> texturePacks;
-    std::unordered_map<std::string, std::string> packVersions;
+    std::unordered_map<std::string, std::string> packHashes;
     std::set<std::string> failedAssets;
 
     // The renderer's inputs. The libraries keep their entries across passes; a placement takes the lowest free slot and prim index for each

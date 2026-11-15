@@ -11,7 +11,7 @@ form, under the rules in the root `pack.cpp`.
 | | |
 |---|---|
 | `assetclient.*` | `AssetClient`, the engine side of the stream |
-| `assethash.h` | the content hash behind asset versions |
+| `assethash.h` | the content hash of a packed asset |
 | `server/` | `ngen-asset-server`: requests, the cache (`assetcache.*`), the stream, and running packers (`packjobs.*`) |
 | `pack/` | packing: `packrule.h` (the rule type `pack.cpp` fills in), `packer.h` (what every packer program shares), the packed texture format (`packedtexture.*`) and the mip filter (`mipchain.*`), which the renderer uses too, the scene pack format (`scenepacktypes.h`, `scenepack.*`), and the USD packer (`usd/`) |
 
@@ -24,7 +24,7 @@ An asset's id is its source path relative to the asset server's working director
 `assets/textures/brick.png`.
 A file can define more assets than itself: a packer may write **secondary outputs**, each its own asset with the id `<file>#<fragment>`, packed by
 the file's job. A USD file's meshes and materials are `assets/layered/base.usda#/World/Group/Own`: the file, `#`, the prim path in it.
-The id never changes when the asset's content does. The asset's **version** is the content hash of its packed file (FNV-1a 64, `assethash.h`), sent as
+The id never changes when the asset's content does. The asset's **content hash** is the hash of its packed file (FNV-1a 64, `assethash.h`), sent as
 16 hex digits.
 
 ## Rules: `pack.cpp`
@@ -77,13 +77,13 @@ is in, `_out/<platform>/<config>/`. It uses nothing from `src/build/`: its own c
 
 ![One asset.request from AssetClient through the server and a packer process to asset.data chunks and asset.ready, and a later edit's asset.changed](../../screenshots/asset_request.svg)
 
-- **`asset.request`** `{ids: [...], have: {id: version}, force}` answers at once with `{request}`. With `force: true` the server packs the
+- **`asset.request`** `{ids: [...], have: {id: hash}, force}` answers at once with `{request}`. With `force: true` the server packs the
   assets even when its cache is up to date, each file's job once per request: the other ids of a file it forced (its meshes and materials)
   come from what that job wrote, and still say `packed: true`. Then each asset is answered on its own as it finishes:
-  - `asset.data` `{request, id, version, offset, total}` notifications, each with up to 1 MiB of the packed file as the frame's attachment, in order
-  - then `asset.ready` `{request, id, version, size, sent, packed, ms}`; `ms` is the server's time for it (the cache check, and packing when it
+  - `asset.data` `{request, id, hash, offset, total}` notifications, each with up to 1 MiB of the packed file as the frame's attachment, in order
+  - then `asset.ready` `{request, id, hash, size, sent, packed, ms}`; `ms` is the server's time for it (the cache check, and packing when it
     ran, waiting for its file's job included); `packed` is true when a packer ran for it, false when the cache was up to
-    date. An asset whose held version (`have`) is current gets `asset.ready` with `sent: false`
+    date. An asset whose held hash (`have`) is current gets `asset.ready` with `sent: false`
     and no data.
   - or `asset.failed` `{request, id, errors, ms}`: no rule for the extension, no such file, an id outside the project, the packer's output when it
     failed, or a `<file>#<fragment>` id the file's job didn't write
@@ -107,7 +107,7 @@ is in, `_out/<platform>/<config>/`. It uses nothing from `src/build/`: its own c
   what the cache holds (a broken edit undone). The server packs nothing for a notice: a client that still wants the asset requests it. A
   connection is watched until it closes. The trace has `AssetChanged` (files, assets, clients told) and a line for changes that tell nobody.
 - **The trace.** The server's log is its trace (`server/assettrace.h`), printed one timestamped line per event like every process's: its
-  rules and cache at start-up, clients connecting and leaving, each request with its asset count, per asset whether it was up to date, packed (time, size, inputs, version) or failed
+  rules and cache at start-up, clients connecting and leaving, each request with its asset count, per asset whether it was up to date, packed (time, size, inputs, hash) or failed
   (with the packer's output), and per request a summary when it is done (time, assets sent and bytes, held, failed). Redirect it to a file to keep
   it: `./ngen-cli asset-server > /tmp/asset-server.log 2>&1 &`. Every line is a trace event (category `Asset`, type `Message`, the line in
   `text`), streamed like any process's trace (`src/trace/README.md`), so `ngen-introspect` shows it next to the view's events. A request
@@ -246,7 +246,7 @@ payload, a UsdLod root with payload levels, bindings on a parent and a child, vi
 
 `AssetClient` (`assetclient.h`, the `assetclient` library) is the engine side. `connect(variant)` finds the asset server of that variant and project
 through discovery, and fails when none is running. `request(ids)` sends one `asset.request`; `wait(ids)` blocks until every request for each has been answered (`pending(id)` says
-whether one isn't yet); `find(id)` returns the bytes and version, as a shared pointer that keeps the version alive; a newer version replaces it
+whether one isn't yet); `find(id)` returns the bytes and hash, as a shared pointer that keeps the content alive; newer content replaces it
 when it is ready, and a failed request keeps it. `take(id)` moves them out of the client (a later request streams them again), `stats()` counts what
 the client requested, received (packed or cached), failed and has in flight, and the bytes received (ngen-view's status bar shows them),
 `log()` every id it requested, in order, with its state, how it arrived, its size, the times of its last request, first data and arrival,

@@ -76,6 +76,8 @@ Every program's `main` is in `src/apps/` (the build system's and the RHI example
   each was packed from.
 - **Change notice** (`asset.changed`) — the server telling a client that the sources of assets it received changed. The client marks them
   *stale* and decides whether to request them again; the server packs nothing for a notice.
+- **Content hash** — the FNV-1a 64 hash of an asset's packed file, 16 hex digits: what tells one content of an asset id from another. A client
+  sends the hashes it holds (`have`) and gets `sent: false` when current.
 - **Depfile** — the Make-format list of every file a packer read; with the job key, what the up-to-date check compares.
 - **Discovery** — `.ngen-discovery/<kind>-<pid>.json` files an endpoint writes in its working directory, so processes in the same directory find
   each other. See [RPC](#runtime-access-rpc-records-trace-profile-configuration).
@@ -95,8 +97,6 @@ Every program's `main` is in `src/apps/` (the build system's and the RHI example
   asset server.
 - **Repack** — ask the server to pack assets again even when its cache is up to date (`force`); the view's Assets window and `repack` verb.
 - **Scene pack** — the binary `NGPK` format for layer, mesh and material packs: a header, a string table and typed sections.
-- **Version** (asset version) — the FNV-1a 64 content hash of the packed file, 16 hex digits. A client sends the versions it holds (`have`) and
-  gets `sent: false` when current.
 
 ## USD and composition
 
@@ -418,4 +418,4 @@ sense of a map; that is a scene.
 | tag | the LOD tag (normal alpha); a GPU zone's tag (profiler site id) |
 | variant | a build variant (platform/config); a USD variant (of a variant set) |
 | view | ngen-view; the `view` library; a culling view (camera, cascades, phase 2); a view mode (`view` verb) or debug view (`debugview` verb) |
-| version | an asset version (content hash); a World content's version (each compose); a pack rule's version; the IR and scene-pack format versions |
+| version | a World content's version (each compose); a pack rule's version; the IR and scene-pack format versions |

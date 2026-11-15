@@ -57,7 +57,7 @@ public:
     // Every job's record, by its primary asset id, sorted.
     auto entries() -> std::vector<std::pair<std::string, Record>>;
 
-    // The packed file's hash (the asset's version) when the asset is up to date for this job; nullopt otherwise.
+    // The packed file's hash when the asset is up to date for this job; nullopt otherwise.
     auto upToDate(const std::string& id, uint64_t jobKey) -> std::optional<uint64_t>;
 
     // Records a finished job; the cache is saved within a second. `inputs` are the source and the depfile's files; `secondaries` the job's
