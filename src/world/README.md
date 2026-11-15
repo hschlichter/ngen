@@ -88,8 +88,8 @@ also asks them to be loaded; here loading a level is the engine's, so a level co
 
 **Two kinds of root, from what is authored** (`LodRoot::streams`):
 - **Streaming**: a level has a payload. A root wants a level, `lod:default:index` until `setLodLevel` sets one for its path, and loads the
-  levels the reader sets for it (`setResidentLevels`: ngen-view's residency), else the wanted one and its coarsest. `visit` draws the finest loaded
-  level not finer than the wanted one, else the coarsest loaded one; a level the reader hasn't made resident isn't loaded, so it falls back to
+  levels the reader sets for it (`setResidentLevels`: ngen-view's residency), else the desired one and its coarsest. `visit` draws the finest loaded
+  level not finer than the desired one, else the coarsest loaded one; a level the reader hasn't made resident isn't loaded, so it falls back to
   a coarser one. Whether a loaded level has everything it draws is the reader's to judge (ngen-view's, `src/view/README.md`, "Switching
   levels"). Each level is a content of its own (below).
 - **Render LOD**: no level has a payload (levels that are references or inline, as an asset's `lod0`… into its one geometry file). Every
@@ -111,7 +111,7 @@ thresholds, coarser than the previous state only past the unload thresholds. `ch
 root against the root above it: a threshold per level boundary, each imaging distance threshold at or before its load radius, each load radius
 at or before its unload radius, a child's imaging thresholds and unload radii inside its parent's first imaging threshold and load radius; it
 reports, it corrects nothing. `pickLodLevel` is UsdLod's `ComputeLOD` for both kinds, with its blend bands (inside one: the finer level and the next one's share), and
-hysteresis at a boundary without a band, against the level wanted before; the view and the GPU's pick follow it. `ngen-worldcheck` and
+hysteresis at a boundary without a band, against the level desired before; the view and the GPU's pick follow it. `ngen-worldcheck` and
 `ngen-usdcheck` print every root's heuristics (`--lod-heuristics`, unload thresholds included), `ngen-worldcheck --lod-authoring` the contract's
 findings over the roots it reaches, and `ngen-usdcheck --lod-picks` gives UsdLod's fractional level for given cameras. A level's own authored visibility is for readers that don't select LOD (UsdLod's recommendation is the default level visible, the others
 invisible): the level the engine draws is shown whatever it authors, and visibility below it applies as usual (`Entity::lodItem`).

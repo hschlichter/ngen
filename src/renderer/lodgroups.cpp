@@ -275,7 +275,7 @@ auto LodGroups::parseReadback(uint32_t frameSlot, uint64_t slotFrame) -> void {
     }
     read.hasStates = slot.readStates;
     read.drawn.clear();
-    read.wanted.clear();
+    read.desired.clear();
     read.fadeLevel.clear();
     read.fade.clear();
     read.measure.clear();
@@ -285,14 +285,14 @@ auto LodGroups::parseReadback(uint32_t frameSlot, uint64_t slotFrame) -> void {
     }
     const auto* state = reinterpret_cast<const uint32_t*>(bytes + sizeof(LodSelectTotals));
     read.drawn.resize(slot.groupCount);
-    read.wanted.resize(slot.groupCount);
+    read.desired.resize(slot.groupCount);
     read.fadeLevel.resize(slot.groupCount);
     read.fade.resize(slot.groupCount);
     read.measure.resize(slot.groupCount);
     read.flags.resize(slot.groupCount);
     for (uint32_t g = 0; g < slot.groupCount; g++) {
         auto levels = state[(4 * g) + 1];
-        read.wanted[g] = (uint8_t) (levels & 0xFFu);
+        read.desired[g] = (uint8_t) (levels & 0xFFu);
         read.drawn[g] = (uint8_t) ((levels >> 8) & 0xFFu);
         read.fadeLevel[g] = (uint8_t) ((levels >> 16) & 0xFFu);
         read.fade[g] = std::bit_cast<float>(state[(4 * g) + 2]);

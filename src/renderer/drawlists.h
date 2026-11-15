@@ -58,9 +58,9 @@ struct CullResult {
     // empty otherwise.
     std::vector<uint8_t> viewBits;
     // Render LOD: instances of a level their group doesn't draw (in no view), instances drawn in a fading group (both levels, in the cutout
-    // buckets), and from the selection's readback the groups, those drawing each level, those falling back while the wanted level isn't
+    // buckets), and from the selection's readback the groups, those drawing each level, those falling back while the desired level isn't
     // resident, those at a forced level, those fading, those whose drawn level changed this frame without a fade (a pop); per group the
-    // level drawn and wanted (0xFF none), the level fading in (0xFF none) and its share, the measure, and its flags (LodStateFlags), when
+    // level drawn and desired (0xFF none), the level fading in (0xFF none) and its share, the measure, and its flags (LodStateFlags), when
     // the states were read.
     uint32_t lodDropped = 0;
     uint32_t lodFadingInstances = 0;
@@ -75,7 +75,7 @@ struct CullResult {
     glm::vec3 lodEye = glm::vec3(0.0f); // the camera the pick measured from: its position and the view window's area at depth 1
     float lodWindowArea = 1.0f;
     std::vector<uint8_t> lodDrawn;
-    std::vector<uint8_t> lodWanted;
+    std::vector<uint8_t> lodDesired;
     std::vector<uint8_t> lodFadeLevel;
     std::vector<float> lodFade;
     std::vector<float> lodMeasure;

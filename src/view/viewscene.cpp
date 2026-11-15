@@ -1044,7 +1044,7 @@ auto ViewScene::evaluateLevels() -> bool {
 }
 
 // Measures what streaming did, from the placed roots' rows as the last pass left them: when each level became ready, the lead of each switch
-// of the selected level, and the time drawn coarser than selected or nothing. It measures; nothing here changes what is loaded or drawn.
+// of the desired level, and the time drawn coarser than desired or nothing. It measures; nothing here changes what is loaded or drawn.
 auto ViewScene::measureStreaming() -> void {
     PROFILE_ZONE_DETAIL("MeasureStreaming", Scene);
     auto now = std::chrono::steady_clock::now();
@@ -1086,21 +1086,21 @@ auto ViewScene::measureStreaming() -> void {
             }
         }
         // A switch of the level picked to draw: its lead, 0 when the level isn't ready (a late switch).
-        auto selected = row.wanted;
-        if (times.selected && *times.selected != selected && selected < levelCount) {
+        auto desired = row.desired;
+        if (times.desired && *times.desired != desired && desired < levelCount) {
             double lead = 0.0;
-            if (times.readySince[selected]) {
-                lead = std::chrono::duration<double>(now - *times.readySince[selected]).count();
+            if (times.readySince[desired]) {
+                lead = std::chrono::duration<double>(now - *times.readySince[desired]).count();
             } else {
                 streamingNow.lateSwitches++;
             }
-            measured.lead[selected] = lead;
+            measured.lead[desired] = lead;
             streamingNow.leads.push_back(lead);
             streamingChanged = true;
         }
-        times.selected = selected;
+        times.desired = desired;
         bool hole = !row.drawn;
-        bool late = row.drawn && *row.drawn > selected;
+        bool late = row.drawn && *row.drawn > desired;
         if (hole || late) {
             if (!times.lateSince) {
                 times.lateSince = now;

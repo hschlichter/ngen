@@ -18,7 +18,7 @@ class ViewScene;
 // viewport, built from the scene's snapshot: the streaming roots placed, their residency and what streaming measured.
 
 // One level of a streaming root as the Streaming tool holds it: its authored name, whether the root asks for it to be resident, it is
-// loaded (composed), ready (placed and waiting for nothing) and drawn, and its last lead in seconds (-1 never selected).
+// loaded (composed), ready (placed and waiting for nothing) and drawn, and its last lead in seconds (-1 never desired).
 struct StreamingLevel {
     std::string name;
     bool requested = false;
@@ -28,7 +28,7 @@ struct StreamingLevel {
     double lead = -1.0;
 };
 
-// One streaming root as the Streaming tool lists it (the `streaming` record's data per root): its levels, the level selected to draw,
+// One streaming root as the Streaming tool lists it (the `streaming` record's data per root): its levels, the level desired,
 // its state (the finest level that must be resident) and the levels resident, the level drawn (-1 for none), its streaming measure and radii
 // in force (metres for a distance), its state for the colours, its authoring findings, and where it is for the map and the overlays: its
 // streaming bounds in world metres.
@@ -37,7 +37,7 @@ struct StreamingRow {
     std::string name;  // the last part of the path
     uint32_t slot = 0; // its streaming root slot + 1 (the streaming view's), 0 for none
     std::vector<StreamingLevel> levels;
-    int32_t selected = -1;
+    int32_t desired = -1;
     int32_t state = -1;
     int32_t drawn = -1;
     std::vector<uint32_t> resident;

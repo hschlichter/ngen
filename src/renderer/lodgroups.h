@@ -42,7 +42,7 @@ static_assert(sizeof(GpuLodGroup) == 240);
 // What shaders/lodselect.comp counts over the groups each frame (its Totals, std430).
 struct LodSelectTotals {
     std::array<uint32_t, RenderLodGroup::maxLevels> picked = {}; // groups drawing each level
-    uint32_t fallbacks = 0;                                      // groups drawing another level while the one wanted isn't resident
+    uint32_t fallbacks = 0;                                      // groups drawing another level while the one desired isn't resident
     uint32_t forced = 0;                                         // groups at a hand-set level or the default, the heuristic off
     uint32_t groups = 0;                                         // alive
     uint32_t fading = 0;                                         // groups drawing two levels, cross-faded, inside a blend band
@@ -106,7 +106,7 @@ public:
     // The table, the state (16 bytes a group) and the residency mask.
     auto capacityBytes() const -> uint64_t { return (uint64_t) capacity * (sizeof(GpuLodGroup) + (5 * sizeof(uint32_t))); }
 
-    // The latest readback (one frame-slot cycle old): the totals, and per group the level drawn and wanted (0xFF for none), the level
+    // The latest readback (one frame-slot cycle old): the totals, and per group the level drawn and desired (0xFF for none), the level
     // fading in (0xFF for none) and its share, the measure and its flags (LodStateFlags), when the states were read.
     struct Readback {
         uint64_t frame = 0;
@@ -116,7 +116,7 @@ public:
         glm::vec3 eye = glm::vec3(0.0f); // the camera the pick measured from
         float windowArea = 1.0f;
         std::vector<uint8_t> drawn;
-        std::vector<uint8_t> wanted;
+        std::vector<uint8_t> desired;
         std::vector<uint8_t> fadeLevel;
         std::vector<float> fade;
         std::vector<float> measure;

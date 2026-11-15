@@ -884,7 +884,7 @@ struct WorldComposer::Impl {
         if (levelCount == 0) {
             return out;
         }
-        uint32_t wanted = std::min(defaultIndex, levelCount - 1);
+        uint32_t desired = std::min(defaultIndex, levelCount - 1);
         if (at.sharedKey.empty()) {
             auto path = primpath::join(at.base, relative);
             if (auto resident = residentLevels.find(path); resident != residentLevels.end() && !resident->second.empty()) {
@@ -894,7 +894,7 @@ struct WorldComposer::Impl {
                 return out;
             }
             if (auto it = lodLevels.find(path); it != lodLevels.end()) {
-                wanted = std::min(it->second, levelCount - 1);
+                desired = std::min(it->second, levelCount - 1);
             }
         } else if (auto proto = prototypeLevels.find(at.sharedKey); proto != prototypeLevels.end()) {
             if (auto levels = proto->second.find(primpath::join(at.ownerPath, relative)); levels != proto->second.end()) {
@@ -903,7 +903,7 @@ struct WorldComposer::Impl {
                 }
             }
         }
-        out.insert(wanted);
+        out.insert(desired);
         out.insert(levelCount - 1);
         return out;
     }
@@ -1819,7 +1819,7 @@ struct WorldComposer::Impl {
         return at;
     }
 
-    // Levels wanted or kept on roots inside prototypes, for the next resolution; true when they add a level a prototype doesn't load yet.
+    // Levels desired or kept on roots inside prototypes, for the next resolution; true when they add a level a prototype doesn't load yet.
     auto updatePrototypeLevels() -> bool {
         PROFILE_ZONE_DETAIL("UpdatePrototypeLevels", Scene);
         bool changed = false;

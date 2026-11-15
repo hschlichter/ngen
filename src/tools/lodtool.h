@@ -55,7 +55,7 @@ struct LodRow {
     std::string key;                                     // its authored root, which threshold overrides name
     bool overridden = false;                             // the view's thresholds replace the authored ones for its authored root
     uint32_t defaultIndex = 0;
-    uint32_t wanted = 0;
+    uint32_t desired = 0;
     int32_t drawn = -1;
     int32_t fadeLevel = -1; // the level fading in, -1 for none
     float fade = 0.0f;      // its share
@@ -65,7 +65,7 @@ struct LodRow {
     float measure = -1.0f;   // the heuristic's measure, -1 when not computed
     std::string measureUnit; // "m" for a distance (the stage's units), empty for a screen size
     std::string why;         // why it wants its level: "distance", "screen size", "hand-set", "heuristic off", ...
-    std::string waiting;     // while its wanted level is loaded and not drawn: what that level waits for
+    std::string waiting;     // while its desired level is loaded and not drawn: what that level waits for
     // A streaming root's residency: the state (the finest level that must be resident) and why, from the streaming heuristic's radii.
     std::optional<uint32_t> state;
     std::string residentWhy;
@@ -101,7 +101,7 @@ struct LodInspection {
     int32_t group = -1;
     std::string key;
     uint32_t defaultIndex = 0;
-    int32_t wanted = -1;
+    int32_t desired = -1;
     int32_t drawn = -1;
     int32_t fadeLevel = -1;
     float fade = 0.0f;
@@ -121,7 +121,7 @@ struct LodToolState {
     char filter[128] = "";
     int kindFilter = 0; // 0 every root, 1 render LOD, 2 streaming
     bool onlyUnderSelection = false;
-    bool onlyNotDrawingWanted = false;
+    bool onlyNotDrawingDesired = false;
     bool onlyFading = false;
     std::vector<LodRow> rows; // set by the application when the scene changes; render-LOD rows' live state each frame
     // What the render-LOD group rows (after the LOD roots' rows in `rows`) were built from: the snapshot's draws (their revision), the tuning
@@ -207,7 +207,7 @@ struct LodToolCamera {
 // The list's rows, from a snapshot: every streaming root drawn and every render-LOD group placed, with their heuristics as the view picks
 // with them (tuned) and their shapes for the viewport. The render-LOD rows' live state is updateLodRows'.
 auto buildLodRows(const ViewScene& scene, LodToolState& state) -> void;
-// The render-LOD rows' live state from the latest readback with states: wanted, drawn, fading, measure, the pop flash.
+// The render-LOD rows' live state from the latest readback with states: desired, drawn, fading, measure, the pop flash.
 auto updateLodRows(const ViewScene& scene, const CullResult& cull, LodToolState& state) -> void;
 // One root inspected: the LOD root at `path` (a streaming root's or a render-LOD group's full path); none when no root is placed there.
 auto inspectLodRoot(const ViewScene& scene, const CullResult& cull, const std::string& path, const LodToolCamera& camera) -> std::optional<LodInspection>;

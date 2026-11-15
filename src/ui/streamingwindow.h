@@ -25,5 +25,5 @@ struct StreamingWindowState {
 // the selected root (its heuristics by domain, radii authored and in force, editable; its levels; its state and why; findings), the
 // measurement controls (reset, fly a camera path), the viewport's layers, and the map of the roots around the camera.
 auto drawStreamingWindow(bool& show, StreamingToolState& state, StreamingWindowState& window) -> void;
-// The labels layer: over each root the list shows, its name, drawn / selected level, state and its state's name; a click selects it.
+// The labels layer: over each root the list shows, its name, drawn / desired level, state and its state's name; a click selects it.
 auto drawStreamingLabels(StreamingToolState& state, const glm::mat4& viewProj, glm::vec2 viewport) -> void;

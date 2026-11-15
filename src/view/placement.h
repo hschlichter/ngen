@@ -64,7 +64,7 @@ struct SceneLodRoot {
     std::string key;                                     // its authored root (lodRootKey), which the view's threshold overrides name
     uint32_t depth = 1;                                  // how many LOD roots it is in, itself counted (1 for a root under none): the LOD Level view's hue
     uint32_t defaultIndex = 0;
-    uint32_t wanted = 0;
+    uint32_t desired = 0;
     std::optional<uint32_t> drawn;
     std::vector<uint32_t> loaded;
     bool setByHand = false;

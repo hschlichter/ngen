@@ -98,9 +98,9 @@ auto levelSwatch(uint32_t level, uint32_t depth, bool byDepth) -> void {
 }
 
 // The level picker: the root's default (or its heuristic's), or one of its levels. A choice asks the application for it.
-auto levelCombo(const std::string& path, const std::vector<std::string>& levels, uint32_t defaultIndex, bool setByHand, uint32_t wanted, bool heuristic, LodToolState& state) -> void {
+auto levelCombo(const std::string& path, const std::vector<std::string>& levels, uint32_t defaultIndex, bool setByHand, uint32_t desired, bool heuristic, LodToolState& state) -> void {
     auto unset = heuristic ? std::string("heuristic") : std::format("default: {}", levelName(levels, defaultIndex));
-    auto preview = setByHand ? levelName(levels, wanted) : unset;
+    auto preview = setByHand ? levelName(levels, desired) : unset;
     if (!ImGui::BeginCombo("##level", preview.c_str())) {
         return;
     }
@@ -108,7 +108,7 @@ auto levelCombo(const std::string& path, const std::vector<std::string>& levels,
         state.levelRequests.push_back({.root = path, .level = std::nullopt});
     }
     for (uint32_t level = 0; level < levels.size(); level++) {
-        if (ImGui::Selectable(levelName(levels, level).c_str(), setByHand && wanted == level)) {
+        if (ImGui::Selectable(levelName(levels, level).c_str(), setByHand && desired == level)) {
             state.levelRequests.push_back({.root = path, .level = level});
         }
     }
@@ -167,7 +167,7 @@ auto drawRow(const LodRow& row, LodToolState& state) -> void {
 
     ImGui::TableSetColumnIndex(ColumnLevel);
     ImGui::SetNextItemWidth(-FLT_MIN);
-    levelCombo(row.path, row.levels, row.defaultIndex, row.setByHand, row.wanted, state.heuristic && !row.heuristic.empty(), state);
+    levelCombo(row.path, row.levels, row.defaultIndex, row.setByHand, row.desired, state.heuristic && !row.heuristic.empty(), state);
 
     ImGui::TableSetColumnIndex(ColumnDrawn);
     ImGui::AlignTextToFramePadding();
@@ -175,12 +175,12 @@ auto drawRow(const LodRow& row, LodToolState& state) -> void {
         levelSwatch((uint32_t) row.drawn, row.depth, colorByDepth());
         ImGui::SameLine();
     }
-    if (row.drawn >= 0 && row.drawn != (int32_t) row.wanted) {
+    if (row.drawn >= 0 && row.drawn != (int32_t) row.desired) {
         ImGui::TextColored(warnColor, "%s, %s", levelName(row.levels, (uint32_t) row.drawn).c_str(), row.group >= 0 ? "falling back" : "loading");
         if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip("Draws %s until %s is %s.\n%s",
                               levelName(row.levels, (uint32_t) row.drawn).c_str(),
-                              levelName(row.levels, row.wanted).c_str(),
+                              levelName(row.levels, row.desired).c_str(),
                               row.group >= 0 ? "on the GPU" : "complete",
                               row.waiting.empty() ? "Its level isn't loaded yet." : row.waiting.c_str());
         }
@@ -394,7 +394,7 @@ auto drawInspector(LodToolState& state, LodWindowState& window) -> void {
         ImGui::SetTooltip("Threshold edits apply to every placement of this authored root: every instance of an instanceable asset shares one.");
     }
     ImGui::AlignTextToFramePadding();
-    ImGui::Text("Wants %s, draws %s", in.wanted >= 0 ? std::format("{}", in.wanted).c_str() : "-", in.drawn >= 0 ? std::format("{}", in.drawn).c_str() : "-");
+    ImGui::Text("Desired %s, drawn %s", in.desired >= 0 ? std::format("{}", in.desired).c_str() : "-", in.drawn >= 0 ? std::format("{}", in.drawn).c_str() : "-");
     if (in.fadeLevel >= 0) {
         ImGui::SameLine();
         ImGui::Text("fading in %d (%.0f%%)", in.fadeLevel, in.fade * 100.0f);
@@ -408,7 +408,7 @@ auto drawInspector(LodToolState& state, LodWindowState& window) -> void {
     }
     ImGui::SetNextItemWidth(170.0f);
     ImGui::PushID("inspector");
-    levelCombo(in.path, levelNames, in.defaultIndex, in.setByHand, in.wanted >= 0 ? (uint32_t) in.wanted : 0, state.heuristic, state);
+    levelCombo(in.path, levelNames, in.defaultIndex, in.setByHand, in.desired >= 0 ? (uint32_t) in.desired : 0, state.heuristic, state);
     ImGui::PopID();
 
     auto flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_SizingStretchProp;
@@ -602,7 +602,7 @@ auto drawLodWindow(bool& show, LodToolState& state, LodWindowState& window) -> v
     ImGui::SameLine();
     ImGui::Checkbox("under selection", &state.onlyUnderSelection);
     ImGui::SameLine();
-    ImGui::Checkbox("not drawing wanted", &state.onlyNotDrawingWanted);
+    ImGui::Checkbox("not drawing desired", &state.onlyNotDrawingDesired);
     ImGui::SameLine();
     ImGui::Checkbox("fading", &state.onlyFading);
     ImGui::SameLine();

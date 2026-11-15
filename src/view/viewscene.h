@@ -114,8 +114,8 @@ struct SceneLodChoice {
 using SceneLodChoices = std::unordered_map<std::string, SceneLodChoice>; // by the root's full path
 
 // Streaming measured, per placed streaming root: which levels are ready (placed and waiting for nothing, so they can be drawn), each level's
-// last lead (seconds from ready to selected, 0 when it was selected before it was ready; -1 never selected), whether it draws coarser than
-// selected (late) or nothing (a hole), and how often its levels were loaded again after being released. Time is measured here, never
+// last lead (seconds from ready to desired, 0 when it was desired before it was ready; -1 never desired), whether it draws coarser than
+// desired (late) or nothing (a hole), and how often its levels were loaded again after being released. Time is measured here, never
 // acted on.
 struct SceneStreamingRoot {
     std::vector<bool> ready;
@@ -125,8 +125,8 @@ struct SceneStreamingRoot {
     uint32_t reloads = 0;
 };
 
-// The totals since the scene opened or view.streaming.reset: roots late and holes now; switches of the selected level to a level not ready
-// (late switches), times a root started drawing nothing (holes), and the root-seconds drawn coarser than selected or nothing; levels added to roots' resident sets (loads), of them loaded
+// The totals since the scene opened or view.streaming.reset: roots late and holes now; switches of the desired level to a level not ready
+// (late switches), times a root started drawing nothing (holes), and the root-seconds drawn coarser than desired or nothing; levels added to roots' resident sets (loads), of them loaded
 // again after a release (reloads), and taken out (released); the leads of every switch; mesh packs that arrived with no placement naming
 // them any more (asked for a level no longer resident).
 struct SceneStreaming {
@@ -548,7 +548,7 @@ private:
     struct RootTimes {
         std::vector<std::optional<std::chrono::steady_clock::time_point>> readySince;
         std::optional<std::chrono::steady_clock::time_point> lateSince;
-        std::optional<uint32_t> selected;
+        std::optional<uint32_t> desired;
     };
     std::unordered_map<std::string, RootTimes> rootTimes;
     std::unordered_map<std::string, std::set<uint32_t>> releasedOf;
@@ -625,7 +625,7 @@ private:
     uint32_t drawnPlacementCount = 0;
     auto setSlot(uint32_t slot, const RenderMeshInstance& instance) -> void;
     auto useNode(const Placement& node, int delta) -> void;
-    // The roots whose wanted level or hand-set state changed since the last pass: a pass looks into the placements holding them.
+    // The roots whose desired level or hand-set state changed since the last pass: a pass looks into the placements holding them.
     std::set<std::string> rootsToCheck;
     bool passNewRoots = false;                                                // a pass drew roots not drawn before: the heuristic evaluates them
     uint32_t defaultLightPrim = 0;                                            // the engine's light's prim index while the scene has no distant light, else 0
@@ -745,7 +745,7 @@ private:
     auto collectLights() -> void;
     // The scene's environment, from its first dome light whose lat-long texture is held; none without one.
     auto collectEnvironment() -> std::optional<RenderEnvironment>;
-    // Whether a pass looks into a placement at this path that isn't pending: a gizmo moved, or a root changed its wanted level, under it.
+    // Whether a pass looks into a placement at this path that isn't pending: a gizmo moved, or a root changed its desired level, under it.
     auto touched(const std::string& path) const -> bool;
     bool fullPass = false;                           // a placed content was composed again: the pass looks into every placement
     SceneThreadStats stats;                          // the counters; publish() fills in the rest

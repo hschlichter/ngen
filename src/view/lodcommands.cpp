@@ -181,7 +181,7 @@ auto streamingRecord(const ViewContext& view) -> Json {
             inFrustum++;
         }
         auto waiting = Json(nullptr);
-        if (root.drawn && *root.drawn != root.wanted) {
+        if (root.drawn && *root.drawn != root.desired) {
             loading++;
         }
         if (root.waiting) {
@@ -247,7 +247,7 @@ auto streamingRecord(const ViewContext& view) -> Json {
             {"kind", measuredImaging ? Json(choice->second.kind == LodHeuristicKind::Distance ? "distance" : "screen") : Json(nullptr)},
             {"measure", measuredImaging ? Json(choice->second.measure) : Json(nullptr)},
             {"inFrustum", visible},
-            {"selected", evaluated ? Json(choice->second.level) : Json(nullptr)},
+            {"desired", evaluated ? Json(choice->second.level) : Json(nullptr)},
             {"why", evaluated ? Json(choice->second.reason) : Json("not evaluated yet")},
             {"thresholds", tuned.thresholds},
             {"blendThresholds", tuned.blendThresholds},
@@ -313,7 +313,7 @@ auto lodRecord(const ViewContext& view) -> Json {
             {"levelPayloads", root.levelPayloads},
             {"heuristics", heuristicsJson(root.heuristics, view.scene.lodPreference())},
             {"default", root.defaultIndex},
-            {"wanted", root.wanted},
+            {"desired", root.desired},
             {"drawn", root.drawn ? Json(*root.drawn) : Json(nullptr)},
             {"loaded", root.loaded},
             {"setByHand", root.setByHand},
@@ -326,7 +326,7 @@ auto lodRecord(const ViewContext& view) -> Json {
 
 // The levels the view's heuristic may want for a group at a camera, as pickLodLevel picks them (src/world/world.cpp): from the level it
 // keeps going coarser (wanting the finest before) to the level it goes finer to (wanting the coarsest before); which it keeps depends on the
-// level it wanted before. Inside a band the two agree and `blend` is the next level's share. The measure is the GPU's: a distance in
+// level it desired before. Inside a band the two agree and `blend` is the next level's share. The measure is the GPU's: a distance in
 // metres, or a screen size. onEdge when the measure is within 1e-4 of a threshold, a band's edge or a hysteresis edge, where float order
 // may differ between the CPU and the GPU.
 struct ExpectedLevels {
@@ -420,8 +420,8 @@ auto renderLodRecord(const ViewContext& view, const std::optional<std::string>& 
             expected.blend = 0.0f;
             expected.onEdge = false;
         }
-        bool read = cull.lodHasStates && g < cull.lodWanted.size();
-        uint32_t wanted = read ? cull.lodWanted[g] : 0xFFu;
+        bool read = cull.lodHasStates && g < cull.lodDesired.size();
+        uint32_t desired = read ? cull.lodDesired[g] : 0xFFu;
         uint32_t drawn = read ? cull.lodDrawn[g] : 0xFFu;
         uint32_t fadeLevel = read && g < cull.lodFadeLevel.size() ? cull.lodFadeLevel[g] : 0xFFu;
         float fade = read && g < cull.lodFade.size() ? cull.lodFade[g] : 0.0f;
@@ -435,19 +435,19 @@ auto renderLodRecord(const ViewContext& view, const std::optional<std::string>& 
         const auto& groupPath = g < draws.lodGroupPaths.size() ? draws.lodGroupPaths[g] : std::string();
         if (read) {
             compared++;
-            if (drawn != wanted) {
+            if (drawn != desired) {
                 fallbacks++;
             }
-            // A fade the GPU shows only when the next level is resident and the wanted one is drawn: compared where it does.
+            // A fade the GPU shows only when the next level is resident and the desired one is drawn: compared where it does.
             bool fadeDiffers = fadeLevel != 0xFFu && std::abs(fade - expected.blend) > 1e-3f;
             if (expected.onEdge) {
                 onEdge++;
-            } else if (wanted < expected.low || wanted > expected.high || fadeDiffers) {
+            } else if (desired < expected.low || desired > expected.high || fadeDiffers) {
                 differ++;
                 if (examples.size() < 10) {
                     examples.push_back({{"path", groupPath},
                                         {"measure", expected.measure / unit},
-                                        {"wanted", wanted},
+                                        {"desired", desired},
                                         {"expected", {expected.low, expected.high}},
                                         {"fade", fade},
                                         {"expectedFade", expected.blend},
@@ -476,7 +476,7 @@ auto renderLodRecord(const ViewContext& view, const std::optional<std::string>& 
                 {"forced", group.forcedLevel},
                 {"measure", expected.measure / unit},
                 {"gpuMeasure", read ? Json(gpuMeasure / unit) : Json(nullptr)},
-                {"wanted", read ? Json(wanted) : Json(nullptr)},
+                {"desired", read ? Json(desired) : Json(nullptr)},
                 {"drawn", read ? Json(drawn) : Json(nullptr)},
                 {"fadeLevel", read && fadeLevel != 0xFFu ? Json(fadeLevel) : Json(nullptr)},
                 {"fade", read ? Json(fade) : Json(nullptr)},
@@ -716,7 +716,7 @@ auto registerLodCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& rec
     records.add("lod", "every LOD root drawn: its levels, the level it defaults to, wants and draws, the levels loaded, and whether set by hand", [&view](RpcResponder responder) {
         responder.respond(lodRecord(view));
     });
-    records.add("streaming", "residency: per streaming root the level selected to draw and why, its streaming radii and state, the levels resident and why, drawn, late, per level requested, loaded, ready and lead, authoring findings; streaming measured (late, holes, loads, reloads, lead)", [&view](RpcResponder responder) {
+    records.add("streaming", "residency: per streaming root the level desired and why, its streaming radii and state, the levels resident and why, drawn, late, per level requested, loaded, ready and lead, authoring findings; streaming measured (late, holes, loads, reloads, lead)", [&view](RpcResponder responder) {
         responder.respond(streamingRecord(view));
     });
     records.add("renderlod",

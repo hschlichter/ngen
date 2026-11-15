@@ -880,13 +880,13 @@ auto waitOf(const Placement& node) -> PlacementWait {
 // The level a root draws (the switch rule): the finest loaded level, not finer than the one it wants, whose placement waits for nothing;
 // while none does, its coarsest loaded, as it arrives. Never a level finer than the one it wants: with none loaded at or coarser than it,
 // nothing (a hole, which the streaming record counts).
-auto drawnLevelOf(const LodRoot& lod, uint32_t wanted, const std::vector<const Placement*>& levels) -> std::optional<uint32_t> {
+auto drawnLevelOf(const LodRoot& lod, uint32_t desired, const std::vector<const Placement*>& levels) -> std::optional<uint32_t> {
     if (lod.loaded.empty()) {
         return std::nullopt;
     }
     // Loaded levels are finest first.
     for (uint32_t level : lod.loaded) {
-        if (level < wanted || level >= levels.size()) {
+        if (level < desired || level >= levels.size()) {
             continue;
         }
         if (levels[level] != nullptr && levels[level]->wait.total() == 0) {
@@ -894,7 +894,7 @@ auto drawnLevelOf(const LodRoot& lod, uint32_t wanted, const std::vector<const P
         }
     }
     auto coarsest = *std::ranges::max_element(lod.loaded);
-    if (coarsest < wanted) {
+    if (coarsest < desired) {
         return std::nullopt;
     }
     return coarsest;
@@ -1541,7 +1541,7 @@ auto ViewScene::syncRoots(const Placement& node, const std::function<Placement&(
     const auto& content = contentOf(w, placedContentKind(node), node.content);
     for (size_t r = 0; r < node.roots.size(); r++) {
         const auto& root = node.roots[r];
-        // A settled root (drawing the level it wants) with no change to its wanted level and nothing below it waiting stays as it is.
+        // A settled root (drawing the level it wants) with no change to its desired level and nothing below it waiting stays as it is.
         bool levelsPending = std::ranges::any_of(root.levels, [](const std::shared_ptr<Placement>& level) { return level && level->pending > 0; });
         if (!all && !fullPass && !root.pending && !levelsPending && !touched(root.path)) {
             continue;
@@ -1550,7 +1550,7 @@ auto ViewScene::syncRoots(const Placement& node, const std::function<Placement&(
         const auto& rootItem = segment.walk->items[root.item];
         const auto& lod = content.lodRoots.at(rootItem.id);
         auto rootWorld = rootItem.absolute ? rootItem.world : segment.world * rootItem.world;
-        auto wanted = w.wantedLevel(root.path, lod);
+        auto desired = w.desiredLevel(root.path, lod);
         auto isLoaded = [&](uint32_t i) {
             return i < lod.levels.size() && content.entities[lod.levels[i]].linkedContent >= 0 && std::ranges::contains(lod.loaded, i);
         };
@@ -1602,7 +1602,7 @@ auto ViewScene::syncRoots(const Placement& node, const std::function<Placement&(
         for (uint32_t i = 0; i < lod.levels.size(); i++) {
             syncLevel(i, before, false);
         }
-        auto drawnLevel = drawnLevelOf(lod, wanted, levelsNow);
+        auto drawnLevel = drawnLevelOf(lod, desired, levelsNow);
         if (drawnLevel != before && node.drawn) {
             // The level drawn now is built drawn, the one before undrawn.
             if (before && *before < lod.levels.size()) {
@@ -1626,7 +1626,7 @@ auto ViewScene::syncRoots(const Placement& node, const std::function<Placement&(
             edit().roots[r].drawn = drawnLevel;
         }
         // Pending while it doesn't draw the level it wants, or a level it loads isn't linked yet (still composing): a later pass places it.
-        bool pending = !drawnLevel || *drawnLevel != wanted;
+        bool pending = !drawnLevel || *drawnLevel != desired;
         for (auto level : lod.loaded) {
             if (level < lod.levels.size() && content.entities[lod.levels[level]].linkedContent < 0) {
                 pending = true;
@@ -1639,9 +1639,9 @@ auto ViewScene::syncRoots(const Placement& node, const std::function<Placement&(
             // The row's state: what it wants, draws and holds, set by hand or not, and while it wants a level it doesn't draw yet, what that
             // level waits for (its placement's count, or one level composing while it isn't linked).
             std::optional<PlacementWait> waiting;
-            if (drawnLevel && *drawnLevel != wanted && std::ranges::contains(lod.loaded, wanted) && wanted < lod.levels.size()) {
-                if (levelsNow[wanted] != nullptr) {
-                    waiting = levelsNow[wanted]->wait;
+            if (drawnLevel && *drawnLevel != desired && std::ranges::contains(lod.loaded, desired) && desired < lod.levels.size()) {
+                if (levelsNow[desired] != nullptr) {
+                    waiting = levelsNow[desired]->wait;
                 } else {
                     waiting = PlacementWait{.composing = 1};
                 }
@@ -1655,11 +1655,11 @@ auto ViewScene::syncRoots(const Placement& node, const std::function<Placement&(
             const auto& row = node.roots[r].row;
             bool setByHand = handLevels.contains(root.path);
             uint32_t streamSlot = node.drawn ? streamRootSlot(root.path) + 1 : 0;
-            if (row.wanted != wanted || row.drawn != drawnLevel || row.loaded != lod.loaded || row.setByHand != setByHand || row.waiting != waiting || row.levelWaits != levelWaits ||
+            if (row.desired != desired || row.drawn != drawnLevel || row.loaded != lod.loaded || row.setByHand != setByHand || row.waiting != waiting || row.levelWaits != levelWaits ||
                 row.streamSlot != streamSlot) {
                 auto& changed = edit().roots[r].row;
                 changed.streamSlot = streamSlot;
-                changed.wanted = wanted;
+                changed.desired = desired;
                 changed.drawn = drawnLevel;
                 changed.loaded = lod.loaded;
                 changed.setByHand = setByHand;

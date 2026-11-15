@@ -145,7 +145,7 @@ do its draws: only where it is placed.
   an asset it waited for arrived; else it is kept as it is. A LOD root switching levels removes one level's draws and adds the other's. A
   pass looks only where something can change: a placement counts what it and everything below it wait for (`pending`: assets not held, and
   roots not drawing the level they want or whose loaded levels aren't linked yet), and a pass goes into a placement only when that count
-  isn't 0, a root under it changed its wanted level, or a gizmo moved something under it; a placed content composed again makes it look
+  isn't 0, a root under it changed its desired level, or a gizmo moved something under it; a placed content composed again makes it look
   everywhere. A purpose shown or hidden, or a mesh, material or texture repacked, places the tree afresh.
 - **Draws.** `RenderWorld` holds a slot per draw (a prim's submesh). A placement built again puts its draws back in the slots and prim indices
   it had, in order, so a draw that didn't change sends nothing; others take the lowest free slot. A placement draws what is held and is
@@ -246,12 +246,12 @@ do its draws: only where it is placed.
   unload radius, a child's imaging thresholds and unload radii inside its parent's first imaging threshold and load radius. A finding is
   reported (the `streaming` record's `findings`, with the values), not corrected.
 - **Streaming measured** (`SceneStreaming`, `measureStreaming` after each scene update): per root, which levels are ready (placed and waiting for
-  nothing), each level's lead (seconds from ready to selected; 0 when selected before it was ready), late (drawing coarser than selected) or a
+  nothing), each level's lead (seconds from ready to desired; 0 when desired before it was ready), late (drawing coarser than desired) or a
   hole (drawing nothing), its reloads; totals since the scene opened or `view.streaming.reset` (`streaming-reset`): late and holes now, late
   switches, holes, root-seconds drawn coarser, loads, reloads and releases, the leads' count, minimum and median, mesh packs that arrived with
   no placement naming them any more (`arrivedUnwanted`: asked for by a level no longer resident; requests aren't cancelled), and authoring
   findings. Time is measured here and never acted on.
-- **The `streaming` record** has per root the imaging pick (`selected`, its heuristic, measure, thresholds and why), its streaming heuristic
+- **The `streaming` record** has per root the imaging pick (`desired`, its heuristic, measure, thresholds and why), its streaming heuristic
   (measure, load and unload radii in force), `state`, `resident` and why, `drawn`, `late`, `hole`, `reloads`, per level its name, whether it is
   requested, loaded, ready and drawn, what its placement waits for and its lead, and its authoring findings; whether its extent is in the view's
   frustum (what USD's query would go by); the measured totals.
@@ -289,7 +289,7 @@ do its draws: only where it is placed.
     render-LOD group counts; with nothing drawn under the camera it holds its height. `fly` suspends it for the main camera, orbiting for
     either. Ground from collision geometry waits for physics. The `status` record's `cameraModes` has the hit, its prim and what was tested
     (chunks, draws, triangles, milliseconds); the overlay draws a line from the eye to the hit and the orbit's pivot.
-- **Switching levels**: a root draws the finest loaded level, not finer than the one it selects, whose placement waits for nothing: linked,
+- **Switching levels**: a root draws the finest loaded level, not finer than the one it desires, whose placement waits for nothing: linked,
   which the composer does only once it is complete, and every mesh, material pack and texture its prims want (under their own purpose)
   held or failed, through the instances and point instancers in it; a LOD root inside it counts by its coarsest level. Each placement
   counts what it waits for by kind (`PlacementWait`) as it is built, summed up the tree, so nothing walks a level to judge it. Until then
@@ -297,7 +297,7 @@ do its draws: only where it is placed.
   draws its coarsest loaded level, filling in as its pieces arrive; with no loaded level at or coarser than the selected one it draws nothing
   (a hole, counted), never a finer level. A root's level placements are synced before it picks, so it switches in the pass the last
   piece arrives, and a district appears whole, with its materials, instead of model by model. `LevelsSwitched` traces the roots whose drawn
-  level changed, once per pass; the `streaming` record's `waiting` and the LOD window's tooltip on a loading row count what the wanted level
+  level changed, once per pass; the `streaming` record's `waiting` and the LOD window's tooltip on a loading row count what the desired level
   waits for (meshes, materials and textures not held, levels still composing and so not linked). GPU uploads aren't part of it: a switched
   level's new meshes are uploaded over the next frames within the upload budget.
 - **Unloading**: a level taken out of its root's resident levels (past its unload radius, or its root no longer placed) is let go at once,
@@ -312,7 +312,7 @@ do its draws: only where it is placed.
 - **The LOD tool** (`src/tools/lodtool.*`: its rows, inspection and requests in `LodToolState`, which the application owns in `ToolsState`
   and the tools' hooks fill; the LOD window `src/ui/lodwindow.*` draws it and keeps only its scroll and edit buffers): one place for LOD inspection, switching and tuning, both kinds.
   - *The list*: every streaming root drawn and every render-LOD group placed (`buildLodRows` per snapshot: the roots' rows each time, the groups'
-    only when the draws, the tuning, the hand-set levels, the preference or the heuristic's state changed; a group's wanted, drawn, fade
+    only when the draws, the tuning, the hand-set levels, the preference or the heuristic's state changed; a group's desired, drawn, fade
     and measure from the readback each frame while the window or a layer is shown, so the frames read every group's state back then: 16
     bytes a group). Filters by path, kind, under the selection, not drawing what it wants, fading. A level picker per row (`lod`,
     `lod-reset` on a group's path force its level), "Set shown", click selects, double-click frames.

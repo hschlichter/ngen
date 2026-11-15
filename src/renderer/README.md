@@ -467,15 +467,15 @@ frame graph orders in among them, as it orders every pass by what it reads and w
   `ComputeDistance`) or a screen size (the sphere over the view window at depth 1), with its blend bands, and at a boundary without one a
   margin before going coarser (the hysteresis, the view's tuning as a push constant, `RenderSnapshot::lodHysteresis`, 20% of a screen size by default; a distance's threshold grows by 1/√0.8, about 12%, as a size falls with
   the distance's square),
-  against the level the group wanted last frame. A bias and threshold overrides are the view's too, baked into the group's thresholds. Then the level drawn: the wanted one when its meshes are in the
-  pool, else the one drawn last frame when they are, else the nearest resident level, coarser first. Inside a band, when the wanted level is
+  against the level the group desired last frame. A bias and threshold overrides are the view's too, baked into the group's thresholds. Then the level drawn: the desired one when its meshes are in the
+  pool, else the one drawn last frame when they are, else the nearest resident level, coarser first. Inside a band, when the desired level is
   drawn and the next one is resident, the next one fades in with the band's share. Written to the state buffer (`gpuscene.lodstate`, 16 bytes a
-  group: the serial; the level wanted, drawn and fading in, a forced bit and the pop flash's frames left; the share; the measure).
+  group: the serial; the level desired, drawn and fading in, a forced bit and the pop flash's frames left; the share; the measure).
 - **Pops.** A drawn level that changes without a fade leading into it or out of it (no band, a forced level, a fallback, blending off) is a
   pop: counted (`LodSelectTotals::popped`) and flashed for half a second at the view's frame rate (`RenderSnapshot::lodFlashFrames`, at most
   127 frames). `LodStateFlags` read the forced bit and the flash back per group.
 - **The LOD tag.** `gbuffer.mesh` writes the draw's tag to the normal target's alpha (`lodTag`, `lodfade.glsl`): the drawn level + 1, plus
-  16 at a forced level, 32 drawing another level than wanted, 64 flashing, and 128 per LOD root the draw is under (`lodDepth`, at most 15,
+  16 at a forced level, 32 drawing another level than desired, 64 flashing, and 128 per LOD root the draw is under (`lodDepth`, at most 15,
   so the tag stays exact in a 16-bit float). The LOD Level view lays a colour at half strength over the lit colour: the drawn level's
   (a ramp), or with `RenderSnapshot::lodColorByDepth` the depth's (a level's index means a different resolution at each depth), and stripes
   or checkers by the flags; with `RenderSnapshot::lodPopFlash` the lighting pass tints a flashing draw white over any view. The tag and the

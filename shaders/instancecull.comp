@@ -185,7 +185,7 @@ layout(std430, set = 0, binding = 8) buffer CullPlanes {
     uint codes[];
 } cullPlanes;
 
-// Per render-LOD group (lodselect.comp): x its serial, y the level wanted (bits 0-7), drawn (bits 8-15) and fading in (bits 16-23, 0xFF for
+// Per render-LOD group (lodselect.comp): x its serial, y the level desired (bits 0-7), drawn (bits 8-15) and fading in (bits 16-23, 0xFF for
 // none), z the fade's share, w the measure.
 layout(std430, set = 0, binding = 9) readonly buffer LodStates {
     uvec4 data[];

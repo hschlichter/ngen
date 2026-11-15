@@ -133,7 +133,7 @@ auto streamingInspectionJson(const StreamingInspection& in) -> Json {
         {"path", row.path},
         {"key", row.key},
         {"rootState", streamingStateName(row.rootState)},
-        {"selected", row.selected},
+        {"desired", row.desired},
         {"why", row.why},
         {"state", row.state},
         {"stateWhy", in.stateWhy},
@@ -184,7 +184,7 @@ auto lodInspectionJson(const LodInspection& in, double metersPerUnit) -> Json {
         {"group", in.group >= 0 ? Json(in.group) : Json(nullptr)},
         {"key", in.key},
         {"default", in.defaultIndex},
-        {"wanted", in.wanted >= 0 ? Json(in.wanted) : Json(nullptr)},
+        {"desired", in.desired >= 0 ? Json(in.desired) : Json(nullptr)},
         {"drawn", in.drawn >= 0 ? Json(in.drawn) : Json(nullptr)},
         {"fadeLevel", in.fadeLevel >= 0 ? Json(in.fadeLevel) : Json(nullptr)},
         {"fade", in.fade},
@@ -273,7 +273,7 @@ auto registerToolCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& re
     registry.add(
         {
             .name = "view.lod.inspect",
-            .summary = "One LOD root as the LOD window's inspector shows it: kind, authored root, state (wanted, drawn, fade, why), every heuristic (used or why not, thresholds authored and in force, its measure from the camera now and the level it would pick) and every level (triangles, draws).",
+            .summary = "One LOD root as the LOD window's inspector shows it: kind, authored root, state (desired, drawn, fade, why), every heuristic (used or why not, thresholds authored and in force, its measure from the camera now and the level it would pick) and every level (triangles, draws).",
             .params = {requiredField("root", RpcType::String, "a LOD root's full path")},
             .result = "the inspection",
         },
@@ -292,7 +292,7 @@ auto registerToolCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& re
     registry.add(
         {
             .name = "view.streaming.inspect",
-            .summary = "One streaming root inspected, as the Streaming window shows it: its residency (selected, state and why, resident and why, drawn, its state's name), every heuristic it names by domain with its thresholds authored and in force and its measure from the camera, its levels (requested, loaded, ready, drawn, lead), its authoring findings, its parent and children.",
+            .summary = "One streaming root inspected, as the Streaming window shows it: its residency (desired, state and why, resident and why, drawn, its state's name), every heuristic it names by domain with its thresholds authored and in force and its measure from the camera, its levels (requested, loaded, ready, drawn, lead), its authoring findings, its parent and children.",
             .params = {requiredField("root", RpcType::String, "a streaming LOD root's full path")},
             .result = "the inspection",
         },

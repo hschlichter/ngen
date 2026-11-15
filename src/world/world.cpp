@@ -99,7 +99,7 @@ auto WorldContent::path(EntityId id) const -> std::string {
     return out;
 }
 
-auto World::wantedLevel(const std::string& rootPath, const LodRoot& root) const -> uint32_t {
+auto World::desiredLevel(const std::string& rootPath, const LodRoot& root) const -> uint32_t {
     if (auto it = lodLevels.find(rootPath); it != lodLevels.end()) {
         if (!root.levels.empty()) {
             return std::min(it->second, (uint32_t) root.levels.size() - 1);
@@ -113,11 +113,11 @@ auto World::drawnLevel(const std::string& rootPath, const LodRoot& root) const -
     if (root.loaded.empty()) {
         return std::nullopt;
     }
-    uint32_t wanted = wantedLevel(rootPath, root);
-    // Levels are finest first: the finest loaded level at or after the wanted one; when none is, the coarsest loaded one before it.
+    uint32_t desired = desiredLevel(rootPath, root);
+    // Levels are finest first: the finest loaded level at or after the desired one; when none is, the coarsest loaded one before it.
     std::optional<uint32_t> best;
     for (uint32_t level : root.loaded) {
-        if (level >= wanted && (!best || level < *best)) {
+        if (level >= desired && (!best || level < *best)) {
             best = level;
         }
     }

@@ -4,7 +4,7 @@
 //   ngen-worldcheck [--lod <root path>=<level>]... [--transforms] [--instancing] [--instancers] [--lod-heuristics] [--lod-authoring]
 //                   [--output <file>] <scene id>
 //
-// --lod sets a LOD root's wanted level before composing (the path with instances expanded); --transforms adds world matrices;
+// --lod sets a LOD root's desired level before composing (the path with instances expanded); --transforms adds world matrices;
 // --instancing prints instance and prototype counts instead of the fingerprint; --instancers prints every PointInstancer's points instead
 // (fingerprintPointLine); --lod-heuristics prints every LOD root's heuristics instead (fingerprintHeuristicLine); --lod-authoring prints,
 // for every LOD root reached, what of the streaming authoring contract doesn't hold (checkLodAuthoring, against the LOD root nearest above

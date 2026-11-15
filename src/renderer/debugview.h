@@ -24,7 +24,7 @@ enum class DebugView : uint32_t {
 inline constexpr uint32_t debugViewCount = 12;
 
 // A streaming root's state as the streaming view colours it (shaders/debugview.comp) and the Streaming tool names it, worst first when
-// several hold: drawing nothing, drawing coarser than selected, a budget granting a coarser level, a resident level still on its way, a
+// several hold: drawing nothing, drawing coarser than desired, a budget granting a coarser level, a resident level still on its way, a
 // finer level resident ahead of being drawn, drawing what it selects. `streamingStateFinding` is added when the root breaks the authoring
 // contract.
 enum class StreamingRootState : uint32_t {

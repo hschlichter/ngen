@@ -160,19 +160,21 @@ sense of a map; that is a scene.
 - **Cell** — the test world's word for a streaming root's area. **Region** (1 km, levels `full`, `medium` and `proxy`) and **tile** (250 m,
   levels `full`, `medium` and `simplified`) are its two cell sizes, with asset LOD roots inside tiles. A cell's coarse levels (`proxy`,
   `simplified`: merged, reduced stand-ins for everything in the cell) are what other engines call HLODs.
+- **Desired level** — the level a root's imaging heuristic picks from the camera (or a hand-set level). What a root *wants*; the level it
+  draws is its *drawn level*.
 - **Distance heuristic / screen-size heuristic** — UsdLod's two ways to measure a root: distance to a centre or box, or the extent's
   bounding sphere as a fraction of the view window. The view's *preference* picks one when a root names both.
 - **Domain** — what a heuristic decides: `imaging` (which level is drawn) or `streaming` (which levels are resident; the engine's own domain
   token).
-- **Drawn level** — the level a root actually draws: the finest loaded and *ready* level not finer than the selected one.
+- **Drawn level** — the level a root actually draws: the finest loaded and *ready* level not finer than the desired one.
 - **Fade / dither** — a render-LOD group inside a blend band draws both levels, split per pixel by a 4×4 Bayer pattern.
 - **Forced level** — a render-LOD group's level set by hand (`lod`), or its default while the heuristic is off or unusable.
 - **Heuristic** — a `LODDistanceHeuristic` or `LODScreenSizeHeuristic` prim a root names in `lod:heuristics`, with thresholds and a domain.
-- **Hole** — a root that draws nothing because no loaded level at or coarser than the selected one is ready.
+- **Hole** — a root that draws nothing because no loaded level at or coarser than the desired one is ready.
 - **Hysteresis** — a margin before going coarser at a threshold, so a camera on the boundary doesn't flip a root (20% by default). For
   residency, the previous streaming state is the hysteresis.
-- **Late** — a root drawing coarser than it selects, because the finer level isn't ready yet. **Lead** — seconds a level was ready before it
-  was selected.
+- **Late** — a root drawing coarser than it desires, because the finer level isn't ready yet. **Lead** — seconds a level was ready before it
+  was desired.
 - **Load radius / unload radius** — a streaming heuristic's thresholds (load) and `streaming:unloadThresholds` (unload): a level becomes
   resident inside its load radius and stops past its unload radius.
 - **LOD level** — one child of a LOD root, finest first; level 0 is the finest. Never a map: what other engines call a level is a scene here.
@@ -187,7 +189,6 @@ sense of a map; that is a scene.
   placement each frame.
 - **Residency** (of a level) — whether a level is loaded, decided only by camera position and authored radii, never by time. The *streaming
   state* level and every coarser level are resident. Not the same as the scene being *resident* ([the view's runtime](#the-views-runtime)).
-- **Selected / wanted level** — the level a root's imaging heuristic picks from the camera (or a hand-set level).
 - **Streaming root** — a LOD root whose levels are payloads; each level is a content of its own, loaded and released by residency.
 - **Streaming state** — a root's finest level that must be resident: finer at once by load radii, coarser only past unload radii.
 - **Switching levels** — a root starting to draw another level; it happens in the pass the last piece of the new level arrives, so a district

@@ -275,7 +275,7 @@ auto buildLodRows(const ViewScene& scene, LodToolState& state) -> void {
             .key = root.key,
             .overridden = tuning.overrides.contains(root.key),
             .defaultIndex = root.defaultIndex,
-            .wanted = root.wanted,
+            .desired = root.desired,
             .drawn = root.drawn ? (int32_t) *root.drawn : -1,
             .loaded = root.loaded,
             .setByHand = root.setByHand,
@@ -314,7 +314,7 @@ auto buildLodRows(const ViewScene& scene, LodToolState& state) -> void {
             .key = source.key,
             .overridden = tuning.overrides.contains(source.key),
             .defaultIndex = group.defaultLevel,
-            .wanted = group.forcedLevel >= 0 ? (uint32_t) group.forcedLevel : group.defaultLevel,
+            .desired = group.forcedLevel >= 0 ? (uint32_t) group.forcedLevel : group.defaultLevel,
             .drawn = -1,
             .setByHand = byHand,
             .measureUnit = group.kind == RenderLodKind::Distance ? unit : "",
@@ -335,11 +335,11 @@ auto updateLodRows(const ViewScene& scene, const CullResult& cull, LodToolState&
             continue;
         }
         auto g = (size_t) row.group;
-        if (g >= cull.lodWanted.size() || g >= groups.size()) {
+        if (g >= cull.lodDesired.size() || g >= groups.size()) {
             continue;
         }
         bool distance = groups[g].kind == RenderLodKind::Distance;
-        row.wanted = cull.lodWanted[g];
+        row.desired = cull.lodDesired[g];
         row.drawn = cull.lodDrawn[g] == 0xFFu ? -1 : (int32_t) cull.lodDrawn[g];
         row.fadeLevel = g < cull.lodFadeLevel.size() && cull.lodFadeLevel[g] != 0xFFu ? (int32_t) cull.lodFadeLevel[g] : -1;
         row.fade = g < cull.lodFade.size() ? cull.lodFade[g] : 0.0f;
@@ -382,8 +382,8 @@ auto inspectLodRoot(const ViewScene& scene, const CullResult& cull, const std::s
         out.setByHand = scene.lodHandLevels().contains(path);
         out.forced = group.forcedLevel >= 0;
         out.why = groupWhy(group, out.setByHand, scene.lodHeuristic());
-        if (cull.lodHasStates && g < cull.lodWanted.size()) {
-            out.wanted = cull.lodWanted[g];
+        if (cull.lodHasStates && g < cull.lodDesired.size()) {
+            out.desired = cull.lodDesired[g];
             out.drawn = cull.lodDrawn[g] == 0xFFu ? -1 : (int32_t) cull.lodDrawn[g];
             out.fadeLevel = g < cull.lodFadeLevel.size() && cull.lodFadeLevel[g] != 0xFFu ? (int32_t) cull.lodFadeLevel[g] : -1;
             out.fade = g < cull.lodFade.size() ? cull.lodFade[g] : 0.0f;
@@ -408,7 +408,7 @@ auto inspectLodRoot(const ViewScene& scene, const CullResult& cull, const std::s
         toWorld = streaming->worldTransform;
         levelNames = streaming->levels;
         out.setByHand = streaming->setByHand;
-        out.wanted = (int32_t) streaming->wanted;
+        out.desired = (int32_t) streaming->desired;
         out.drawn = streaming->drawn ? (int32_t) *streaming->drawn : -1;
         const auto& choices = scene.lodChoices();
         auto choice = choices.find(path);
@@ -542,7 +542,7 @@ auto lodRowShown(const LodToolState& state, const LodRow& row) -> bool {
             return false;
         }
     }
-    if (state.onlyNotDrawingWanted && row.drawn == (int32_t) row.wanted) {
+    if (state.onlyNotDrawingDesired && row.drawn == (int32_t) row.desired) {
         return false;
     }
     if (state.onlyFading && row.fadeLevel < 0) {

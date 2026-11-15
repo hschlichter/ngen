@@ -867,7 +867,7 @@ auto Renderer::cullResult() const -> CullResult {
     result.lodEye = lod.eye;
     result.lodWindowArea = lod.windowArea;
     result.lodDrawn = lod.drawn;
-    result.lodWanted = lod.wanted;
+    result.lodDesired = lod.desired;
     result.lodFadeLevel = lod.fadeLevel;
     result.lodFade = lod.fade;
     result.lodMeasure = lod.measure;

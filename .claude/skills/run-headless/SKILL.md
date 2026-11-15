@@ -80,8 +80,8 @@ SDL_VIDEODRIVER=offscreen ./ngen-cli view <scene> --frames=30 \
 - Records at a frame go to a file: a script line `120 record render /tmp/records.jsonl` appends the render debug record (meshes, textures,
   passes with draw counters and GPU time, culled passes, draw log with prim paths) as one JSON line, `value` holding the record,
   `requested_frame` the frame asked for and `frame` the frame it was ready (GPU readbacks take a few). Any record works: `render`, `memory`,
-  `counters`, `culling`, `scene`, `assets` (per asset: state, size, times), `lod` (every LOD root: levels and their payloads, heuristic, default, wanted, drawn, loaded), `payloads` (every payload placement
-  reached: assets, loaded, extentsHint in world metres), `streaming` (residency: per streaming root `selected` and why, its streaming radii and `state`, `resident` and why, `drawn`, `late`/`hole`, per level requested/loaded/ready/drawn and lead, authoring `findings`; `measured` totals: late switches, holes, root-seconds coarser, loads, reloads, lead, `arrivedUnwanted`), `scenethread` (requests, composes, extracts, assets in flight and held,
+  `counters`, `culling`, `scene`, `assets` (per asset: state, size, times), `lod` (every LOD root: levels and their payloads, heuristic, default, desired, drawn, loaded), `payloads` (every payload placement
+  reached: assets, loaded, extentsHint in world metres), `streaming` (residency: per streaming root `desired` and why, its streaming radii and `state`, `resident` and why, `drawn`, `late`/`hole`, per level requested/loaded/ready/drawn and lead, authoring `findings`; `measured` totals: late switches, holes, root-seconds coarser, loads, reloads, lead, `arrivedUnwanted`), `scenethread` (requests, composes, extracts, assets in flight and held,
   residency), `gpuscene` (change lists, upload queue and budget, geometry pool), `pipelines`, `profile`, `status` (`src/introspect/README.md`); several lines into one file are fine. Read it
   with `jq 'select(.record == "render") | .value.passes' /tmp/records.jsonl`.
 - `dump-profile PATH` (script verb): the profiler history as a Chrome trace file (`jq '.traceEvents'`, or open in Perfetto).

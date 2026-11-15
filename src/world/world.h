@@ -103,7 +103,7 @@ struct Light {
 };
 
 // A prim with LODRootAPI: its children are its levels, finest first. `loaded` holds the levels whose payloads are loaded in this content;
-// which level an instance wants and draws is state of the instance (World::wantedLevel, World::drawnLevel).
+// which level an instance wants and draws is state of the instance (World::desiredLevel, World::drawnLevel).
 // How a LOD heuristic measures a root's screen size (UsdLod's projectionMethod).
 enum class LodProjection : uint8_t {
     Sphere, // projectedSphere, UsdLod's fallback: the extent's bounding sphere
@@ -191,7 +191,7 @@ auto checkLodAuthoring(const std::vector<LodHeuristic>& heuristics, uint32_t lev
 // The level a measure picks, as UsdLod's ComputeLOD with its blend bands, and with hysteresis at a boundary without a band: going coarser
 // waits until the measure is past the threshold by `hysteresis` (a screen size below threshold * (1 - hysteresis), a distance beyond
 // threshold / (1 - hysteresis) ^ 0.5, the same margin in a size that falls with the square of the distance), against `previous`, the level
-// wanted last. Inside a band the level is the finer one and `blend` the share of the next (0 to 1, as UsdLod's fractional index).
+// desired last. Inside a band the level is the finer one and `blend` the share of the next (0 to 1, as UsdLod's fractional index).
 struct LodPick {
     uint32_t level = 0;
     float blend = 0.0f;
@@ -286,8 +286,8 @@ struct World {
     std::unordered_map<std::string, uint32_t> lodLevels;
 
     // The level a LOD root wants: set by hand for its path, or its default.
-    auto wantedLevel(const std::string& rootPath, const LodRoot& root) const -> uint32_t;
-    // The level it draws: the finest loaded level not finer than the wanted one, else the coarsest loaded one (finer than the wanted one).
+    auto desiredLevel(const std::string& rootPath, const LodRoot& root) const -> uint32_t;
+    // The level it draws: the finest loaded level not finer than the desired one, else the coarsest loaded one (finer than the desired one).
     auto drawnLevel(const std::string& rootPath, const LodRoot& root) const -> std::optional<uint32_t>;
 
     // The prototypes held in contents.

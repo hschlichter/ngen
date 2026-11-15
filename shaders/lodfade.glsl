@@ -36,7 +36,7 @@ float lodCoverage(uint lodGroup, uint lodLevel) {
 }
 
 // The LOD level view's tag (the G-buffer normal target's alpha): the drawn level + 1 (0 under no LOD root), plus, for a render-LOD
-// group's instance, 16 at a forced level, 32 drawing another level than it wants (the wanted one not resident), 64 while it flashes for a
+// group's instance, 16 at a forced level, 32 drawing another level than it wants (the desired one not resident), 64 while it flashes for a
 // pop. A 16-bit float holds it exactly; lighting.frag reads it back.
 const uint lodTagForced = 16u;
 const uint lodTagFallback = 32u;

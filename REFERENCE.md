@@ -315,8 +315,8 @@ frames later; record them at steady state (frame 120 or later).
 | `counters` | GPU zones and pipeline statistics per pass (next frames). |
 | `profile` | CPU and GPU time per frame. |
 | `zones` | Every profiler zone over the last 60 frames: count, total, median, longest. |
-| `lod` | Every LOD root: levels, default, wanted, drawn, loaded, set by hand. |
-| `streaming` | Per streaming root: selected level and why, radii, state, resident, late; measured totals. |
+| `lod` | Every LOD root: levels, default, desired, drawn, loaded, set by hand. |
+| `streaming` | Per streaming root: desired level and why, radii, state, resident, late; measured totals. |
 | `renderlod` | Render-LOD groups, the GPU's pick and its check against the heuristic (next frames). |
 | `lodtool` | The LOD tool's inspection of the root at or above the selection, tuning, layers, pops. |
 | `streamingtool` | The Streaming tool's inspection of the root at or above the selection, totals, map view. |
