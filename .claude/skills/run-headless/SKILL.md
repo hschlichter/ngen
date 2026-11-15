@@ -166,7 +166,8 @@ in the code — there is no "remove when done" step.
 
 ## Test scenes
 
-- Minimal: `assets/three_cubes.usda` — cheap smoke test for extraction, lighting, frame graph.
+- Minimal: `assets/three_cubes.usda` — cheap smoke test for extraction, lighting, frame graph. `assets/three_cubes_flight.usda` is the
+  same with three authored cameras (`/cameras/flight_00` to `_02`), for camera lists, `camera-use` and `fly`.
 - Composition: `assets/layered/root.usda` — sublayers, references (one instanced, one internal), a payload, a UsdLod root, bindings on a
   parent and a child, visibility, a guide, a texture. Default: 10 draws; `purposes guide=on` 11; `lod /World/Tree/lod 0` 12.
 - Materials/textures stress test: Intel NewSponza at `assets/main_sponza/NewSponza_Main_USD_Zup_003.usda` (git-ignored; scenes must be

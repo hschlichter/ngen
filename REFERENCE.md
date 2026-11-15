@@ -308,7 +308,7 @@ frames later; record them at steady state (frame 120 or later).
 
 | Record | Holds |
 |---|---|
-| `status` | Frame counter, scene, selection, main camera, camera modes. |
+| `status` | Frame counter, scene, selection, main camera, camera modes, and `flight` while the camera flies (the camera reached, how many, speed, metres, seconds). |
 | `cvars` | Every cvar: type, value, default, description, range or choices. |
 | `scene` | Layer stack, up axis and units, prims, prototypes, instances, lights, LOD levels set. |
 | `environment` | The dome light, its image and the light it casts. |

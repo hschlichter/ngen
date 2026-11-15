@@ -144,7 +144,7 @@ height, a screenshot to download, Reset layout (wide) and full screen. The panel
 
 | Panel | From | Does |
 |---|---|---|
-| Scene | the `status` record, `view.assetsOf`, `view.camera.list` | the selection and its assets, frame it or the scene, the camera's pose, the scene's cameras |
+| Scene | the `status` record, `view.assetsOf`, `view.camera.list`, `view.camera.fly` | the selection and its assets, frame it or the scene, the camera's pose, the scene's cameras, and a flight through them: prefix, speed, Fly and Stop, its progress |
 | Render | `cvar.get`, a short list of names | view mode, shadows, culling, overlays, the video's settings |
 | Cvars | `cvar.get` | every cvar by group with an editor for its type, searched, changed ones marked with a reset |
 | Console | `console.run`, `log.subscribe` | a line that runs a console command, with its history, and the live log under it |

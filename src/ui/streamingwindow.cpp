@@ -135,28 +135,6 @@ auto drawControls(StreamingToolState& state) -> void {
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("Zeroes the counters above, for a run measured from here (view.streaming.reset, streaming-reset).");
     }
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(170.0f);
-    ImGui::InputText("##flightprefix", state.flightPrefix, sizeof(state.flightPrefix));
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("The cameras to fly through: every camera the scene authors whose path starts with this, in path order.");
-    }
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(70.0f);
-    ImGui::InputFloat("m/s", &state.flightSpeed, 0.0f, 0.0f, "%.0f");
-    ImGui::SameLine();
-    if (state.flying) {
-        if (ImGui::Button("Stop flight")) {
-            state.flyStopRequested = true;
-        }
-        ImGui::SameLine();
-        ImGui::TextDisabled("%s", state.flightText.c_str());
-    } else if (ImGui::Button("Fly")) {
-        state.flyRequested = true;
-    }
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Flies the camera through the cameras at the speed, by each frame's time (view.camera.fly, fly). A test driver:\nit moves the camera; what loads follows from where the camera is. Its numbers depend on the build, the cache and the machine.");
-    }
 
     bool view = state.streamingView;
     if (ImGui::Checkbox("Streaming view", &view)) {

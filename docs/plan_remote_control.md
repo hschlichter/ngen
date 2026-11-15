@@ -243,6 +243,9 @@ Steps 1 to 6, on 2026-11-15. What differs from the steps above:
   Dear ImGui a pointer position, a button, the wheel, text or a key, and answers after the next UI frame with what the UI wants; the
   page sends presses, the wheel and the keys to the UI while it wants them and to the camera otherwise. This was the deferred "touch
   forwarded to the engine's UI". The gizmos are not reached: they take the window's events.
+- **The Scene panel flies the camera** (asked for by Henrik, 2026-11-15, with the fly controls moved from the engine's Streaming window
+  to its Camera window): a prefix, a speed, Fly and Stop over `view.camera.fly` and `view.camera.fly.stop`, and the flight's progress
+  from the `status` record's new `flight`. `assets/three_cubes_flight.usda` is a small scene with cameras to test it on.
 - **The wide layout is a dock** (asked for by Henrik after using the page on a desktop, 2026-11-15: the fixed column left room unused).
   Panels sit in areas left, right and under the video, or float; they are dragged by their tabs and titles, resized by the bars between,
   remembered in `localStorage`, and reset from the strip. It replaces "two side by side when there is room". A panel is still one

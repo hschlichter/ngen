@@ -256,7 +256,8 @@ do its instances: only where it is placed.
   (measure, load and unload radii in force), `state`, `resident` and why, `drawn`, `late`, `hole`, `reloads`, per level its name, whether it is
   requested, loaded, ready and drawn, what its placement waits for and its lead, and its authoring findings; whether its extent is in the view's
   frustum (what USD's query would go by); the measured totals.
-- **Flying a camera path** (`fly <camera path prefix> <speed m/s>`, `view.camera.fly`; `fly-stop`): the camera moves through the scene's
+- **Flying a camera path** (`fly <camera path prefix> <speed m/s>`, `view.camera.fly`; `fly-stop`; the Camera window's Fly; the `status`
+  record's `flight` while one runs): the camera moves through the scene's
   cameras whose paths start with the prefix, in path order, at the speed in metres a second of each frame's time, eye and direction
   interpolated; a script holds its clock while it flies, and the call answers at the last camera (`FlightStarted`, `FlightDone`). A test
   driver for streaming: it moves the camera and decides nothing. Its numbers depend on the build, the asset server's cache and the machine,

@@ -277,7 +277,7 @@ auto ToolsHooks::syncStreamingTool(ViewFrame& frame) -> void {
     PROFILE_ZONE("StreamingWindowSync", Tools);
     auto& scene = frame.scene;
     auto& streaming = tools.streaming;
-    // A sample for the chart, the cameras for the map, the flight for the controls.
+    // A sample for the chart, the cameras for the map.
     const auto& threadStats = scene.threadStats();
     streaming.totals.inFlight = threadStats.inFlightLayers + threadStats.inFlightMeshes + threadStats.inFlightMaterials + threadStats.inFlightTextures + threadStats.inFlightOther;
     if (streaming.windowOpen) {
@@ -292,11 +292,6 @@ auto ToolsHooks::syncStreamingTool(ViewFrame& frame) -> void {
     streaming.debugCameraPosition = toolscvars::debugCamera.get() ? std::optional<glm::vec3>(tools.debugCamera.camera.position) : std::nullopt;
     streaming.cameraForward = lodCam.forward();
     streaming.up = frame.cam.worldUp;
-    const auto& flight = frame.flight;
-    streaming.flying = flight.flying();
-    if (flight.flying()) {
-        streaming.flightText = std::format("{} of {} cameras, {:.0f} m in {:.0f} s", flight.segment + 1, flight.cameras.size(), flight.metres, flight.seconds);
-    }
     streaming.streamingView = streamingView;
     // What the window asked for.
     if (auto on = std::exchange(streaming.streamingViewRequested, std::nullopt)) {
@@ -304,14 +299,6 @@ auto ToolsHooks::syncStreamingTool(ViewFrame& frame) -> void {
     }
     if (std::exchange(streaming.resetRequested, false)) {
         scene.resetStreamingCounters();
-    }
-    if (std::exchange(streaming.flyRequested, false)) {
-        if (auto error = startFlight(frame.flight, frame.cam, scene, streaming.flightPrefix, std::max(0.1f, streaming.flightSpeed), nullptr)) {
-            streaming.flightText = *error;
-        }
-    }
-    if (std::exchange(streaming.flyStopRequested, false)) {
-        stopFlight(frame.flight);
     }
     for (auto& request : std::exchange(streaming.radiiRequests, {})) {
         scene.overrideLodThresholds(request.root, request.heuristic, LodOverride{.thresholds = std::move(request.load), .unloadThresholds = std::move(request.unload)});

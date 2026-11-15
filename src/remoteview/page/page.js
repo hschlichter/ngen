@@ -1081,7 +1081,51 @@ function buildScene() {
     h('div', { id: 'sceneDetails' }),
     h('h3', {}, 'Camera'),
     h('div', { id: 'scenePose', class: 'mono note num' }),
-    h('div', { id: 'sceneCameras' }));
+    h('div', { id: 'sceneCameras' }),
+    h('h3', {}, 'Fly through cameras'),
+    h('div', { class: 'row' },
+      h('input', { id: 'flyPrefix', type: 'text', class: 'mono', value: remember('flyPrefix', '/cameras/flight_'), autocapitalize: 'off', spellcheck: 'false',
+        title: 'The cameras to fly through: every camera the scene authors whose path starts with this, in path order', onchange: event => store('flyPrefix', event.target.value) }),
+      h('input', { id: 'flySpeed', type: 'number', min: 0.1, step: 'any', value: remember('flySpeed', 30), style: 'flex: 0 0 5.5em', title: 'Metres a second',
+        onchange: event => store('flySpeed', Number(event.target.value)) }),
+      h('span', { class: 'dim' }, 'm/s'),
+      h('button', { id: 'flyButton', onclick: () => toggleFlight() }, 'Fly')),
+    h('div', { id: 'flyText', class: 'note' }));
+}
+
+// The flight through the scene's cameras (view.camera.fly), as the Camera window has it: Fly starts one, Stop ends it, and moving the
+// camera by hand ends it too. The call answers when the flight is over.
+let flightSaid = '';
+
+function toggleFlight() {
+  if (engine.status && engine.status.flight) {
+    return callAndSay('view.camera.fly.stop');
+  }
+  const prefix = document.getElementById('flyPrefix').value;
+  const speed = Number(document.getElementById('flySpeed').value) || 30;
+  flightSaid = '';
+  showFlight();
+  const flown = rpc.call('view.camera.fly', { prefix: prefix, speed: speed }).then(end => {
+    flightSaid = (end.stopped ? 'stopped after ' : 'flew ') + end.cameras + ' cameras, ' + Math.round(end.metres) + ' m in ' + end.seconds.toFixed(1) + ' s';
+    return end;
+  }).catch(error => {
+    flightSaid = error.message;
+    return null;
+  }).finally(() => poll(false));
+  poll(false);
+  return flown;
+}
+
+function showFlight() {
+  const button = document.getElementById('flyButton');
+  if (button === null) {
+    return;
+  }
+  const flight = engine.status ? engine.status.flight : null;
+  button.textContent = flight ? 'Stop' : 'Fly';
+  document.getElementById('flyText').textContent = flight
+    ? 'camera ' + flight.camera + ' of ' + flight.cameras + ', ' + Math.round(flight.metres) + ' m in ' + flight.seconds.toFixed(1) + ' s at ' + flight.speed + ' m/s'
+    : flightSaid;
 }
 
 function callAndSay(method, params) {
@@ -1105,6 +1149,7 @@ async function showScene() {
   }
   const selected = status.selected || '';
   document.getElementById('sceneSelected').textContent = selected || 'nothing selected';
+  showFlight();
   if (status.camera) {
     const position = status.camera.position || [0, 0, 0];
     document.getElementById('scenePose').textContent =
@@ -2295,6 +2340,39 @@ async function runSelfTest() {
       const picked = await selectedNow();
       expect(picked !== '', 'the scene was not picked once the menu had closed');
       return 'opened, closed, then picked ' + picked;
+    });
+  }
+  const sceneCameras = (await rpc.call('view.camera.list')).cameras || [];
+  if (sceneCameras.filter(camera => camera.path.startsWith('/cameras/flight_')).length >= 2) {
+    await check('the Scene panel flies the camera and stops it', async () => {
+      const flying = async () => (await rpc.call('introspect.get', { name: 'status' })).flight;
+      showTab('scene');
+      document.body.classList.toggle('sheetup', document.body.dataset.layout === 'landscape');
+      document.getElementById('flyPrefix').value = '/cameras/none_';
+      await toggleFlight();
+      expect(flightSaid.length > 0 && (await flying()) === null, 'a prefix that names no cameras flew: ' + flightSaid);
+      const refused = flightSaid;
+      document.getElementById('flyPrefix').value = '/cameras/flight_';
+      document.getElementById('flySpeed').value = 20;
+      const before = await pose();
+      const button = document.getElementById('flyButton');
+      button.click();
+      await sleep(900);
+      await poll(false);
+      await sleep(600);
+      const flight = await flying();
+      expect(flight !== null && flight.cameras === 3 && flight.speed === 20, 'not flying: ' + JSON.stringify(flight));
+      expect(button.textContent === 'Stop' && document.getElementById('flyText').textContent.startsWith('camera '), 'the panel does not show the flight: ' + document.getElementById('flyText').textContent);
+      expect(distance(before, await pose()) > 1, 'the camera did not move');
+      button.click();
+      await sleep(600);
+      await poll(false);
+      await sleep(600);
+      expect((await flying()) === null && button.textContent === 'Fly', 'the flight did not stop');
+      expect(flightSaid.startsWith('stopped after'), 'the panel says "' + flightSaid + '"');
+      document.body.classList.remove('sheetup');
+      await rpc.call('view.camera.frame', { target: 'scene' });
+      return refused + '; then ' + flightSaid;
     });
   }
   await check('R selects the parent, Z deselects', async () => {

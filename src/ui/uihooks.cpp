@@ -2,6 +2,7 @@
 
 #include "assetclient.h"
 #include "budgetoverlay.h"
+#include "cameraflight.h"
 #include "imguibackendvulkan.h"
 #include "log.h"
 #include "profile.h"
@@ -17,6 +18,7 @@
 #include <SDL3/SDL_events.h>
 #include <imgui.h>
 
+#include <algorithm>
 #include <format>
 #include <string>
 #include <utility>
@@ -191,6 +193,19 @@ auto UiHooks::drawUi(ViewFrame& frame) -> void {
     }
     {
         auto& camWindow = ui.cameraWindow();
+        // The flight: started and stopped as the window asked, and shown as it is now.
+        if (std::exchange(camWindow.flyRequested, false)) {
+            if (auto error = startFlight(frame.flight, frame.cam, scene, camWindow.flightPrefix, std::max(0.1f, camWindow.flightSpeed), nullptr)) {
+                camWindow.flightText = *error;
+            }
+        }
+        if (std::exchange(camWindow.flyStopRequested, false)) {
+            stopFlight(frame.flight);
+        }
+        camWindow.flying = frame.flight.flying();
+        if (camWindow.flying) {
+            camWindow.flightText = std::format("{} of {} cameras, {:.0f} m in {:.0f} s", frame.flight.segment + 1, frame.flight.cameras.size(), frame.flight.metres, frame.flight.seconds);
+        }
         if (camWindow.requestFrameScene) {
             camWindow.requestFrameScene = false;
             frame.frameScene();

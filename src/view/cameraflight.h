@@ -18,7 +18,7 @@ struct CameraFlightEnd {
     bool stopped = false;
 };
 
-// A camera flight (`fly`, view.camera.fly, the Streaming window): the camera moves through the scene's cameras whose paths start with a
+// A camera flight (`fly`, view.camera.fly, the Camera window): the camera moves through the scene's cameras whose paths start with a
 // prefix, in path order, at a speed in metres a second of the frame's time, eye and direction interpolated between them. A test driver: it
 // moves the camera, it decides nothing; a script holds its clock while it flies.
 struct CameraFlight {
