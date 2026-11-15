@@ -404,6 +404,9 @@ Where the code differs from the steps above (2026-11-15):
   first results named the unlimited rate as a gap. Debug, three cubes: 508 frames a second and the GPU 97 % busy without the limit, a 16.67 ms
   frame and 21 % with it; `--frames=600` still takes 1.3 s. It makes decision 13's delay real: with the frame as the source, capture to send is
   92 ms at 60 frames a second against 17 ms unlimited. The pattern's latency is the same either way (26 to 29 ms).
+- **The frame is read as soon as the GPU has it** (2026-11-15, the follow-up below): `RhiDevice::fenceSignaled`, `Renderer::frameContextDone`,
+  and `RemoteViewCapture::afterFence` asking every frame. Capture to send at 60 frames a second: 21 ms, from 92 (debug, three cubes,
+  headless, Firefox, 386 frames, none replaced, no warnings with `--fail-on-validation`).
 - **Start-up flags** (the gap Visibility named): `--cvar <name>=<value>` for any cvar, and `--remote-view[=<address>[:<port>]]`, which sets the
   address, the port and `remoteview.enabled`. An unknown cvar or a bad value stops the program, so `--remote-view` in `gamerelease` is an error.
 - **`remoteview.address` defaults to `0.0.0.0`**, not `127.0.0.1` (decision 8), by Henrik's choice on 2026-11-15: the loopback default gave a
@@ -518,11 +521,11 @@ What Henrik checks (locked: the phone is his to verify), and what makes it reada
 
 - **Vulkan Video encode** (`VK_KHR_video_encode_h264`). Trigger: the software encoder's CPU time, or the readback's, shows in the frame or
   starves the job workers. Needs approval for the extension and an RHI plan of its own.
-- **Reading a frame as soon as the GPU has it** (a fence asked without waiting). Trigger: decision 13's measurement. **Triggered**: 92 ms
-  from capture to send at 60 frames a second, about 75 ms of it the wait for the frame context, against 7 ms of conversion and encode. A
-  change to the RHI's interface (a call that says whether a fence has passed), so it waits for a go-ahead.
+- **Reading a frame as soon as the GPU has it** (a fence asked without waiting). Trigger: decision 13's measurement. **Done** on Henrik's go-ahead, 2026-11-15: see
+  "Built". It was triggered by 92 ms from capture to send at 60 frames a second, about 75 ms of it the wait for the frame context.
 - **Input from the watch page** over a data channel, carrying the console commands and RPC methods that exist. Trigger: wanting to move the
   camera from the phone. Brings the token of decision 8 with it.
+  **Planned**: [plan_remote_control.md](plan_remote_control.md).
 - **Conversion on the GPU.** Trigger: the conversion or the hand-off copy is the largest part of the video thread's time, and Vulkan Video is
   not near.
 - **More than one watcher.** Trigger: two people watching one session.

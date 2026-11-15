@@ -66,6 +66,8 @@ public:
     virtual auto createFence(bool signaled) -> RhiFence* = 0;
 
     virtual auto waitForFence(RhiFence* fence) -> void = 0;
+    // Whether the fence has signaled, asked without waiting: what its submit wrote can be read once it has.
+    virtual auto fenceSignaled(RhiFence* fence) -> bool = 0;
     virtual auto resetFence(RhiFence* fence) -> void = 0;
     virtual auto submitCommandBuffer(RhiCommandBuffer* cmd, const RhiSubmitInfo& info) -> void = 0;
     virtual auto present(RhiSwapchain* swapchain, RhiSemaphore* waitSemaphore, uint32_t imageIndex) -> std::expected<void, RhiError> = 0;

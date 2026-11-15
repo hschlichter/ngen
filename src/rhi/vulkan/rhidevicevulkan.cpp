@@ -1653,6 +1653,11 @@ auto RhiDeviceVulkan::waitForFence(RhiFence* fence) -> void {
     vkWaitForFences(device, 1, &f->fence, VK_TRUE, UINT64_MAX);
 }
 
+auto RhiDeviceVulkan::fenceSignaled(RhiFence* fence) -> bool {
+    auto* f = static_cast<RhiFenceVulkan*>(fence);
+    return vkGetFenceStatus(device, f->fence) == VK_SUCCESS;
+}
+
 auto RhiDeviceVulkan::resetFence(RhiFence* fence) -> void {
     auto* f = static_cast<RhiFenceVulkan*>(fence);
     vkResetFences(device, 1, &f->fence);

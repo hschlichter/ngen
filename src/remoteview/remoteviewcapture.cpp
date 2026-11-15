@@ -119,19 +119,30 @@ auto RemoteViewCapture::afterExecute(Renderer& renderer, RhiCommandBuffer* cmd, 
     lastCaptureNs = slot.captureNs;
 }
 
-auto RemoteViewCapture::afterFence(Renderer& /*renderer*/, uint32_t frameContext) -> void {
+auto RemoteViewCapture::afterFence(Renderer& renderer, uint32_t frameContext) -> void {
     if (frameContext >= slots.size()) {
         return;
     }
     auto& slot = slots[frameContext];
-    if (!slot.pending) {
+    if (slot.pending) {
+        // The GPU was still on this frame every time it was asked: it is read now, when the renderer has waited for it.
+        read(slot);
+    } else if (slot.target != nullptr && profile::now() - lastCaptureNs > releaseAfterNs) {
         // Nothing has been captured for a while (the watcher left, or the remote view was turned off): this context's fence has passed,
         // so its target and buffer can go.
-        if (slot.target != nullptr && profile::now() - lastCaptureNs > releaseAfterNs) {
-            release(slot);
-        }
-        return;
+        release(slot);
     }
+    // The other contexts, oldest frame first: a frame the GPU has finished is read now, not when its context comes round, which is as
+    // many frames later as there are contexts.
+    for (size_t step = 1; step < slots.size(); step++) {
+        uint32_t other = (uint32_t) ((frameContext + step) % slots.size());
+        if (slots[other].pending && renderer.frameContextDone(other)) {
+            read(slots[other]);
+        }
+    }
+}
+
+auto RemoteViewCapture::read(Slot& slot) -> void {
     slot.pending = false;
     PROFILE_ZONE_DETAIL("RemoteViewCopy", Upload);
     uint64_t start = profile::now();

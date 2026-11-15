@@ -1340,6 +1340,13 @@ auto Renderer::waitForFrame() -> void {
     device->waitForFence(inflightFences[currentFrame]);
 }
 
+auto Renderer::frameContextDone(uint32_t frameContext) const -> bool {
+    if (frameContext >= inflightFences.size() || frameContext == currentFrame) {
+        return false;
+    }
+    return device->fenceSignaled(inflightFences[frameContext]);
+}
+
 auto Renderer::state() const -> RendererState {
     return {
         .frame = m_frameIndex,

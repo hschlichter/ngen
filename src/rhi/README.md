@@ -220,7 +220,8 @@ Tools read the RHI's own view of its objects; the RHI never formats for a specif
 
 `submitCommandBuffer(cmd, { waitSemaphore, signalSemaphore, fence })` submits one command buffer on the single queue.
 `acquireNextImage(semaphore)` returns the swapchain image index, `present(swapchain, waitSemaphore, index)` presents it;
-both report `OutOfDate`/`Suboptimal` for the caller to `recreate(extent)`. `waitForFence`/`resetFence` pace the CPU.
+both report `OutOfDate`/`Suboptimal` for the caller to `recreate(extent)`. `waitForFence`/`resetFence` pace the CPU;
+`fenceSignaled` asks a fence without waiting, for a readback taken as soon as its submit is done.
 `limits()` reports device name, driver, alignment and push constant limits, line width, anisotropy, timestamp support,
 calibration and the per-stage sampled-image limit. `validationErrorCount()` turns validation output into a number a
 program can check.

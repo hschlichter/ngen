@@ -18,8 +18,9 @@ struct RemoteViewRequest : RenderExtensionData {
 };
 
 // The remote view's part of the renderer's frame (src/remoteview/README.md): the presented image, UI included, scaled to the video's
-// size on the GPU and read back in its frame's command buffer, then handed to the remote view at that frame context's next fence. Nothing
-// waits: the readback is read once the renderer has waited for that context anyway. Added after the UI's extension. A frame is captured
+// size on the GPU and read back in its frame's command buffer, then handed to the remote view once the GPU has finished that frame. Nothing
+// waits: each frame the extension asks which captured frames are done (Renderer::frameContextDone), and a frame still not done when its
+// context comes round is read then, when the renderer has waited for it anyway. Added after the UI's extension. A frame is captured
 // only when the main thread asked (a watcher is connected and a frame is due); with no watcher there is no blit, and the targets and buffers are
 // given back five seconds after the last capture.
 class RemoteViewCapture : public RenderExtension {
@@ -47,6 +48,8 @@ private:
         uint64_t captureNs = 0;
     };
     auto release(Slot& slot) -> void;
+    // Copies a finished capture out of its buffer and hands it to the remote view.
+    auto read(Slot& slot) -> void;
 
     RemoteView& remoteView;
     RhiDevice* device = nullptr;

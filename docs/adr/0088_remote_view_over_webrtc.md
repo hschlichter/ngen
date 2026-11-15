@@ -61,7 +61,7 @@ HTTP listener is needed for the page anyway); a separate test program.
 - Code:
   - `src/remoteview/remoteview.h:24` (`RemoteView`); `src/remoteview/remoteview.cpp:100` (`update`), `:240` (`takeFrameDue`), `:254` (`submit`),
     `:326` (`encodeLoop`), `:489` (`serve`), `:29` (the silent watcher's five seconds).
-  - `src/remoteview/remoteviewcapture.cpp:24` (`fillSnapshot`), `:60` (`afterExecute`: blit and copy), `:122` (`afterFence`: the hand-off).
+  - `src/remoteview/remoteviewcapture.cpp:24` (`fillSnapshot`), `:60` (`afterExecute`: blit and copy), `:122` (`afterFence`: which frames are done), `:145` (`read`: the hand-off).
   - `src/remoteview/videosender.cpp:46` (`offer`), `:149` (`accept`), `:166` (`send`).
   - `src/remoteview/videoencoderopenh264.cpp:57` (the profile), `:67` (the colour description).
   - `src/apps/view.cpp:440` (made), `:454` (the extension added after the UI's), `:562` (commands), `:669` (`update`), `:240` (`--cvar`),
@@ -71,6 +71,8 @@ HTTP listener is needed for the page anyway); a separate test program.
   documented path is to offer); a silent watcher is dropped after five seconds and a replaced page stops, neither of which the plan had; the
   capture's targets are given back five seconds after the last capture; the frame counts are since the remote view was turned on, not since
   the watcher connected; `remoteview.address` defaults to every interface, and `--remote-view` and `--cvar` turn it on from the start; a headless
-  view with no `--frames` limits itself to `view.frameLimit` (`src/view/viewframe.cpp:484`), which the plan had only named as a gap.
+  view with no `--frames` limits itself to `view.frameLimit` (`src/view/viewframe.cpp:484`), which the plan had only named as a gap; a captured frame is read as soon as the GPU has
+  finished it (`RhiDevice::fenceSignaled`, `src/rhi/rhidevice.h:69`; `Renderer::frameContextDone`), a frame later as a rule, where ADR 84's
+  readback and the plan read it when its frame context came round, five frames later.
 - Henrik watched it from his phone, over Tailscale too (reported 2026-11-15). Not verified when this was written: a run with a window, and
   the CI job.

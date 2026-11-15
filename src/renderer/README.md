@@ -618,7 +618,7 @@ points of `Renderer::render`, in the order added; each hook does nothing unless 
 |---|---|
 | `init` | the end of `Renderer::init`, with a `RenderExtensionContext`: the device, the pipeline registry (pipelines registered here are at-start ones), the frame graph, the deletion queue, the uploader, the preview sampler and `PreviewTextures` |
 | `beginFrame` | first in every `render`, whether it records or not: the extension takes its data from the snapshot, so what a frame that can't acquire asked for waits for the next |
-| `afterFence` | the frame context's fence passed, after the core's readbacks of that slot |
+| `afterFence` | the frame context's fence passed, after the core's readbacks of that slot. An extension that wants another context's readback sooner asks `Renderer::frameContextDone`, which doesn't wait |
 | `addOverlayPasses` | passes on the backbuffer after the debug lines, before present |
 | `beforeExecute`, `afterExecute` | on the frame's command buffer, before it is reset, and right after the graph is recorded (before the core's static captures) |
 | `afterSubmit` | the frame is submitted, not presented; it may wait for the frame (`Renderer::waitForFrame`) |

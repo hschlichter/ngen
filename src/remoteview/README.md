@@ -49,8 +49,10 @@ Its commands and record are registered by `src/view/remoteviewcommands.cpp` (the
    seconds have passed) and, if so, puts a capture request in the `RenderSnapshot`.
 2. **Render thread, `afterExecute`** of a frame that carries a request: the backbuffer, after the UI is drawn, is blitted to a target of the
    video's size and copied to a `GpuToCpu` buffer, in the frame's own command buffer. `RemoteViewCapture` is added after `UiRender` for that reason.
-3. **Render thread, `afterFence`** of that frame context, when the renderer comes round to it again: the buffer is copied to a `VideoImage`
-   and handed to `RemoteView::submit`. Nothing waited for the GPU: the renderer had waited for that context anyway.
+3. **Render thread, `afterFence`** of the next frame, as a rule: each frame the extension asks which captured frames the GPU has finished
+   (`Renderer::frameContextDone`, a fence asked without waiting), copies each one's buffer to a `VideoImage` and hands it to
+   `RemoteView::submit`. A frame the GPU is still on is asked about again next frame, and is read at the latest when the renderer comes
+   round to its frame context, which it waits for anyway. Nothing waits for the GPU on the remote view's account.
 4. **Encode thread** ("Remote View Encode"): converts the image to Y'CbCr, encodes it, hands the packet to the sender.
 5. **libdatachannel's threads**: packets become RTP and leave.
 
@@ -134,9 +136,7 @@ the system's OpenSSL.
 
 ## Known gaps
 
-- **The frame is read when its frame context comes round**, which is as many frames later as there are frame contexts (five). A headless
-  view that is watched runs at `view.frameLimit`, 60 frames a second (`src/view/README.md`, `limitFrameRate`), so the frame is sent 92 ms
-  after it was recorded, against 17 ms with the limit off and the GPU flat out (debug, three cubes). The RHI has no call that asks a fence
-  without waiting; with one the frame would be read a frame or two later, not five.
+- **The frame is read a frame after it was recorded**, when the render thread next asks: about 16 ms at 60 frames a second, of the 21 ms
+  from capture to send (debug, three cubes, headless). Asking sooner needs something to wake the render thread between frames.
 - **Conversion and encoding are on the CPU.** This machine's GPU reports H.264 encode through Vulkan Video; nothing uses it.
 - **The bitrate doesn't follow the network**, and there is one watcher.
