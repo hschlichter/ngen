@@ -157,7 +157,8 @@ Current truth for the build framework is [`../src/build/README.md`](../src/build
 - [plan_shadow_cascades.md](plan_shadow_cascades.md) — cascaded shadow atlas, per-cascade culling, hardware compare PCF (landed)
 - [plan_rhi_validation.md](plan_rhi_validation.md) — `ngen-test-rhi` RHI validation program (superseded by plan_rhi_examples.md)
 - [observability_api_design_engine_agnostic.md](observability_api_design_engine_agnostic.md) — earlier abstract obs design (historical — the concrete design deliberately diverged)
-- [plan_remote_view.md](plan_remote_view.md) — remote view: ngen-view's presented image as live H.264 video in a browser over WebRTC (libdatachannel, OpenH264), headless first, for watching a session from a phone (in progress: built and checked headless with Firefox; Safari on the phone, a window and CI are open)
+- [plan_remote_view.md](plan_remote_view.md) — remote view: ngen-view's presented image as live H.264 video in a browser over WebRTC (libdatachannel, OpenH264), headless first, for watching a session from a phone (in progress: built, checked headless with Firefox and watched from Henrik's phone; a window and CI are open)
+- [plan_remote_control.md](plan_remote_control.md) — remote control: the watch page, on a phone and a desktop, drives the view over a WebRTC data channel: panels generated from `rpc.describe`, records and cvars, the camera by touch or mouse and keys, picking (draft)
 - [plan_terminology.md](plan_terminology.md) — the glossary's terms moved to the game engine industry's words: trace → log, configuration value → cvar, draw → instance, region → draw list, entity → prim, scene resident → ready and the rest of the reviewed list; pack and gamerelease kept (landed)
 
 ## Generic references (engine-agnostic)
