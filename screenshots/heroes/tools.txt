@@ -3,6 +3,6 @@
 11 camera 1000,1560,320,-60,-35 debug
 12 window streaming on
 13 streaming-show bounds on
-14 wait-resident
+14 wait-ready
 80 screenshot _out/heroes/tools/shot.png
 90 quit

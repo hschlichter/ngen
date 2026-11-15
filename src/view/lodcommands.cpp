@@ -575,7 +575,7 @@ auto registerLodCommands(RpcRegistry& registry, ConsoleCommands& console, RpcRec
     registry.add(
         {
             .name = "view.lod.set",
-            .summary = "The level a LOD root wants, by its full path (instances expanded); loads it. Answers once the scene is resident with it drawn.",
+            .summary = "The level a LOD root wants, by its full path (instances expanded); loads it. Answers once the scene is ready with it drawn.",
             .params = {
                 requiredField("root", RpcType::String, "the path of the prim with LODRootAPI"),
                 requiredField("level", RpcType::Int, "0 is the finest"),
@@ -584,18 +584,18 @@ auto registerLodCommands(RpcRegistry& registry, ConsoleCommands& console, RpcRec
         },
         [&view](const Json& p, RpcResponder responder) {
             view.scene.setLodLevel(p["root"].get<std::string>(), (uint32_t) std::max(0, p["level"].get<int>()));
-            view.residentWaiters.push_back({.responder = std::move(responder), .result = Json::object()});
+            view.readyWaiters.push_back({.responder = std::move(responder), .result = Json::object()});
         });
     registry.add(
         {
             .name = "view.lod.reset",
-            .summary = "Puts a LOD root back to its default level (lod:default:index). Answers once the scene is resident with it drawn.",
+            .summary = "Puts a LOD root back to its default level (lod:default:index). Answers once the scene is ready with it drawn.",
             .params = {requiredField("root", RpcType::String, "the path of the prim with LODRootAPI")},
             .result = "{}",
         },
         [&view](const Json& p, RpcResponder responder) {
             view.scene.resetLodLevel(p["root"].get<std::string>());
-            view.residentWaiters.push_back({.responder = std::move(responder), .result = Json::object()});
+            view.readyWaiters.push_back({.responder = std::move(responder), .result = Json::object()});
         });
     registry.add(
         {

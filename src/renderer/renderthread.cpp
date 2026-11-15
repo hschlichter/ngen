@@ -112,7 +112,7 @@ auto RenderThread::threadLoop() -> void {
             PROFILE_ZONE("RenderFrame", Render);
             renderer->render(snapshot);
         }
-        // What this frame drew: published after it, so the main thread sees residency only once it is on screen.
+        // What this frame drew: published after it, so the main thread sees the scene ready only once it is on screen.
         gpuIdle.store(renderer->sceneGpuIdle(), std::memory_order_release);
         drawnUpTo.store(appliedUpTo, std::memory_order_release);
         {

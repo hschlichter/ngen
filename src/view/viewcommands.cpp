@@ -83,7 +83,7 @@ auto registerViewCommands(RpcRegistry& registry, ConsoleCommands& console, RpcRe
 
 auto runFrameCommands(ViewContext& view, SessionScript& session, const RpcRegistry& registry, const ConsoleCommands& console, RpcEndpoint& endpoint) -> void {
     auto& script = view.script;
-    script.held = (script.waitForResident && !view.residency.everResident) || !view.residentWaiters.empty() || view.flight.flying();
+    script.held = (script.waitForReady && !view.readiness.everReady) || !view.readyWaiters.empty() || view.flight.flying();
     std::vector<SessionCommand> due;
     if (!script.held) {
         script.frame++;
@@ -101,12 +101,12 @@ auto runFrameCommands(ViewContext& view, SessionScript& session, const RpcRegist
     }
 }
 
-auto answerResidentWaiters(ViewContext& view) -> void {
-    if (!view.residency.resident) {
+auto answerReadyWaiters(ViewContext& view) -> void {
+    if (!view.readiness.ready) {
         return;
     }
-    for (auto& waiter : view.residentWaiters) {
+    for (auto& waiter : view.readyWaiters) {
         waiter.responder.respond(waiter.result);
     }
-    view.residentWaiters.clear();
+    view.readyWaiters.clear();
 }

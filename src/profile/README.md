@@ -147,7 +147,7 @@ history once, to name where its own work went: the innermost zone, outside every
 
 The counts run from the process's start, or from the last reset (`profile-reset`, the window's Reset), paused or not; a frame that began
 before the reset isn't counted. This is how a run checks the main and render threads against a frame budget (the `profile` record's
-`overBudget`) without dumping the history. Loading counts too, so a run that measures only the flight resets once the world is resident.
+`overBudget`) without dumping the history. Loading counts too, so a run that measures only the flight resets once the world is ready.
 
 ## Where it sits in the frame
 

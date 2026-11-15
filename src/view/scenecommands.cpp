@@ -18,7 +18,7 @@
 #include <map>
 #include <sstream>
 
-// The scene's commands: selection, picking, a prim's transform, purposes, residency, repacking and the assets drawn; and the records of the
+// The scene's commands: selection, picking, a prim's transform, purposes, readiness, repacking and the assets drawn; and the records of the
 // scene, the scene thread and the GPU scene's flow, what drawing reached (instancers, variants, payloads) and the assets asked for.
 
 namespace {
@@ -114,7 +114,7 @@ auto statusRecord(const ViewContext& view) -> Json {
 
 auto sceneThreadRecord(const ViewContext& view) -> Json {
     const auto& t = view.scene.threadStats();
-    const auto& r = view.residency;
+    const auto& r = view.readiness;
     auto [posted, applied] = view.scene.requestCounts();
     return {
         {"requests", {{"posted", posted}, {"applied", applied}}},
@@ -154,12 +154,12 @@ auto sceneThreadRecord(const ViewContext& view) -> Json {
         {"sinceOpenMs", t.sinceOpenMs},
         {"idle", view.scene.idle()},
         {"renderThreadDrawn", view.renderThread.sceneDrawn()},
-        {"resident", r.resident},
-        {"everResident", r.everResident},
+        {"ready", r.ready},
+        {"everReady", r.everReady},
         {"scriptHeld", view.script.held},
         {"scriptFrame", view.script.frame},
         {"loading", {{"frames", r.loadingFrames}, {"longestFrameMs", r.longestLoadingFrameMs}}},
-        {"lastResident", {{"frame", r.lastResidentFrame}, {"ms", r.lastResidentMs}, {"loadFrames", r.lastLoadFrames}, {"longestFrameMs", r.lastLoadLongestMs}}},
+        {"lastReady", {{"frame", r.lastReadyFrame}, {"ms", r.lastReadyMs}, {"loadFrames", r.lastLoadFrames}, {"longestFrameMs", r.lastLoadLongestMs}}},
     };
 }
 
@@ -496,22 +496,22 @@ auto registerSceneCommands(RpcRegistry& registry, ConsoleCommands& console, RpcR
                 viewcvars::purposeProxy.set(p["proxy"].get<bool>());
                 view.scene.setPurposeShown(Purpose::Proxy, p["proxy"].get<bool>());
             }
-            view.residentWaiters.push_back({.responder = std::move(responder), .result = Json::object()});
+            view.readyWaiters.push_back({.responder = std::move(responder), .result = Json::object()});
         });
     registry.add(
         {
-            .name = "view.waitResident",
-            .summary = "Answers once the scene is resident: everything it wants loaded, uploaded and drawn. A script holds its frame count until then.",
+            .name = "view.waitReady",
+            .summary = "Answers once the scene is ready: everything it wants loaded, uploaded and drawn. A script holds its frame count until then.",
             .params = {},
             .result = "{}",
         },
         [&view](const Json&, RpcResponder responder) {
-            view.residentWaiters.push_back({.responder = std::move(responder), .result = Json::object()});
+            view.readyWaiters.push_back({.responder = std::move(responder), .result = Json::object()});
         });
     registry.add(
         {
             .name = "view.repack",
-            .summary = "Have the asset server repack assets even when its cache is up to date, and rebuild the scene from them. Answers once the scene is resident with them drawn.",
+            .summary = "Have the asset server repack assets even when its cache is up to date, and rebuild the scene from them. Answers once the scene is ready with them drawn.",
             .params = {
                 optionalField("ids", RpcType::Array, "asset ids"),
                 optionalField("scene", RpcType::Bool, "every asset of the scene"),
@@ -532,7 +532,7 @@ auto registerSceneCommands(RpcRegistry& registry, ConsoleCommands& console, RpcR
                 return;
             }
             view.scene.refresh(ids, true);
-            view.residentWaiters.push_back({.responder = std::move(responder), .result = {{"assets", ids.size()}}});
+            view.readyWaiters.push_back({.responder = std::move(responder), .result = {{"assets", ids.size()}}});
         });
     registry.add(
         {
@@ -584,7 +584,7 @@ auto registerSceneCommands(RpcRegistry& registry, ConsoleCommands& console, RpcR
     console.add("repack", "view.repack", parseRepack);
     console.add("goto-asset", "view.gotoAsset", parseGoToAsset);
     console.add("assets-of", "view.assetsOf", parsePrim);
-    console.add("wait-resident", "view.waitResident", ConsoleCommands::none);
+    console.add("wait-ready", "view.waitReady", ConsoleCommands::none);
     console.add("quit", "view.quit", ConsoleCommands::none);
 
     records.add("status", "frame counter, scene, selection, the main camera and the camera modes; the render settings are the cvars record's, the debug camera's the debugcamera record", [&view](RpcResponder responder) {
@@ -596,7 +596,7 @@ auto registerSceneCommands(RpcRegistry& registry, ConsoleCommands& console, RpcR
     records.add("environment", "the scene's sky: its dome light, the image, whether it is drawn, and the light it casts (irradiance, up and down)", [&view](RpcResponder responder) {
         responder.respond(environmentRecord(view));
     });
-    records.add("scenethread", "the scene thread: requests, composes and placement passes, assets in flight and held, and residency (the script's hold, the load's longest frame)", [&view](RpcResponder responder) {
+    records.add("scenethread", "the scene thread: requests, composes and placement passes, assets in flight and held, and readiness (the script's hold, the load's longest frame)", [&view](RpcResponder responder) {
         responder.respond(sceneThreadRecord(view));
     });
     records.add("gpuscene", "the GPU scene's flow: scene changes taken and drawn, the upload queue and its budget, the geometry pool and what waits for room, the last frame's commands summed over its passes, and the memory heaps", [&view](RpcResponder responder) {

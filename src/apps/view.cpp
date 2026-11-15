@@ -195,8 +195,8 @@ auto main(int argc, char* argv[]) -> int {
     uint64_t maxFrames = 0;
     // --geometry-limit=<MiB>: the most each geometry pool buffer takes, below the device's limit; meshes past it wait, undrawn.
     bool rpcEnabled = true; // --no-rpc: no endpoint, no discovery file
-    // --no-wait-resident: script frames (and --frames, --screenshot) count from start-up instead of from the scene first being resident.
-    bool waitForResident = true;
+    // --no-wait-ready: script frames (and --frames, --screenshot) count from start-up instead of from the scene first being ready.
+    bool waitForReady = true;
     SessionScript session;
     std::string sessionError;
     std::string startCamera;
@@ -217,8 +217,8 @@ auto main(int argc, char* argv[]) -> int {
             forceRenderDebug = true;
         } else if (arg == "--show-ui") {
             screenshotsShowUi = true;
-        } else if (arg == "--no-wait-resident") {
-            waitForResident = false;
+        } else if (arg == "--no-wait-ready") {
+            waitForReady = false;
         } else if (arg == "--fail-on-validation") {
             failOnValidation = true;
             enableValidation = true;
@@ -432,7 +432,7 @@ auto main(int argc, char* argv[]) -> int {
     RenderThread renderThread;
     renderThread.start(&renderer);
 
-    // The engine's frame: the camera (its up axis the scene's), the selection, residency, culling, the snapshot.
+    // The engine's frame: the camera (its up axis the scene's), the selection, readiness, culling, the snapshot.
     ViewFrame frame(scene, renderer, renderThread, assetClient);
 
     // The tools and the UI join the frame through their hooks; the UI's windows draw and edit the tools' state and the camera modes'.
@@ -455,11 +455,11 @@ auto main(int argc, char* argv[]) -> int {
     });
     ViewHooks& hooks = uiHooks;
 
-    // Answers waiting for the scene to be resident (view.waitResident, view.lod.set, view.repack, view.purposes), and LOD-group records
+    // Answers waiting for the scene to be ready (view.waitReady, view.lod.set, view.repack, view.purposes), and LOD-group records
     // waiting for the groups' states to be read back.
-    std::vector<ResidentWaiter> residentWaiters;
+    std::vector<ReadyWaiter> readyWaiters;
     std::vector<LodGroupRequest> lodGroupRequests;
-    ScriptClock script = {.waitForResident = waitForResident, .lastFrame = maxFrames};
+    ScriptClock script = {.waitForReady = waitForReady, .lastFrame = maxFrames};
     // Dumps and captures that finish frames later, for console commands and RPC calls alike.
     ViewDumps dumps(
         [&scene]() -> const RenderWorld& { return scene.renderWorld(); },
@@ -486,8 +486,8 @@ auto main(int argc, char* argv[]) -> int {
         .frameSceneView = [&frame] { frame.frameScene(); },
         .quit = frame.quit,
         .frameCounter = frame.frameCounter,
-        .residentWaiters = residentWaiters,
-        .residency = frame.residency,
+        .readyWaiters = readyWaiters,
+        .readiness = frame.readiness,
         .script = script,
         .lodGroupRequests = lodGroupRequests,
         .viewAspect = frame.viewAspect,
@@ -552,10 +552,10 @@ auto main(int argc, char* argv[]) -> int {
         SDL_GetWindowSizeInPixels(window, &width, &height);
         frame.setViewport(width, height);
         frame.sendSceneInputs();
-        frame.updateResidency();
+        frame.updateReadiness();
         {
-            PROFILE_ZONE_DETAIL("AnswerResidentWaiters", Frame);
-            answerResidentWaiters(viewContext);
+            PROFILE_ZONE_DETAIL("AnswerReadyWaiters", Frame);
+            answerReadyWaiters(viewContext);
         }
 
         pollInput(window, frame, hooks, input);

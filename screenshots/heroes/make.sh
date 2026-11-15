@@ -65,7 +65,7 @@ hero_renderer() {
 hero_view() {
     fresh view
     startView "$world" --camera=/cameras/flight_20 --view=lodlevel
-    call view.waitResident '{}' > /dev/null
+    call view.waitReady '{}' > /dev/null
     call view.camera.fly '{"prefix": "/cameras/flight_2", "speed": 60}' > "$out/view/fly.json" &
     flight=$!
     i=0
@@ -85,7 +85,7 @@ hero_view() {
 hero_introspect() {
     fresh introspect
     startView "$world" --camera=/cameras/castle
-    call view.waitResident '{}' > /dev/null
+    call view.waitReady '{}' > /dev/null
     SDL_VIDEODRIVER=offscreen ./ngen-cli introspect --select=view/assets --frames=900 --screenshot="$out/introspect/shot.png" > "$out/introspect.log" 2>&1
     call view.quit > /dev/null
     wait

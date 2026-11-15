@@ -24,7 +24,7 @@ jq -c 'select(.severity != "info") | {process, severity, type, text}' /tmp/log.j
 ```
 
 A script file holds `<frame> <command> [args]` per line, for example `120 record render /tmp/records.jsonl`. Frames count from when the scene is
-first resident.
+first ready.
 
 Test scenes: `assets/three_cubes.usda` (smoke test), `assets/layered/root.usda` (composition), `assets/main_sponza/NewSponza_Main_USD_Zup_003.usda`
 (materials, git-ignored), `assets/caldera/caldera.usda` (large, git-ignored).
@@ -82,7 +82,7 @@ substring of a library, program, tool or alias name.
 
 | Flag | Does |
 |---|---|
-| `--frames=N` | Quit after N frames (counted from the scene first being resident). |
+| `--frames=N` | Quit after N frames (counted from the scene first being ready). |
 | `--script=FILE` | Run a script: `<frame> <command> [args]` per line. |
 | `--screenshot=PATH` | Write the presented frame as PNG on the last frame (frame 3 without `--frames`). The UI is left out. |
 | `--show-ui` | Keep the UI (menu bar, windows, status bar) in screenshots. |
@@ -92,7 +92,7 @@ substring of a library, program, tool or alias name.
 | `--select=/prim` | Select a prim (full path, instances expanded). |
 | `--view=<mode>` | View mode: `lit`, `albedo`, `normals`, `depth`, `shadowfactor`, `shadowmap`, `shadowuv`, `worldpos`, `miplevel`, `cascades`, `lodlevel`, `hzb`. |
 | `--overlay=name=on\|off,...` | Overlays: `grid`, `origin`, `gizmo`, `aabbs`, `lightgizmos`, `buffer`, `shadow`, `aa`, `cascadefrusta`. |
-| `--no-wait-resident` | Count script frames from start-up instead of from residency, to look at loading. |
+| `--no-wait-ready` | Count script frames from start-up instead of from the scene first being ready, to look at loading. |
 | `--validation` | Turn on the Vulkan validation layer. |
 | `--fail-on-validation` | Validation on; exit code 2 if it reported anything. |
 | `--geometry-limit=<MiB>` | Cap each geometry pool buffer, to exercise a full pool. |
@@ -135,10 +135,10 @@ live.
 | `pick <x> <y>` | `view.pick` | Select what is drawn at a framebuffer pixel (GPU readback; the `Picked` event names it). |
 | `translate /prim dx,dy,dz` | `view.translate` | Offset a prim's local position: a session opinion of the view, never saved. |
 | `purposes guide=on\|off,proxy=on\|off` | `view.purposes` | Draw guide and proxy prims. Holds the script until drawn. |
-| `repack <id>...\|scene` | `view.repack` | Force the asset server to repack, and rebuild the scene. Holds the script until resident. |
+| `repack <id>...\|scene` | `view.repack` | Force the asset server to repack, and rebuild the scene. Holds the script until ready. |
 | `goto-asset <id> [all]` | `view.gotoAsset` | Move the camera to an asset's next instance (nearest first) and select it; `all` frames every instance. |
 | `assets-of [/prim]` | `view.assetsOf` | The assets drawn at or under a prim, or the selection. |
-| `wait-resident` | `view.waitResident` | Hold the script until the scene is resident. |
+| `wait-ready` | `view.waitReady` | Hold the script until the scene is ready. |
 | `quit` | `view.quit` | Stop the view after this frame. |
 
 ### Camera
@@ -302,7 +302,7 @@ frames later; record them at steady state (frame 120 or later).
 | `cvars` | Every cvar: type, value, default, description, range or choices. |
 | `scene` | Layer stack, up axis and units, prims, prototypes, draws, lights, LOD levels set. |
 | `environment` | The dome light, its image and the light it casts. |
-| `scenethread` | Requests, composes, placement passes, assets in flight and held, residency. |
+| `scenethread` | Requests, composes, placement passes, assets in flight and held, readiness. |
 | `gpuscene` | Scene changes, upload queue and budget, geometry pool. |
 | `instancers` | Every PointInstancer: points, those shown, prototypes. |
 | `variants` | Every prim with variant sets: the variant composed, counts per variant. |

@@ -68,9 +68,9 @@ auto ViewFrame::advanceTime(uint64_t nowNs) -> void {
     }
     dt = (float) (nowNs - lastTicks) / 1.0e9f;
     lastTicks = nowNs;
-    if (!residency.resident && frameCounter > 1) {
-        residency.longestLoadingFrameMs = std::max(residency.longestLoadingFrameMs, (double) dt * 1000.0);
-        residency.loadingFrames++;
+    if (!readiness.ready && frameCounter > 1) {
+        readiness.longestLoadingFrameMs = std::max(readiness.longestLoadingFrameMs, (double) dt * 1000.0);
+        readiness.loadingFrames++;
     }
     if (flight.flying()) {
         advanceFlight(flight, cam, dt);
@@ -99,8 +99,8 @@ auto ViewFrame::setViewport(int newWidth, int newHeight) -> void {
 auto ViewFrame::sendSceneInputs() -> void {
     PROFILE_ZONE_DETAIL("SendSceneInputs", Frame);
     // The camera for the LOD heuristic, when it moved: once it has been placed (by hand, a script, or the framing when the scene was first
-    // resident), not while it follows what has arrived.
-    bool cameraPlaced = residency.everResident || !autoFrame;
+    // ready), not while it follows what has arrived.
+    bool cameraPlaced = readiness.everReady || !autoFrame;
     const auto& lodCam = *cameras.lod;
     if (cameraPlaced && (lodCam.position != postedCameraPosition || width != postedCameraWidth || height != postedCameraHeight)) {
         postedCameraPosition = lodCam.position;
@@ -158,13 +158,13 @@ auto ViewFrame::sendSceneInputs() -> void {
     }
 }
 
-auto ViewFrame::updateResidency() -> void {
-    static const uint32_t residencyZoneId = profile::registerSourceLocation("Residency", profile::Group::Frame);
-    profile::beginZone(residencyZoneId);
-    bool resident = scene.idle() && renderThread.sceneDrawn();
-    if (resident && !residency.resident) {
-        if (!residency.everResident) {
-            residency.everResident = true;
+auto ViewFrame::updateReadiness() -> void {
+    static const uint32_t readinessZoneId = profile::registerSourceLocation("Readiness", profile::Group::Frame);
+    profile::beginZone(readinessZoneId);
+    bool ready = scene.idle() && renderThread.sceneDrawn();
+    if (ready && !readiness.ready) {
+        if (!readiness.everReady) {
+            readiness.everReady = true;
             if (!startCamera.empty()) {
                 LOG_WARNING("Scene", "StartCameraNotFound", startCamera)
                     .text(std::format("the scene authors no camera at {}; the view starts framing the scene", startCamera));
@@ -176,8 +176,8 @@ auto ViewFrame::updateResidency() -> void {
             autoFrame = false;
         }
         auto stats = assets.stats();
-        LOG_EVENT("Scene", "SceneResident", scene.sceneId().empty() ? "(empty scene)" : scene.sceneId())
-            .text(std::format("scene resident at frame {}, {:.0f} ms after start: {} draws, {} assets received; longest of the {} frames before, {:.1f} ms",
+        LOG_EVENT("Scene", "SceneReady", scene.sceneId().empty() ? "(empty scene)" : scene.sceneId())
+            .text(std::format("scene ready at frame {}, {:.0f} ms after start: {} draws, {} assets received; longest of the {} frames before, {:.1f} ms",
                               frameCounter,
                               logging::msSinceStart(),
                               std::ranges::count_if(scene.renderWorld().meshInstances,
@@ -185,20 +185,20 @@ auto ViewFrame::updateResidency() -> void {
                                                         return instance.alive;
                                                     }),
                               stats.received,
-                              residency.loadingFrames,
-                              residency.longestLoadingFrameMs))
+                              readiness.loadingFrames,
+                              readiness.longestLoadingFrameMs))
             .field("frame", (int64_t) frameCounter)
             .field("since_start_ms", logging::msSinceStart())
             .field("assets", (int64_t) stats.received)
-            .field("longest_frame_ms", residency.longestLoadingFrameMs);
-        residency.lastResidentFrame = frameCounter;
-        residency.lastResidentMs = logging::msSinceStart();
-        residency.lastLoadFrames = residency.loadingFrames;
-        residency.lastLoadLongestMs = residency.longestLoadingFrameMs;
-        residency.longestLoadingFrameMs = 0.0;
-        residency.loadingFrames = 0;
+            .field("longest_frame_ms", readiness.longestLoadingFrameMs);
+        readiness.lastReadyFrame = frameCounter;
+        readiness.lastReadyMs = logging::msSinceStart();
+        readiness.lastLoadFrames = readiness.loadingFrames;
+        readiness.lastLoadLongestMs = readiness.longestLoadingFrameMs;
+        readiness.longestLoadingFrameMs = 0.0;
+        readiness.loadingFrames = 0;
     }
-    residency.resident = resident;
+    readiness.ready = ready;
     profile::endZone();
 }
 

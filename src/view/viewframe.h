@@ -35,17 +35,17 @@ struct FrameCameras {
     const Camera* shadows = nullptr; // the shadow cascades are fitted to it
 };
 
-// Where the view is in loading its scene, read by the `scenethread` record and the Scene window. Resident: the scene thread has nothing left
+// Where the view is in loading its scene, read by the `scenethread` record and the Scene window. Ready: the scene thread has nothing left
 // to do and the render thread has drawn every change with nothing left to upload.
-struct ViewResidency {
-    bool resident = false;
-    bool everResident = false;
-    // The load in progress: main-loop frames while not resident, and the longest of them.
+struct SceneReadiness {
+    bool ready = false;
+    bool everReady = false;
+    // The load in progress: main-loop frames while not ready, and the longest of them.
     uint64_t loadingFrames = 0;
     double longestLoadingFrameMs = 0.0;
-    // The last time it became resident: the frame, the time since start, and that load's frames and longest frame.
-    uint64_t lastResidentFrame = 0;
-    double lastResidentMs = 0.0;
+    // The last time it became ready: the frame, the time since start, and that load's frames and longest frame.
+    uint64_t lastReadyFrame = 0;
+    double lastReadyMs = 0.0;
     uint64_t lastLoadFrames = 0;
     double lastLoadLongestMs = 0.0;
 };
@@ -59,14 +59,14 @@ struct FrameReadbacks {
 };
 
 // One frame of ngen-view's engine (src/view/README.md, "The frame"): the main camera and its modes, the selection, the scene's inputs to
-// the render thread, residency, culling, the shadow cascades and the snapshot. The main loop calls the steps in order, with the commands and
+// the render thread, readiness, culling, the shadow cascades and the snapshot. The main loop calls the steps in order, with the commands and
 // the tools' and the UI's hooks (viewhooks.h) between them; no tool or UI code runs here.
 class ViewFrame {
 public:
     ViewFrame(ViewScene& scene, Renderer& renderer, RenderThread& renderThread, AssetClient& assets);
 
     // The scene: what the asset server said changed at its source (shaders reload, the scene's assets fetched again), then the scene as the
-    // scene thread last published it. Until the scene is first resident the camera follows it.
+    // scene thread last published it. Until the scene is first ready the camera follows it.
     auto updateScene() -> void;
     // The frame's time, the loading frames, the flight. A camera the commands moved since the scene update ends the following.
     auto advanceTime(uint64_t nowNs) -> void;
@@ -77,8 +77,8 @@ public:
     // What the scene and the render thread take from the frame: the LOD camera when it moved, the purposes shown, the upload limits, and
     // the scene's changes since the last frame.
     auto sendSceneInputs() -> void;
-    // Whether the scene is resident now; the `SceneResident` event when it becomes so, and the framing the first time.
-    auto updateResidency() -> void;
+    // Whether the scene is ready now; the `SceneReady` event when it becomes so, and the framing the first time.
+    auto updateReadiness() -> void;
 
     // The controls, from the window layer's input.
     // Mouse look: turns the controlled camera in place, or around the pivot while orbiting.
@@ -130,12 +130,12 @@ public:
     // The main camera: everything that places the camera moves it; the cameras the frame uses.
     Camera cam;
     FrameCameras cameras;
-    // Until the scene is first resident the camera follows it, framing what has arrived, unless it is moved by hand.
+    // Until the scene is first ready the camera follows it, framing what has arrived, unless it is moved by hand.
     bool autoFrame = true;
     // The camera the view starts at (`--camera=/path`): a camera the scene authors, placed as soon as the scene names it, before the scene is
-    // first resident, so what loads first is what it sees. Empty once placed, or dropped when the camera was moved by hand first.
+    // first ready, so what loads first is what it sees. Empty once placed, or dropped when the camera was moved by hand first.
     std::string startCamera;
-    // What the following frames until the scene is first resident (`--camera-frame=/prim`): what is drawn at and under a prim; empty for
+    // What the following frames until the scene is first ready (`--camera-frame=/prim`): what is drawn at and under a prim; empty for
     // the whole scene.
     std::string frameTarget;
     CameraModesState cameraModes;
@@ -146,7 +146,7 @@ public:
     std::string selectedPath;
     ViewPicking picking;
 
-    ViewResidency residency;
+    SceneReadiness readiness;
 
     int width = 0;
     int height = 0;

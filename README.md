@@ -270,11 +270,11 @@ Forwarded tools replace the cli process, so their output, signals and exit code 
 | `--camera=<pose or /path>` | Start at a pose (`x,y,z,yaw,pitch`) or a camera the scene authors |
 | `--view=<lit, albedo, normals, …>` | The G-buffer or debug view to show |
 | `--overlay=<name=on/off,…>` | Overlays: grid, origin, gizmo, aabbs, lightgizmos, cascadefrusta, buffer, shadow, aa |
-| `--script=<file>` | Script lines: `<frame> <command> <args>`, frames counted once the scene is resident |
+| `--script=<file>` | Script lines: `<frame> <command> <args>`, frames counted once the scene is ready |
 | `--screenshot=<file>`, `--frames=<n>` | A PNG of the last frame, and quit after `n` frames |
 | `--validation`, `--fail-on-validation` | Vulkan validation; with the second, exit nonzero on any validation error |
 | `--show-ui` | Keep the UI in screenshots |
-| `--no-wait-resident` | Count script frames from start-up instead of from the scene being resident |
+| `--no-wait-ready` | Count script frames from start-up instead of from the scene being ready |
 | `--renderdoc`, `--no-rpc`, `--render-debug`, `--geometry-limit=<MiB>`, `--select=<path>`, `--camera-frame=<path>` | RenderDoc capture, no endpoint, the render debug snapshot always on, the geometry pool's limit, a selection, framing a prim |
 
 `SDL_VIDEODRIVER=offscreen` runs it without a window. The console commands, records and methods are listed by `./ngen-cli introspect describe` against a

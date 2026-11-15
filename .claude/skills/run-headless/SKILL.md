@@ -54,9 +54,9 @@ from `./ngen-cli introspect list`).
   Prefer `--frames` to a `timeout` kill, so the view exits cleanly and its last events are sent.
 - Write the log to `/tmp` or the session scratchpad, not into the repo.
 - The view's first frame comes at once; the scene arrives while it runs. `--frames`, `--screenshot` and script frame numbers count from when
-  the scene is first resident (everything it wants loaded, uploaded and drawn; the log's `SceneResident`), so a script sees the loaded
-  scene. `--no-wait-resident` counts from start-up instead, to look at loading itself. Console commands that change what is drawn (`lod`, `purposes`,
-  `repack`) hold the script's count until the change is drawn, and `wait-resident` does the same. Sponza takes a few seconds to be resident:
+  the scene is first ready (everything it wants loaded, uploaded and drawn; the log's `SceneReady`), so a script sees the loaded
+  scene. `--no-wait-ready` counts from start-up instead, to look at loading itself. Console commands that change what is drawn (`lod`, `purposes`,
+  `repack`) hold the script's count until the change is drawn, and `wait-ready` does the same. Sponza takes a few seconds to be ready:
   give the log command a `timeout` above that if you add one.
 
 ## See and drive the frame
@@ -76,13 +76,13 @@ SDL_VIDEODRIVER=offscreen ./ngen-cli view <scene> --frames=30 \
   level 7+; cascades: red, green, blue, yellow near to far; lodlevel: at half strength over the lit image, the drawn level of the nearest LOD root, red level 0,
   orange 1, yellow 2, green 3, … white 7+ (an index within that root), or with `lod-show color depth` how many LOD roots deep it is (1 blue,
   2 green, 3 orange, 4+ magenta), grey under none; shadowmap shows the cascade atlas), `--overlay=grid=on,aabbs=off,...`
-  (grid, origin, gizmo, aabbs, lightgizmos, buffer, shadow, aa), `--camera=x,y,z,yaw,pitch` or `--camera=/camera/prim` (a camera the scene authors; Caldera has 13 under `/cameras`; placed before the scene loads, so the first residency is at that camera), `--camera-frame=scene|/prim` (what the camera frames while the scene arrives), `--select=/prim` (full path, instances expanded).
+  (grid, origin, gizmo, aabbs, lightgizmos, buffer, shadow, aa), `--camera=x,y,z,yaw,pitch` or `--camera=/camera/prim` (a camera the scene authors; Caldera has 13 under `/cameras`; placed before the scene loads, so the scene first being ready is at that camera), `--camera-frame=scene|/prim` (what the camera frames while the scene arrives), `--select=/prim` (full path, instances expanded).
 - Records at a frame go to a file: a script line `120 record render /tmp/records.jsonl` appends the render debug record (meshes, textures,
   passes with draw counters and GPU time, culled passes, draw log with prim paths) as one JSON line, `value` holding the record,
   `requested_frame` the frame asked for and `frame` the frame it was ready (GPU readbacks take a few). Any record works: `render`, `memory`,
   `counters`, `culling`, `scene`, `assets` (per asset: state, size, times), `lod` (every LOD root: levels and their payloads, heuristic, default, desired, drawn, loaded), `payloads` (every payload placement
   reached: assets, loaded, extentsHint in world metres), `streaming` (residency: per streaming root `desired` and why, its streaming radii and `state`, `resident` and why, `drawn`, `late`/`hole`, per level requested/loaded/ready/drawn and lead, authoring `findings`; `measured` totals: late switches, holes, root-seconds coarser, loads, reloads, lead, `arrivedUnwanted`), `scenethread` (requests, composes, extracts, assets in flight and held,
-  residency), `gpuscene` (change lists, upload queue and budget, geometry pool), `pipelines`, `profile`, `status` (`src/introspect/README.md`); several lines into one file are fine. Read it
+  readiness), `gpuscene` (change lists, upload queue and budget, geometry pool), `pipelines`, `profile`, `status` (`src/introspect/README.md`); several lines into one file are fine. Read it
   with `jq 'select(.record == "render") | .value.passes' /tmp/records.jsonl`.
 - `dump-profile PATH` (console command): the profiler history as a Chrome trace file (`jq '.traceEvents'`, or open in Perfetto).
 - `--script=FILE`: `<frame> <command> [args]` per line, same console commands as the flags plus `quit`, `pick <x> <y>` (select what is drawn at that framebuffer pixel,

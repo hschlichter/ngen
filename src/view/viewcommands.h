@@ -39,17 +39,17 @@ struct nlohmann::adl_serializer<glm::vec3> {
     static auto to_json(nlohmann::json& json, const glm::vec3& v) -> void { json = nlohmann::json::array({v.x, v.y, v.z}); }
 };
 
-// An answer that waits until the scene is resident: everything it wants is loaded, uploaded and drawn. A method that changes what is
+// An answer that waits until the scene is ready: everything it wants is loaded, uploaded and drawn. A method that changes what is
 // drawn answers when the change is on screen; a script holds its clock while one waits.
-struct ResidentWaiter {
+struct ReadyWaiter {
     RpcResponder responder;
     rpc::Json result;
 };
 
-// The script's clock: its frames count only while nothing holds it (the scene first becoming resident, unless --no-wait-resident; a method
-// that answers on residency; a flight), so a script sees the scene as it is once loaded. The view quits after `lastFrame` (--frames).
+// The script's clock: its frames count only while nothing holds it (the scene first becoming ready, unless --no-wait-ready; a method
+// that answers on readiness; a flight), so a script sees the scene as it is once loaded. The view quits after `lastFrame` (--frames).
 struct ScriptClock {
-    bool waitForResident = true;
+    bool waitForReady = true;
     uint64_t lastFrame = 0; // none: 0
     bool held = false;
     uint64_t frame = 0;
@@ -79,8 +79,8 @@ struct ViewContext {
     std::function<void()> frameSceneView;
     bool& quit;
     const uint64_t& frameCounter;
-    std::vector<ResidentWaiter>& residentWaiters;
-    const ViewResidency& residency;
+    std::vector<ReadyWaiter>& readyWaiters;
+    const SceneReadiness& readiness;
     ScriptClock& script;
     std::vector<LodGroupRequest>& lodGroupRequests;
     const float& viewAspect; // the view's width over height, as the LOD heuristic and the GPU's pick measure it
@@ -88,7 +88,7 @@ struct ViewContext {
     CameraFlight& flight;
     CameraModesState& cameraModes;  // the camera modes' state (ground.h)
     const std::string& startCamera; // the start camera not placed yet (ViewFrame::startCamera); empty once placed
-    const bool& autoFrame;          // the camera follows the scene as it arrives, until it is first resident or moved
+    const bool& autoFrame;          // the camera follows the scene as it arrives, until it is first ready or moved
     std::string sceneLabel;
     // The camera a `camera: "debug"` parameter moves: the tools' debug camera while it is on; unset (or null) without one.
     std::function<Camera*()> debugCamera;
@@ -111,8 +111,8 @@ auto registerProfileCommands(RpcRegistry& registry, ConsoleCommands& console, Rp
 // frame, after the scene update and the tools' lists.
 auto runFrameCommands(ViewContext& view, SessionScript& session, const RpcRegistry& registry, const ConsoleCommands& console, RpcEndpoint& endpoint) -> void;
 
-// Answers the methods waiting for the scene to be resident once it is; once a frame, after residency is updated.
-auto answerResidentWaiters(ViewContext& view) -> void;
+// Answers the methods waiting for the scene to be ready once it is; once a frame, after readiness is updated.
+auto answerReadyWaiters(ViewContext& view) -> void;
 
 // Answers the LOD-group requests whose readback has arrived; once a frame, after the culling readback is taken. True while some still
 // wait, so the next frames read the states back.

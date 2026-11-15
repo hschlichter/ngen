@@ -190,7 +190,8 @@ sense of a map; that is a scene.
 - **Prefetched** — a finer level resident ahead of being drawn.
 - **Ready** — a level whose placement waits for nothing: linked, and every mesh, material and texture its prims want held or failed.
 - **Residency** (of a level) — whether a level is loaded, decided only by camera position and authored radii, never by time. The *streaming
-  state* level and every coarser level are resident. Not the same as the scene being *resident* ([the view's runtime](#the-views-runtime)).
+  state* level and every coarser level are resident. A resident level is asked for; it is *ready* once it has arrived. The scene's own state is *ready*
+  ([the view's runtime](#the-views-runtime)).
 - **Streaming root** — a LOD root whose levels are payloads; each level is a content of its own, loaded and released by residency.
 - **Streaming state** — a root's finest level that must be resident: finer at once by load radii, coarser only past unload radii.
 - **Switching levels** — a root starting to draw another level; it happens in the pass the last piece of the new level arrives, so a district
@@ -206,7 +207,7 @@ sense of a map; that is a scene.
 
 - **Arrival** — an asset the server answered, taken by the scene thread.
 - **Default light** — the distant light the view adds when a scene authors none.
-- **Framing** — until the scene is first resident, the camera frames what has arrived, unless moved by hand.
+- **Framing** — until the scene is first ready, the camera frames what has arrived, unless moved by hand.
 - **Handle** — a 1-based index into a library (`MeshHandle`, `MaterialHandle`, `TextureHandle`, `PrimHandle`); never reused.
 - **Held** — a library entry a placement uses (drawn or an undrawn resident LOD level), so switching to it uploads nothing.
 - **Hooks** (`ViewHooks`) — the points in `ViewFrame` where the tools (`ToolsHooks`) and the UI (`UiHooks`, wrapping the tools') join the frame:
@@ -222,15 +223,15 @@ sense of a map; that is a scene.
 - **Placement pass** — after a compose, relink, level evaluation, arrivals or a gizmo move, placing the stage as the World is now; rebuilds only
   the placements whose inputs changed.
 - **Placement tree** — the placements as a tree: the stage, prototypes at instances, a placement per loaded level of each streaming root.
-- **Resident** (the scene) — everything the scene wants is loaded, uploaded and drawn, on both the scene and render threads (`SceneResident`).
-  Script frames count only while nothing waits for it.
+- **Ready** (the scene) — everything the scene wants is loaded, uploaded and drawn, on both the scene and render threads (`SceneReady`): every
+  resident level is ready and on screen. It comes and goes as the camera moves. Script frames count only while nothing waits for it.
 - **Scene changes** (`SceneChanges`) — what a placement pass changed (instance slots added, removed and updated, meshes, materials, textures,
   lights, LOD groups); the main thread hands it to the render thread, which changes only that on the GPU.
 - **Scene update** — one round of the scene thread: the requests and arrivals it took, a compose, a placement pass, and a publish.
 - **Scene thread** — `ViewScene`'s thread: owns the composer, the packs and the libraries; composes, places and publishes.
 - **`SceneSnapshot`** — what the scene thread publishes; the main thread takes the latest once a frame and every query reads it.
-- **Script** — `--script=<file>`, lines of `<frame> <command> [args]`; frames count from the first residency. The *script clock* holds while
-  something waits (residency, a flight).
+- **Script** — `--script=<file>`, lines of `<frame> <command> [args]`; frames count from the scene first being ready. The *script clock* holds while
+  something waits (readiness, a flight).
 - **Sky / environment** — the scene's dome light as the lit view's background and ambient (`RenderWorld::environment`).
 - **Step** — one call of `ViewFrame`'s fixed order: `updateScene`, `runFrameCommands`, `advanceTime`, …, `buildSnapshot`, `plotFrame`.
 - **`ViewContext`** — what the engine's methods, console commands and records are registered over: references into the `ViewFrame` and the main loop.
@@ -413,9 +414,10 @@ sense of a map; that is a scene.
 | pack | to pack (the process); a pack (a packed scene file: layer, mesh, material pack); a meshlet pack (task shader output) |
 | pass | a frame-graph pass (GPU work); a placement pass (scene thread) |
 | phase | occlusion culling's first and second phase |
+| ready | a LOD level ready (its placement waits for nothing); the scene ready (every resident level ready, uploaded and drawn) |
 | record | an RPC record (named JSON data); a GPU instance, culling or draw record; an asset cache record; the `record` console command |
 | residency | a LOD level's residency (asked for by the camera's position); a LOD group's residency mask (which levels' meshes are in the geometry pool) |
-| resident | the scene being resident (everything loaded, uploaded, drawn); a LOD level being resident (loaded by residency) |
+| resident | a LOD level asked for by the camera's position; the process's resident memory (`profile::residentBytes`) |
 | root | a LOD root; the root layer; the asset server's working directory (asset ids are relative to it) |
 | slot | an instance slot; a texture slot; a streaming root's slot (streaming view) |
 | snapshot | `SceneSnapshot` (scene thread → main); `RenderSnapshot` (main → render); a debug snapshot (render tools → main) |

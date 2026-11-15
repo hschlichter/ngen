@@ -14,17 +14,17 @@ its UI is `ViewUI` (`src/ui/viewui.*`). The tools' sections below (the LOD and S
 
 ![ViewFrame's steps in the order the main loop calls them, with the ViewHooks points between them and the tools and the UI joining at each](../../screenshots/view_frame_hooks.svg)
 
-`ViewFrame` (`viewframe.*`) is one frame of the engine: the main camera and its modes, the selection, the scene's inputs, residency, culling,
+`ViewFrame` (`viewframe.*`) is one frame of the engine: the main camera and its modes, the selection, the scene's inputs, readiness, culling,
 the shadow cascades and the snapshot. `src/apps/view.cpp`'s loop calls its steps in order, with the commands and the hooks between them:
 
 | Step | What it does | Then the hooks |
 |---|---|---|
-| `updateScene` | the asset server's change notices (shaders reload, the scene's assets fetched again); the scene thread's latest snapshot; the camera framing what has arrived until the scene is first resident | `afterScene`: the tools' rows, the Camera window's list |
+| `updateScene` | the asset server's change notices (shaders reload, the scene's assets fetched again); the scene thread's latest snapshot; the camera framing what has arrived until the scene is first ready | `afterScene`: the tools' rows, the Camera window's list |
 | `runFrameCommands` (`viewcommands`) | the script's due lines while nothing holds its clock, then the endpoint's calls ("Commands", below) | |
 | `advanceTime` | the frame's time, the loading frames, the flight; a camera the commands moved ends the framing | |
 | `resetCameras` | every camera the frame uses is the main camera | `cameras`: the debug camera takes over what it drives |
 | `setViewport`, `sendSceneInputs` | the projection; the LOD camera, the purposes, the upload limits and the scene's changes to the scene thread and the render thread | |
-| `updateResidency`, `answerResidentWaiters` (`viewcommands`) | resident or not, `SceneResident`; the methods waiting for it answered | |
+| `updateReadiness`, `answerReadyWaiters` (`viewcommands`) | ready or not, `SceneReady`; the methods waiting for it answered | |
 | input (`view.cpp`) | SDL's events, each to the hooks first (`event`: ImGui, F12, the gizmos, C), then to the view's controls (`look`, `wheel`, `startOrbit`, `pick`, Z, R, F, G) | |
 | `moveCamera` | the keys as a camera move; orbiting; following the ground | |
 | `cull`, `serviceLodGroupRequests` (`viewcommands`), `countLodPops`, `fitCascades` | culling's frustum and latest readback, the LOD-group records it answers, the shadow cascades and the scene's bounds they are fitted to (`SceneBoundsCache`, handed to the renderer in the snapshot) | `afterCamera`: the debug camera's trail, the LOD rows' live state, the Culling window's numbers |
@@ -53,22 +53,22 @@ every engine method and record still answers.
 culled from, fitted to by the cascades. Each is the main camera (`ViewFrame::cam`) unless the `cameras` hook takes it over, once a frame
 after the commands, so a command that turns the debug camera on shows the frame it runs, and one from the UI the next.
 
-**The script's clock** (`ScriptClock`, `viewcommands.h`): a script's frames count only while nothing holds it (the first residency, a method
-answering on residency, a flight); `--frames` quits after the last. The `scenethread` record shows it (`scriptHeld`, `scriptFrame`). A
+**The script's clock** (`ScriptClock`, `viewcommands.h`): a script's frames count only while nothing holds it (the scene first being ready, a method
+answering when the scene is ready, a flight); `--frames` quits after the last. The `scenethread` record shows it (`scriptHeld`, `scriptFrame`). A
 script line that moves the camera doesn't hold it: what the new view needs streams in while the frames count, so a script that wants it
-loaded follows the move with `wait-resident`.
+loaded follows the move with `wait-ready`.
 
 ## Commands
 
 What an agent reaches without the tools or the UI: every method, console command and record of the engine, registered by domain over a
 `ViewContext` (`viewcommands.h`: references into the `ViewFrame` and to what the main loop owns) into the `RpcRegistry`, the `ConsoleCommands` table and the `RpcRecords`
 (`src/rpc/README.md`). They run at the top of each frame, before the camera moves: a script's due lines through `ConsoleCommands::run`, then the
-endpoint's calls; an answer that needs a readback or residency waits in `lodGroupRequests` or `residentWaiters` and is given frames later.
+endpoint's calls; an answer that needs a readback or the scene to be ready waits in `lodGroupRequests` or `readyWaiters` and is given frames later.
 
 | File | Methods | Console commands | Records |
 |---|---|---|---|
 | `cameracommands.cpp` | `view.camera.set/get/orbit/list/use/fly/fly.stop/frame` | `camera`, `camera-frame`, `camera-use`, `camera-orbit`, `camera-follow`, `fly`, `fly-stop` | |
-| `scenecommands.cpp` | `view.select/transform/translate/pick/purposes/waitResident/repack/gotoAsset/assetsOf/quit` | `select`, `translate`, `pick`, `purposes`, `repack`, `goto-asset`, `assets-of`, `wait-resident`, `quit` | `status`, `scene`, `scenethread`, `gpuscene`, `instancers`, `variants`, `payloads`, `assets` |
+| `scenecommands.cpp` | `view.select/transform/translate/pick/purposes/waitReady/repack/gotoAsset/assetsOf/quit` | `select`, `translate`, `pick`, `purposes`, `repack`, `goto-asset`, `assets-of`, `wait-ready`, `quit` | `status`, `scene`, `scenethread`, `gpuscene`, `instancers`, `variants`, `payloads`, `assets` |
 | `lodcommands.cpp` | `view.lod.set/reset/heuristic/override/override.reset/tuning`, `view.lodgroups`, `view.streaming.reset` | `lod`, `lod-*`, `streaming-reset` | `lod`, `streaming`, `lodgroups` |
 | `cvarcommands.cpp` | `cvar.get/set/reset` | `cvar`, `cvar-reset` and the short forms (`view`, `debugview`, `overlay`, `cull`, `sampler`, `shadow`, `prepass`, `aa`, `ambient`, `gpuscene`) | `config` |
 | `displaycommands.cpp` | `view.inspect/dumpTexture/screenshot`, `capture.request`, `introspect.frame/gpuscene`, `renderdoc.capture` | `inspect`, `dump-texture`, `screenshot`, `capture`, `dump-frame`, `dump-gpuscene`, `renderdoc-capture` | `culling`, `pipelines`, `render`, `memory`, `counters` |
@@ -96,23 +96,23 @@ The view shows a scene composed from its packs, with nothing of USD in it (`src/
 **What draws while things arrive.** A prim draws once its mesh is on the GPU. A material whose texture is still uploading samples white. A
 cutout whose opacity texture is still uploading draws opaque. A material that hasn't arrived uses the display colour.
 
-**Resident.** The scene is resident when everything it wants is loaded, uploaded and drawn:
+**Ready.** The scene is ready when everything it wants is loaded, uploaded and drawn:
 - the scene thread has nothing queued, requested or unplaced, no camera posted it hasn't evaluated, and no scene update it took and hasn't
-  published (so a moved camera's levels count: while the camera moves, the scene isn't resident);
+  published (so a moved camera's levels count: while the camera moves, the scene isn't ready);
 - the render thread has applied all scene changes in a frame it finished, with no upload or pipeline pending.
 
-`ViewFrame::updateResidency` checks once a frame, and logs `SceneResident` when it becomes true, with the time since start and the longest frame while
+`ViewFrame::updateReadiness` checks once a frame, and logs `SceneReady` when it becomes true, with the time since start and the longest frame while
 loading.
 
-Until the scene is first resident the camera frames what has arrived (`--camera-frame=/prim`: what is drawn at and under that prim, once
+Until the scene is first ready the camera frames what has arrived (`--camera-frame=/prim`: what is drawn at and under that prim, once
 something is), unless it is moved by hand. The start camera, `--camera`, isn't a script line: a pose is set before the first frame, and a
-camera the scene authors as soon as the scene names it (`StartCameraPlaced`; `StartCameraNotFound` at the first residency when it never
+camera the scene authors as soon as the scene names it (`StartCameraPlaced`; `StartCameraNotFound` at the scene first being ready when it never
 does), so what loads first is what that camera sees (`ViewFrame::startCamera`, the `status` record's `startCamera` and `framing`). Script frames, `--frames` and `--screenshot`
-count only while nothing waits for residency, so a script sees the scene loaded:
-- **The start.** Counting starts when the scene is first resident; `--no-wait-resident` counts from start-up instead, to measure loading.
-- **Methods that change what is drawn** (`view.lod.set`, `view.purposes`, `view.repack`) answer once the scene is resident again, and a script
+count only while nothing waits for the scene to be ready, so a script sees the scene loaded:
+- **The start.** Counting starts when the scene is first ready; `--no-wait-ready` counts from start-up instead, to measure loading.
+- **Methods that change what is drawn** (`view.lod.set`, `view.purposes`, `view.repack`) answer once the scene is ready again, and a script
   holds its count until they have.
-- **`wait-resident`** (`view.waitResident`) waits the same way.
+- **`wait-ready`** (`view.waitReady`) waits the same way.
 
 ### The placement tree
 
@@ -386,12 +386,12 @@ The log shows the steps:
 - `ResidencyChanged`, `LevelsSwitched` and `LevelsUnloaded`, as streaming roots change the level they select and the levels resident, the
   level they draw, and let levels go;
 - `AssetsRefreshRequested`;
-- `SceneResident`;
+- `SceneReady`;
 - and `SceneAssetFailed` or `CompositionMessage` warnings.
 
 ## How a scene reaches the screen
 
-![The five stages from the asset server's stream through the scene thread, the main thread and the GPU scene to residency, with the record that shows each](../../screenshots/view_scene_to_screen.svg)
+![The five stages from the asset server's stream through the scene thread, the main thread and the GPU scene to a ready scene, with the record that shows each](../../screenshots/view_scene_to_screen.svg)
 
 From the asset server to the screen, stage by stage in the order data flows:
 1. **Asset client**: requested, received (packed or from the server's cache), failed, in flight.
@@ -401,7 +401,7 @@ From the asset server to the screen, stage by stage in the order data flows:
 3. **Scene changes**: what a placement pass changed, which the main thread takes each frame and hands to the render thread.
 4. **GPU scene** (render thread): scene changes submitted and drawn, the tables, the upload queue (queued, budget, the last SceneUpload pass)
    and the geometry pool (use against capacity and limit, meshes waiting for room).
-5. **Residency**: resident or loading, the script's hold, and the last load's frames and longest frame.
+5. **Readiness**: ready or loading, the script's hold, and the last load's frames and longest frame.
 
 Their numbers are the `assets` record (stage 1), the `scenethread` record (stages 2 and 5) and the `gpuscene` record (stage 4), which the
 render thread publishes after every frame. The upload budget and the geometry pool's limit are cvars,
@@ -435,7 +435,7 @@ them, ready for Repack selected. `assets-of [prim]` and `view.assetsOf` answer w
 or Select shown for every row shown. Repack selected (or the row's menu) has the asset server repack the selection even when its cache is up
 to date; Repack scene does it for every asset of the scene (`ViewScene::assetIds`: layer packs, meshes, materials, textures). The view
 fetches what was repacked, fetches again the meshes and materials of a repacked USD file, and rebuilds its scene, so an edit to a source shows
-without a restart (`ViewScene::refresh` with `force`, the `repack <id>... | scene` console command and `view.repack`, which answers once the scene is resident
+without a restart (`ViewScene::refresh` with `force`, the `repack <id>... | scene` console command and `view.repack`, which answers once the scene is ready
 again; the log has `AssetsRefreshRequested`). What arrives unchanged keeps its library entry and isn't uploaded again. A shader's repack
 refreshes only the server's cache.
 
