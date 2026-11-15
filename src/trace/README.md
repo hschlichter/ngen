@@ -29,7 +29,7 @@ TRACE_WARNING("Render", "FormatFallback", "AAPass").text("R16G16B16A16_SFLOAT no
 TRACE_ERROR("Render", "ShaderLoadFailed", id).text(std::format("shader {} was not packed", id));
 ```
 
-`TRACE_EVENT`, `TRACE_WARNING` and `TRACE_ERROR` take `(category, type, name)` and build an event at level info, warning or error. `.text()`
+`TRACE_EVENT`, `TRACE_WARNING` and `TRACE_ERROR` take `(category, type, name)` and build an event of severity info, warning or error. `.text()`
 sets the message for people; chain `.field(key, value)` for the values a reader filters on. The event is pushed into the ring at the end of the
 statement.
 
@@ -37,10 +37,10 @@ statement.
 `warning:` or `error:`, the event's text (its type and name when it has none). Engine code prints nothing else: no `std::println`, no
 `printf`, so what a process's console shows and what its trace holds are the same. Give every event a text that reads on its own, path
 included, since the console doesn't show the name or the fields. Only a program's own output stays outside: usage errors, and the JSON and
-summaries the tools print. For fields added in a loop, name the builder: `trace::Builder event(trace::Level::Info, "Scene", "SceneOpened",
+summaries the tools print. For fields added in a loop, name the builder: `trace::Builder event(trace::Severity::Info, "Scene", "SceneOpened",
 path);` pushes when `event` goes out of scope.
 
-| Level | When |
+| Severity | When |
 |---|---|
 | `info` | Flow: a lifecycle step, a load started or finished, a file written, an edit applied |
 | `warning` | Something went wrong and was worked around: a format fallback, a feature off, a request that failed while the process goes on |
@@ -128,18 +128,18 @@ loading didn't cover. Each step that takes time says how long; the two "after st
 An event on the wire, and as a line from `ngen-introspect trace` (which adds `process` and leaves out `seq`):
 
 ```json
-{"ts_ns":150476660312619,"process":"view:1270004","thread":"140258363158208","level":"info","category":"Scene","type":"PacksComposed","name":"assets/main_sponza/NewSponza_Main_USD_Zup_003.usda","text":"assets/main_sponza/NewSponza_Main_USD_Zup_003.usda composed: 1 layer packs in 1 rounds, 1170 prims, 0 prototypes in 3 ms","fields":{"ms":3.132717,"packs":1,"prims":1170,"prototypes":0,"rounds":1}}
+{"ts_ns":150476660312619,"process":"view:1270004","thread":"140258363158208","severity":"info","category":"Scene","type":"PacksComposed","name":"assets/main_sponza/NewSponza_Main_USD_Zup_003.usda","text":"assets/main_sponza/NewSponza_Main_USD_Zup_003.usda composed: 1 layer packs in 1 rounds, 1170 prims, 0 prototypes in 3 ms","fields":{"ms":3.132717,"packs":1,"prims":1170,"prototypes":0,"rounds":1}}
 ```
 
 ## Reading a trace
 
 ```bash
 ngen-introspect trace --until-exit=view --output=/tmp/trace.jsonl &   # before the view starts
-jq -c 'select(.level != "info") | {process, level, type, text}' /tmp/trace.jsonl   # what went wrong; empty on a clean run
+jq -c 'select(.severity != "info") | {process, severity, type, text}' /tmp/trace.jsonl   # what went wrong; empty on a clean run
 jq -r '[.process, .type, .text] | @tsv' /tmp/trace.jsonl                            # the run's flow
 jq -c 'select(.category == "Scene")' /tmp/trace.jsonl
 jq -c 'select(.name == "/World/Cube")' /tmp/trace.jsonl
-ngen-introspect trace --level=warning                                                # live: warnings and errors only
+ngen-introspect trace --severity=warning                                                # live: warnings and errors only
 ```
 
 ## Troubleshooting

@@ -40,13 +40,13 @@ auto msSinceStart() -> double {
     return (double) (now() - startNs) * 1e-6;
 }
 
-auto levelName(Level level) -> const char* {
-    switch (level) {
-        case Level::Info:
+auto severityName(Severity severity) -> const char* {
+    switch (severity) {
+        case Severity::Info:
             return "info";
-        case Level::Warning:
+        case Severity::Warning:
             return "warning";
-        case Level::Error:
+        case Severity::Error:
             return "error";
     }
     return "info";
@@ -61,16 +61,16 @@ auto printToConsole(const Event& event) -> void {
     localtime_r(&seconds, &local);
     auto message = event.text.empty() ? std::format("{} {}", event.type, event.name) : event.text;
     std::lock_guard lock(consoleMutex);
-    switch (event.level) {
-        case Level::Info:
+    switch (event.severity) {
+        case Severity::Info:
             std::println(stdout, "{:02}:{:02}:{:02}.{:03}  {}", local.tm_hour, local.tm_min, local.tm_sec, millis, message);
             // Flushed at once, so a redirected log is current.
             std::fflush(stdout);
             break;
-        case Level::Warning:
+        case Severity::Warning:
             std::println(stderr, "{:02}:{:02}:{:02}.{:03}  warning: {}", local.tm_hour, local.tm_min, local.tm_sec, millis, message);
             break;
-        case Level::Error:
+        case Severity::Error:
             std::println(stderr, "{:02}:{:02}:{:02}.{:03}  error: {}", local.tm_hour, local.tm_min, local.tm_sec, millis, message);
             break;
     }

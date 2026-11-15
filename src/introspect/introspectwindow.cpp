@@ -353,8 +353,8 @@ auto IntrospectWindow::takeTrace() -> void {
         row.process = std::move(event.process);
         row.event = std::move(event.event);
         row.fieldsText = row.event->contains("fields") ? (*row.event)["fields"].dump() : "{}";
-        auto level = row.event->value("level", "info");
-        row.level = level == "error" ? 2 : (level == "warning" ? 1 : 0);
+        auto severity = row.event->value("severity", "info");
+        row.severity = severity == "error" ? 2 : (severity == "warning" ? 1 : 0);
         if (traceOriginNs == 0) {
             traceOriginNs = row.tsNs;
         }
@@ -382,7 +382,7 @@ auto IntrospectWindow::traceRowVisible(const TraceRow& row) const -> bool {
         return filter[0] == '\0' || text.find(filter) != std::string_view::npos;
     };
     const auto& e = *row.event;
-    if (row.level < traceMinLevel) {
+    if (row.severity < traceMinSeverity) {
         return false;
     }
     if (!contains(row.process, traceFilterProcess.data())) {
@@ -422,7 +422,7 @@ auto IntrospectWindow::drawTrace(const std::vector<IntrospectSession::Process>& 
     };
     ImGui::SameLine();
     ImGui::SetNextItemWidth(130.0f);
-    if (ImGui::Combo("##level", &traceMinLevel, "everything\0warnings, errors\0errors\0")) {
+    if (ImGui::Combo("##severity", &traceMinSeverity, "everything\0warnings, errors\0errors\0")) {
         traceVisibleStale = true;
     }
     filter("##process", traceFilterProcess.data(), traceFilterProcess.size(), 110.0f);
@@ -463,7 +463,7 @@ auto IntrospectWindow::drawTrace(const std::vector<IntrospectSession::Process>& 
         ImGui::TableSetupColumn("time s", ImGuiTableColumnFlags_WidthFixed, 80.0f);
         ImGui::TableSetupColumn("process", ImGuiTableColumnFlags_WidthFixed, 110.0f);
         ImGui::TableSetupColumn("thread", ImGuiTableColumnFlags_WidthFixed, 130.0f);
-        ImGui::TableSetupColumn("level", ImGuiTableColumnFlags_WidthFixed, 60.0f);
+        ImGui::TableSetupColumn("severity", ImGuiTableColumnFlags_WidthFixed, 60.0f);
         ImGui::TableSetupColumn("category", ImGuiTableColumnFlags_WidthFixed, 70.0f);
         ImGui::TableSetupColumn("type", ImGuiTableColumnFlags_WidthFixed, 170.0f);
         ImGui::TableSetupColumn("name", ImGuiTableColumnFlags_WidthFixed, 160.0f);
@@ -476,9 +476,9 @@ auto IntrospectWindow::drawTrace(const std::vector<IntrospectSession::Process>& 
                 const auto& row = traceRows[(size_t) traceVisible[(size_t) i]];
                 const auto& e = *row.event;
                 ImGui::TableNextRow();
-                if (row.level == 2) {
+                if (row.severity == 2) {
                     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.45f, 0.4f, 1.0f));
-                } else if (row.level == 1) {
+                } else if (row.severity == 1) {
                     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.75f, 0.3f, 1.0f));
                 }
                 ImGui::TableSetColumnIndex(0);
@@ -496,7 +496,7 @@ auto IntrospectWindow::drawTrace(const std::vector<IntrospectSession::Process>& 
                 ImGui::TableSetColumnIndex(2);
                 ImGui::TextUnformatted(e.value("thread", "").c_str());
                 ImGui::TableSetColumnIndex(3);
-                ImGui::TextUnformatted(e.value("level", "info").c_str());
+                ImGui::TextUnformatted(e.value("severity", "info").c_str());
                 ImGui::TableSetColumnIndex(4);
                 ImGui::TextUnformatted(e.value("category", "").c_str());
                 ImGui::TableSetColumnIndex(5);
@@ -514,7 +514,7 @@ auto IntrospectWindow::drawTrace(const std::vector<IntrospectSession::Process>& 
                     message = message.substr(0, 197) + "...";
                 }
                 ImGui::TextUnformatted(message.c_str());
-                if (row.level > 0) {
+                if (row.severity > 0) {
                     ImGui::PopStyleColor();
                 }
             }

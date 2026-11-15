@@ -26,7 +26,7 @@ auto usage() -> int {
     std::println(stderr, "       ngen-introspect get <target> <record>");
     std::println(stderr, "       ngen-introspect describe <target>");
     std::println(stderr, "       ngen-introspect call <target> <method> [params-json]");
-    std::println(stderr, "       ngen-introspect trace [--output=FILE] [--until-exit=TARGET] [--process=TARGET,...] [--category=A,...] [--type=A,...] [--level=L] [--history]");
+    std::println(stderr, "       ngen-introspect trace [--output=FILE] [--until-exit=TARGET] [--process=TARGET,...] [--category=A,...] [--type=A,...] [--severity=L] [--history]");
     std::println(stderr, "target: <kind>, <kind>:<pid> or <pid>");
     return exitUsage;
 }

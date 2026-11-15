@@ -69,10 +69,10 @@ state is a method.
 ```
 
 **`trace`** subscribes to every process (`trace.subscribe`, `src/trace/README.md`), including ones that start later, and writes their events as
-JSON lines: `ts_ns, process, thread, level, category, type, name, text, fields`. It takes events from its own start; `--history` takes
+JSON lines: `ts_ns, process, thread, severity, category, type, name, text, fields`. It takes events from its own start; `--history` takes
 everything the processes' rings still hold. `--until-exit=<target>` stops once a matching process has connected and gone, its last events
-included; without it the command runs until Ctrl-C. `--process=`, `--category=` and `--type=` filter (comma lists); `--level=warning` keeps
-warnings and errors, `--level=error` errors only. With `--output` the file is written at the end,
+included; without it the command runs until Ctrl-C. `--process=`, `--category=` and `--type=` filter (comma lists); `--severity=warning` keeps
+warnings and errors, `--severity=error` errors only. With `--output` the file is written at the end,
 sorted by time across processes; on stdout lines go out live, about a quarter of a second after they arrive. Dropped events (overwritten in a
 process's ring before they were sent) are reported on stderr.
 
@@ -84,7 +84,7 @@ A target is a kind (`view`), `kind:pid`, or a pid; a kind with several live proc
 `./ngen-cli introspect` with no command opens the window with two tabs. Records has the processes and their records on the left and the selected
 record on the right; Trace has every process's events, the full width, with any process the tool can't reach named in its toolbar. Objects show as a tree, arrays of objects as tables (click a header to sort, again to reverse, a third time for the record's own
 order). Refresh fetches the record again; Auto refreshes it on an interval. The Trace tab holds the last 200,000 events of every process, merged by
-time, with a level column (warnings yellow, errors red), filters by level, process, category, type and name, text or fields, Pause, Follow, and
+time, with a severity column (warnings yellow, errors red), filters by severity, process, category, type and name, text or fields, Pause, Follow, and
 the selected event below. It is drawn with SDL's
 renderer and Dear ImGui — no Vulkan device, nothing of the renderer — and keeps no `imgui.ini`.
 

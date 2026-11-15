@@ -37,16 +37,16 @@ struct TraceOptions {
     std::vector<std::string> processes;
     std::set<std::string> categories;
     std::set<std::string> types;
-    int minLevel = 0; // levelRank: 0 info, 1 warning, 2 error
+    int minSeverity = 0; // severityRank: 0 info, 1 warning, 2 error
     bool history = false;
 };
 
-// Levels in order, so --level=warning keeps warnings and errors.
-auto levelRank(std::string_view level) -> int {
-    if (level == "error") {
+// Severities in order, so --severity=warning keeps warnings and errors.
+auto severityRank(std::string_view severity) -> int {
+    if (severity == "error") {
         return 2;
     }
-    if (level == "warning") {
+    if (severity == "warning") {
         return 1;
     }
     return 0;
@@ -89,12 +89,12 @@ auto parseOptions(std::span<const std::string> args) -> std::expected<TraceOptio
             for (auto& item : splitList(value(text, "--type="))) {
                 options.types.insert(std::move(item));
             }
-        } else if (text.starts_with("--level=")) {
-            auto level = value(text, "--level=");
-            if (level != "info" && level != "warning" && level != "error") {
-                return std::unexpected("--level takes info, warning or error, not '" + std::string(level) + "'");
+        } else if (text.starts_with("--severity=")) {
+            auto severity = value(text, "--severity=");
+            if (severity != "info" && severity != "warning" && severity != "error") {
+                return std::unexpected("--severity takes info, warning or error, not '" + std::string(severity) + "'");
             }
-            options.minLevel = levelRank(level);
+            options.minSeverity = severityRank(severity);
         } else if (text == "--history") {
             options.history = true;
         } else {
@@ -111,7 +111,7 @@ auto passes(const TraceOptions& options, const rpc::Json& event) -> bool {
     if (!options.types.empty() && !options.types.contains(event.value("type", ""))) {
         return false;
     }
-    return levelRank(event.value("level", "info")) >= options.minLevel;
+    return severityRank(event.value("severity", "info")) >= options.minSeverity;
 }
 
 struct Arrived {
@@ -127,7 +127,7 @@ auto traceEventLine(const IntrospectSession::TraceEvent& event) -> std::string {
     line["ts_ns"] = e.value("ts_ns", (uint64_t) 0);
     line["process"] = event.process;
     line["thread"] = e.value("thread", "");
-    line["level"] = e.value("level", "info");
+    line["severity"] = e.value("severity", "info");
     line["category"] = e.value("category", "");
     line["type"] = e.value("type", "");
     line["name"] = e.value("name", "");

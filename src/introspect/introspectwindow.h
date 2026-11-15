@@ -31,7 +31,7 @@ private:
         uint64_t tsNs = 0;
         std::string process;
         std::shared_ptr<const rpc::Json> event;
-        int level = 0;          // 0 info, 1 warning, 2 error
+        int severity = 0;       // 0 info, 1 warning, 2 error
         std::string fieldsText; // the fields as compact JSON, for the table and the text filter
     };
 
@@ -66,7 +66,7 @@ private:
     std::array<char, 64> traceFilterCategory = {};
     std::array<char, 64> traceFilterType = {};
     std::array<char, 128> traceFilterText = {}; // name, text or fields
-    int traceMinLevel = 0;                      // 0 everything, 1 warnings and errors, 2 errors
+    int traceMinSeverity = 0;                   // 0 everything, 1 warnings and errors, 2 errors
     std::shared_ptr<const rpc::Json> selectedEvent;
     std::string selectedEventProcess;
 };

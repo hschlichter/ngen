@@ -355,7 +355,6 @@ sense of a map; that is a scene.
 - **Introspection** — reading and driving a running process from outside: records, methods and the trace through `ngen-introspect`.
 - **Lane** — one thread's zones in the profiler (Main, Render, Scene, Worker N, RPC I/O, …), plus the GPU lane.
 - **Level** (profile) — *guide* zones (the overview, shown by default) or *detail* zones (everything finer); both always recorded.
-- **Level** (trace) — `info` (flow), `warning` (worked around), `error` (failed). A clean run has no warnings or errors.
 - **Method** — a JSON-RPC method named `area.verb` (`view.camera.set`) with typed parameters; `rpc.describe` lists them.
 - **Plot** — a value over time sampled where produced (frame times, uploads, GPU busy), kept with the zones and sent to Tracy.
 - **Record** — one named piece of a process's data as JSON (`status`, `culling`, `streaming`, …), read with `introspect.get`. Data is a
@@ -363,6 +362,8 @@ sense of a map; that is a scene.
 - **Responder** (`RpcResponder`) — how a handler answers, at once or frames later (a screenshot, a readback).
 - **Ring** — a process's always-on buffer of its last 65,536 trace events.
 - **RPC** — JSON-RPC 2.0 over loopback TCP, frames with optional binary attachments; how processes and agents talk.
+- **Severity** — how much a trace event matters: `info` (flow), `warning` (worked around), `error` (failed). A clean run has no warnings or
+  errors.
 - **Site** — a profiler marker: its name, file, line, function, group and level.
 - **Trace** — a process's flow and messages (not data), always on, printed to its console and streamed over RPC to subscribers. The console is
   the trace.
@@ -402,7 +403,7 @@ sense of a map; that is a scene.
 | history | occlusion culling's per-instance visibility from last frame; the profiler's seconds of zones (`profile.history.seconds`) |
 | hooks | `ViewHooks` (main-thread frame steps); `RenderExtension` hooks (render-thread frame points) |
 | instance | a USD instance (shares a prototype); a GPU instance (one draw slot's record); a point of a PointInstancer is neither |
-| level | a LOD level; a mip level; a trace level (info/warning/error); a profile level (guide/detail); a depth pyramid level |
+| level | a LOD level; a mip level; a profile level (guide/detail); a depth pyramid level |
 | pack | to pack (the process); a pack (a packed scene file: layer, mesh, material pack); a meshlet pack (task shader output) |
 | pass | a frame-graph pass (GPU work); a placement pass (scene thread) |
 | phase | occlusion culling's first and second phase |

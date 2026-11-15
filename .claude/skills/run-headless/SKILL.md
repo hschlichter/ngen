@@ -45,7 +45,7 @@ from `./ngen-cli introspect list`).
 
 - Start the trace before the view. It takes events from its own start, from the view and the asset server alike, merged by time; the file
   is written, sorted, once the view has exited and its last events are in (`ProcessExiting` is the view's last event). Without
-  `--until-exit` it runs until Ctrl-C. Filters: `--category=`, `--type=`, `--process=` (comma lists), `--level=warning|error`; `--history`
+  `--until-exit` it runs until Ctrl-C. Filters: `--category=`, `--type=`, `--process=` (comma lists), `--severity=warning|error`; `--history`
   takes everything the processes' rings still hold.
 - A view's trace is short: the start-up timeline (each step with its time, up to `FirstFramePresented`), the files the run wrote, exit — a
   few dozen events for a clean run, however many frames. Nothing is traced per frame; per-frame numbers are records. The console shows the
@@ -147,7 +147,7 @@ SDL_VIDEODRIVER=offscreen ./ngen-cli view <scene> &          # keeps running; no
 Read the records and the trace with `jq`. Typical checks:
 
 ```sh
-jq -c 'select(.level != "info") | {process, level, type, text}' /tmp/trace.jsonl   # warnings and errors; empty on a clean run
+jq -c 'select(.severity != "info") | {process, severity, type, text}' /tmp/trace.jsonl   # warnings and errors; empty on a clean run
 jq -r '[.process, .type, .text] | @tsv' /tmp/trace.jsonl                            # the run's flow
 jq -c 'select(.record == "render") | [.value.textures[] | "\(.width)x\(.height)"] | group_by(.) | map({(.[0]): length}) | add' /tmp/records.jsonl
 ```

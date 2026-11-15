@@ -9,14 +9,14 @@ namespace trace {
 
 // How much an event matters: Info narrates flow, Warning is something that went wrong but was worked around, Error is
 // something that failed.
-enum class Level : uint8_t {
+enum class Severity : uint8_t {
     Info,
     Warning,
     Error,
 };
 
-// "info", "warning", "error": the level as it travels.
-auto levelName(Level level) -> const char*;
+// "info", "warning", "error": the severity as it travels.
+auto severityName(Severity severity) -> const char*;
 
 using FieldValue = std::variant<bool, int64_t, double, std::string>;
 
@@ -30,7 +30,7 @@ struct Event {
     uint64_t seq = 0;  // per process, counting from 1
     uint64_t tsNs = 0; // CLOCK_MONOTONIC, which every process on the machine shares
     std::string thread;
-    Level level = Level::Info;
+    Severity severity = Severity::Info;
     std::string category;
     std::string type;
     std::string name;

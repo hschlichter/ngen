@@ -20,7 +20,7 @@ mkdir -p _out && c++ -std=c++23 -O0 -g -pthread -o _out/ngen-build src/build/boo
 ./ngen-cli introspect trace --until-exit=view --output=/tmp/trace.jsonl & trace=$!
 SDL_VIDEODRIVER=offscreen ./ngen-cli view assets/three_cubes.usda --frames=200 --script=/tmp/script.txt
 wait $trace
-jq -c 'select(.level != "info") | {process, level, type, text}' /tmp/trace.jsonl   # empty on a clean run
+jq -c 'select(.severity != "info") | {process, severity, type, text}' /tmp/trace.jsonl   # empty on a clean run
 ```
 
 A script file holds `<frame> <verb> [args]` per line, for example `120 record render /tmp/records.jsonl`. Frames count from when the scene is
@@ -281,7 +281,7 @@ Finds processes through `.ngen-discovery/` in the working directory. A target is
 | `--process=A,...` | Only these processes. |
 | `--category=A,...` | Only these categories. |
 | `--type=A,...` | Only these event types. |
-| `--level=warning\|error` | Only this level and above. |
+| `--severity=warning\|error` | Only this severity and above. |
 | `--history` | Include what the processes' rings still hold. |
 
 | Window option | Does |

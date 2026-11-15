@@ -18,14 +18,14 @@
 // Every event is also printed on the console, prefixed with the local time: info on stdout, warnings and errors on
 // stderr. Engine code says everything through the trace, so the console and the trace never differ.
 //
-// For an event whose fields are added in a loop, name the builder: trace::Builder event(trace::Level::Info, "Scene", "SceneOpened", path);
+// For an event whose fields are added in a loop, name the builder: trace::Builder event(trace::Severity::Info, "Scene", "SceneOpened", path);
 
 namespace trace {
 
 class Builder {
 public:
-    Builder(Level level, std::string_view category, std::string_view type, std::string_view name) {
-        event.level = level;
+    Builder(Severity severity, std::string_view category, std::string_view type, std::string_view name) {
+        event.severity = severity;
         event.category.assign(category);
         event.type.assign(type);
         event.name.assign(name);
@@ -68,15 +68,15 @@ private:
 
 } // namespace trace
 
-#define TRACE_EVENT(category, type, name)                \
-    ::trace::Builder {                                   \
-        ::trace::Level::Info, (category), (type), (name) \
-    }
-#define TRACE_WARNING(category, type, name)                 \
+#define TRACE_EVENT(category, type, name)                   \
     ::trace::Builder {                                      \
-        ::trace::Level::Warning, (category), (type), (name) \
+        ::trace::Severity::Info, (category), (type), (name) \
     }
-#define TRACE_ERROR(category, type, name)                 \
-    ::trace::Builder {                                    \
-        ::trace::Level::Error, (category), (type), (name) \
+#define TRACE_WARNING(category, type, name)                    \
+    ::trace::Builder {                                         \
+        ::trace::Severity::Warning, (category), (type), (name) \
+    }
+#define TRACE_ERROR(category, type, name)                    \
+    ::trace::Builder {                                       \
+        ::trace::Severity::Error, (category), (type), (name) \
     }

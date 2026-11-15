@@ -34,7 +34,7 @@ auto eventJson(const Event& event) -> rpc::Json {
         {"seq", event.seq},
         {"ts_ns", event.tsNs},
         {"thread", event.thread},
-        {"level", levelName(event.level)},
+        {"severity", severityName(event.severity)},
         {"category", event.category},
         {"type", event.type},
         {"name", event.name},
