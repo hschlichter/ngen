@@ -28,7 +28,7 @@ and the gizmos' clicks and drags before the view's controls; after culling it ex
 draws the overlays and the tools' layers; in the UI step it carries out what the tools' windows asked for and refreshes what they show (the
 render-LOD counts, the tuning, the selected root, the inspectors four times a second, the chart, the flight); and it adds the tools' layers to
 the snapshot, and the gizmos' lines as `GizmoRender`'s data (`GizmoFrame`, src/renderer/README.md, "Extensions"). The UI's hooks wrap it (`src/ui/uihooks.*`) and tell it which windows are open (`windowOpen`).
-`toolcommands.*` registers the tools' methods, verbs and records over it: `view.camera.debug`, `view.lod.inspect`, `view.streaming.inspect`;
+`toolcommands.*` registers the tools' methods, console commands and records over it: `view.camera.debug`, `view.lod.inspect`, `view.streaming.inspect`;
 `debug-camera`, `lod-show`, `streaming-show`; `debugcamera`, `lodtool`, `streamingtool`. It also gives the engine's camera commands the
 debug camera (`ViewContext::debugCamera`), so `camera: "debug"` reaches it, and `lodCamera` (`debugcamera.h`) says which camera LOD and
 streaming are decided from. How each tool works is in `src/view/README.md` ("The LOD tool", "The Streaming tool", "The debug camera").

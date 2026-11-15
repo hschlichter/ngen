@@ -172,7 +172,7 @@ auto pipelinesRecord(const ViewContext& view) -> Json {
 
 } // namespace
 
-auto registerDisplayCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& records, ViewContext& view) -> void {
+auto registerDisplayCommands(RpcRegistry& registry, ConsoleCommands& console, RpcRecords& records, ViewContext& view) -> void {
     registry.add(
         {
             .name = "view.inspect",
@@ -278,13 +278,13 @@ auto registerDisplayCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords&
         responder.respond(Json::object());
     });
 
-    verbs.add("inspect", "view.inspect", parseInspect);
-    verbs.add("dump-texture", "view.dumpTexture", parseDumpTexture);
-    verbs.add("screenshot", "view.screenshot", parsePath);
-    verbs.add("capture", "capture.request", parseCapture);
-    verbs.add("dump-frame", "introspect.frame", parseDir);
-    verbs.add("dump-gpuscene", "introspect.gpuscene", parseDir);
-    verbs.add("renderdoc-capture", "renderdoc.capture", RpcVerbs::none);
+    console.add("inspect", "view.inspect", parseInspect);
+    console.add("dump-texture", "view.dumpTexture", parseDumpTexture);
+    console.add("screenshot", "view.screenshot", parsePath);
+    console.add("capture", "capture.request", parseCapture);
+    console.add("dump-frame", "introspect.frame", parseDir);
+    console.add("dump-gpuscene", "introspect.gpuscene", parseDir);
+    console.add("renderdoc-capture", "renderdoc.capture", ConsoleCommands::none);
 
     records.add("culling",
                 "GPU culling's latest readback, per view: instances drawn and culled, meshlets tested and culled by frustum, cone and depth, triangles "

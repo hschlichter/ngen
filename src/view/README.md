@@ -60,12 +60,12 @@ loaded follows the move with `wait-resident`.
 
 ## Commands
 
-What an agent reaches without the tools or the UI: every method, script verb and record of the engine, registered by domain over a
-`ViewContext` (`viewcommands.h`: references into the `ViewFrame` and to what the main loop owns) into the `RpcRegistry`, the `RpcVerbs` table and the `RpcRecords`
-(`src/rpc/README.md`). They run at the top of each frame, before the camera moves: a script's due lines through `RpcVerbs::run`, then the
+What an agent reaches without the tools or the UI: every method, console command and record of the engine, registered by domain over a
+`ViewContext` (`viewcommands.h`: references into the `ViewFrame` and to what the main loop owns) into the `RpcRegistry`, the `ConsoleCommands` table and the `RpcRecords`
+(`src/rpc/README.md`). They run at the top of each frame, before the camera moves: a script's due lines through `ConsoleCommands::run`, then the
 endpoint's calls; an answer that needs a readback or residency waits in `renderLodRequests` or `residentWaiters` and is given frames later.
 
-| File | Methods | Verbs | Records |
+| File | Methods | Console commands | Records |
 |---|---|---|---|
 | `cameracommands.cpp` | `view.camera.set/get/orbit/list/use/fly/fly.stop/frame` | `camera`, `camera-frame`, `camera-use`, `camera-orbit`, `camera-follow`, `fly`, `fly-stop` | |
 | `scenecommands.cpp` | `view.select/transform/translate/pick/purposes/waitResident/repack/gotoAsset/assetsOf/quit` | `select`, `translate`, `pick`, `purposes`, `repack`, `goto-asset`, `assets-of`, `wait-resident`, `quit` | `status`, `scene`, `scenethread`, `gpuscene`, `instancers`, `variants`, `payloads`, `assets` |
@@ -175,7 +175,7 @@ do its instances: only where it is placed.
 
 - **What is drawn**: entities that are active, defined and not abstract, visible (an invisible ancestor hides its subtree), not in a LOD
   level their root doesn't draw, with a mesh asset, and of a purpose that is shown: `default` and `render` always, `guide` and `proxy`
-  when turned on (the cvars `scene.purposes.guide` and `scene.purposes.proxy`: the `purposes` verb, `view.purposes`, which
+  when turned on (the cvars `scene.purposes.guide` and `scene.purposes.proxy`: the `purposes` console command, `view.purposes`, which
   answers once the change is drawn, the View menu).
 - **Point instancers**: each visible point of a `PointInstancer` draws its prototype at the instancer's world transform times the point's.
   The prototype's walk (rooted at the prototype, in the instancer's content) is kept once and used per point; a point's draws have a path
@@ -197,7 +197,7 @@ do its instances: only where it is placed.
   10 ms for the first walk; flying at 30 m/s, typically under 0.2 ms for each snapshot after (median 0.09 ms), and a few ms for a snapshot
   that streams in a lot (90th percentile 1.3 ms, 7 ms at most).
 - **Cameras**: every `Camera` prim reached while drawing, by full path with its world transform (`cameras()`). The Camera window lists them
-  and moves the view to one on a click; `--camera=/path`, the `camera-use` verb and `view.camera.use` do the same, and `view.camera.list`
+  and moves the view to one on a click; `--camera=/path`, the `camera-use` console command and `view.camera.use` do the same, and `view.camera.list`
   lists them with their poses. The view takes a camera's position and the direction it looks (its local -Z); roll, focal length and
   aperture aren't read (the packer doesn't keep them), so the view's 45° field of view stays.
 - **The engine's light**: when the scene has no distant light, one is added, upper-front-right in the scene's frame (intensity 1, colour
@@ -209,7 +209,7 @@ do its instances: only where it is placed.
   `scene`), and the irradiance. A second dome, a format other than `latlong`, or an image that isn't HDR is traced once
   (`DomeLightIgnored`); a change of sky traces `EnvironmentChanged`. The `environment` record shows the dome as authored, its image, whether
   the renderer drew it, and the light it casts on a surface facing up and facing down; `render.sky.on` turns it off.
-- **Changing what is drawn**: `setLodLevel` (the `lod` verb, `view.lod.set`), `resetLodLevel` (`lod-reset`, `view.lod.reset`: back to the
+- **Changing what is drawn**: `setLodLevel` (the `lod` console command, `view.lod.set`), `resetLodLevel` (`lod-reset`, `view.lod.reset`: back to the
   root's default) and `setPurposeShown` are requests: the scene thread composes, fetches what the change needs and rebuilds, and the
   renderer uploads the changes over the next frames within its budget.
 - **LOD roots**: every LOD root reached while drawing (`lodRoots()`, the `lod` record): its levels and each level's payloads, its
@@ -405,12 +405,12 @@ From the asset server to the screen, stage by stage in the order data flows:
 
 Their numbers are the `assets` record (stage 1), the `scenethread` record (stages 2 and 5) and the `gpuscene` record (stage 4), which the
 render thread publishes after every frame. The upload budget and the geometry pool's limit are cvars,
-`render.upload.budgetMiB` and `render.geometry.limitMiB` (the `gpuscene budget=…,limit=…` verb sets them), handed to the render thread when
+`render.upload.budgetMiB` and `render.geometry.limitMiB` (the `gpuscene budget=…,limit=…` console command sets them), handed to the render thread when
 they change; lowering the limit stops growth, it doesn't shrink the pool.
 
 The render settings (the shadow cascades, the sampler, the hemisphere ambient, anti-aliasing, the prepass, the buffer and debug views and
 overlays) are cvars (`src/cvar/README.md`, `src/renderer/rendercvars.h`): the `cvars` record, `cvar.get/set/reset`,
-the `cvar <name> <value>` verb, and the Cvars window; the older verbs (`view`, `debugview`, `shadow`, `sampler`, `ambient`,
+the `cvar <name> <value>` console command, and the Cvars window; the older console commands (`view`, `debugview`, `shadow`, `sampler`, `ambient`,
 `prepass`, `aa`, `gpuscene`) set the same values. The main thread reads them to fill the frame's `RenderSnapshot`. `view.camera.set` takes
 an optional `speed`.
 
@@ -424,7 +424,7 @@ failed asset's errors on hover. The `assets` record carries the same list next t
 **Going to an asset.** A double-click, or Go to in the row's menu, moves the camera to the asset's draws: the nearest first, then the next at
 each go-to ("draw 3 of 412"), each framed and its prim selected; Frame all frames every draw at once. An asset's draws are the prims whose
 draws use it (`ViewScene::drawsOf`, the Draws column): a mesh's prims, a material's or a texture's users, the prims drawing the meshes a USD
-file defines. A file that only overrides or arranges others, and a shader, draw nothing. The `goto-asset <id> [all]` verb and
+file defines. A file that only overrides or arranges others, and a shader, draw nothing. The `goto-asset <id> [all]` console command and
 `view.gotoAsset` do the same and answer with the prim.
 
 The other way, **Selected prim's assets** selects the rows of every asset the prim selected in the view uses, and everything drawn under it
@@ -435,7 +435,7 @@ them, ready for Repack selected. `assets-of [prim]` and `view.assetsOf` answer w
 or Select shown for every row shown. Repack selected (or the row's menu) has the asset server repack the selection even when its cache is up
 to date; Repack scene does it for every asset of the scene (`ViewScene::assetIds`: layer packs, meshes, materials, textures). The view
 fetches what was repacked, fetches again the meshes and materials of a repacked USD file, and rebuilds its scene, so an edit to a source shows
-without a restart (`ViewScene::refresh` with `force`, the `repack <id>... | scene` verb and `view.repack`, which answers once the scene is resident
+without a restart (`ViewScene::refresh` with `force`, the `repack <id>... | scene` console command and `view.repack`, which answers once the scene is resident
 again; the trace has `AssetsRefreshRequested`). What arrives unchanged keeps its library entry and isn't uploaded again. A shader's repack
 refreshes only the server's cache.
 
@@ -451,7 +451,7 @@ its new version arrives; the `assets` record has `stale` and `changes`.
 The selection is a prim's full path (instances expanded), so a prim inside an instance is that instance's. A click picks on the GPU
 (`viewpicking.*`): the geometry pass writes each pixel's instance index + 1 into `gbuffer.instance`, the click asks for that one texel after the
 last pass that writes it (the second phase's geometry pass with occlusion), and a few frames later the instance under the cursor maps to its prim (`instancePath`); nothing drawn there deselects. The `pick <x> <y>`
-verb and `view.pick` do the same at a framebuffer pixel and answer with the path; `select` and `view.select` select by path. Keys: Z
+console command and `view.pick` do the same at a framebuffer pixel and answer with the path; `select` and `view.select` select by path. Keys: Z
 deselects, R selects the parent, F frames the selection; the Edit menu has the same, and picks the tool (select, translate, rotate, scale).
 
 ![Picking: a click's capture watch on gbuffer.instance after the geometry pass that writes it last, read back a few frames later and mapped through instancePath to the selected prim](../../screenshots/view_picking.svg)
@@ -465,5 +465,5 @@ again restores them. The menus show each key. The camera's keys are in "Camera m
 
 A gizmo drag is the view's own opinion on the prim's local transform (`setLocalTransform`), kept until the view closes and never saved: the
 placements holding the prim are built again in the next pass, walking it afresh with the opinion, and what is drawn under it moves with them;
-every later pass applies it too. The `translate` verb and `view.translate` offset a local position the same way; `view.transform` answers a
+every later pass applies it too. The `translate` console command and `view.translate` offset a local position the same way; `view.transform` answers a
 drawn prim's local and world transforms. Editing the scene for real is the editor's (`src/editor/`).

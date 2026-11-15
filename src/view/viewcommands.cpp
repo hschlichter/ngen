@@ -29,13 +29,13 @@ auto parseRecord(const std::string& args) -> std::expected<Json, std::string> {
 
 } // namespace
 
-auto registerViewCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& records, ViewContext& view) -> void {
-    registerCameraCommands(registry, verbs, view);
-    registerSceneCommands(registry, verbs, records, view);
-    registerLodCommands(registry, verbs, records, view);
-    registerCvarCommands(registry, verbs, records);
-    registerDisplayCommands(registry, verbs, records, view);
-    registerProfileCommands(registry, verbs, records);
+auto registerViewCommands(RpcRegistry& registry, ConsoleCommands& console, RpcRecords& records, ViewContext& view) -> void {
+    registerCameraCommands(registry, console, view);
+    registerSceneCommands(registry, console, records, view);
+    registerLodCommands(registry, console, records, view);
+    registerCvarCommands(registry, console, records);
+    registerDisplayCommands(registry, console, records, view);
+    registerProfileCommands(registry, console, records);
 
     // A record taken at a known frame, for scripted runs: the view samples it, so the frame is exact, and appends it to
     // a file, so nothing has to be connected at that frame to receive it.
@@ -78,10 +78,10 @@ auto registerViewCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& re
             });
             records.get(name, write);
         });
-    verbs.add("record", "introspect.record", parseRecord);
+    console.add("record", "introspect.record", parseRecord);
 }
 
-auto runFrameCommands(ViewContext& view, SessionScript& session, const RpcRegistry& registry, const RpcVerbs& verbs, RpcEndpoint& endpoint) -> void {
+auto runFrameCommands(ViewContext& view, SessionScript& session, const RpcRegistry& registry, const ConsoleCommands& console, RpcEndpoint& endpoint) -> void {
     auto& script = view.script;
     script.held = (script.waitForResident && !view.residency.everResident) || !view.residentWaiters.empty() || view.flight.flying();
     std::vector<SessionCommand> due;
@@ -92,7 +92,7 @@ auto runFrameCommands(ViewContext& view, SessionScript& session, const RpcRegist
     {
         PROFILE_ZONE("Commands", Frame);
         for (const auto& command : due) {
-            verbs.run(registry, command.verb, command.args);
+            console.run(registry, command.name, command.args);
         }
         endpoint.drain();
     }

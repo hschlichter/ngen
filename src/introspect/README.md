@@ -48,7 +48,7 @@ records with `registerRpcRecords` (engine layer); the asset server answers the t
 
 Records are data and the trace is flow and messages (`src/trace/README.md`): a record never goes into the trace.
 
-**A record at a frame:** the script verb `record <name> <file>` (method `introspect.record {name, path}`) appends the record to a file as one
+**A record at a frame:** the console command `record <name> <file>` (method `introspect.record {name, path}`) appends the record to a file as one
 JSON line: `{record, requested_frame, frame, ts_ns, value}`, `frame` being the frame it was ready (GPU readbacks take a few). The view takes the
 sample itself, so the frame is exact and nothing has to be connected at that frame; a script run collects its values in one file, for example
 `120 record render /tmp/records.jsonl` and `150 record memory /tmp/records.jsonl`.

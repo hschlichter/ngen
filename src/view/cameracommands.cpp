@@ -15,7 +15,7 @@
 #include <sstream>
 
 // The camera's commands: place, read, orbit and frame the main camera (or the debug camera, when the tools give one), the scene's authored
-// cameras, the camera flight, and the follow mode's verb.
+// cameras, the camera flight, and the follow mode's console command.
 
 namespace {
 
@@ -104,7 +104,7 @@ const std::vector<std::string> cameraNames = {"main", "debug"};
 
 } // namespace
 
-auto registerCameraCommands(RpcRegistry& registry, RpcVerbs& verbs, ViewContext& view) -> void {
+auto registerCameraCommands(RpcRegistry& registry, ConsoleCommands& console, ViewContext& view) -> void {
     registry.add(
         {
             .name = "view.camera.set",
@@ -244,11 +244,11 @@ auto registerCameraCommands(RpcRegistry& registry, RpcVerbs& verbs, ViewContext&
             responder.respond(Json::object());
         });
 
-    verbs.add("camera", "view.camera.set", parseCamera);
-    verbs.add("camera-frame", "view.camera.frame", parseTarget);
-    verbs.add("camera-use", "view.camera.use", parseCameraPath);
-    verbs.add("camera-orbit", "view.camera.orbit", parseCameraOrbit);
-    verbs.add("camera-follow", "cvar.set", parseCameraFollow);
-    verbs.add("fly", "view.camera.fly", parseFly);
-    verbs.add("fly-stop", "view.camera.fly.stop", RpcVerbs::none);
+    console.add("camera", "view.camera.set", parseCamera);
+    console.add("camera-frame", "view.camera.frame", parseTarget);
+    console.add("camera-use", "view.camera.use", parseCameraPath);
+    console.add("camera-orbit", "view.camera.orbit", parseCameraOrbit);
+    console.add("camera-follow", "cvar.set", parseCameraFollow);
+    console.add("fly", "view.camera.fly", parseFly);
+    console.add("fly-stop", "view.camera.fly.stop", ConsoleCommands::none);
 }

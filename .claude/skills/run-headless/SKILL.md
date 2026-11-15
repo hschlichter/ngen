@@ -55,7 +55,7 @@ from `./ngen-cli introspect list`).
 - Write the trace to `/tmp` or the session scratchpad, not into the repo.
 - The view's first frame comes at once; the scene arrives while it runs. `--frames`, `--screenshot` and script frame numbers count from when
   the scene is first resident (everything it wants loaded, uploaded and drawn; the trace's `SceneResident`), so a script sees the loaded
-  scene. `--no-wait-resident` counts from start-up instead, to look at loading itself. Verbs that change what is drawn (`lod`, `purposes`,
+  scene. `--no-wait-resident` counts from start-up instead, to look at loading itself. Console commands that change what is drawn (`lod`, `purposes`,
   `repack`) hold the script's count until the change is drawn, and `wait-resident` does the same. Sponza takes a few seconds to be resident:
   give the trace command a `timeout` above that if you add one.
 
@@ -84,8 +84,8 @@ SDL_VIDEODRIVER=offscreen ./ngen-cli view <scene> --frames=30 \
   reached: assets, loaded, extentsHint in world metres), `streaming` (residency: per streaming root `desired` and why, its streaming radii and `state`, `resident` and why, `drawn`, `late`/`hole`, per level requested/loaded/ready/drawn and lead, authoring `findings`; `measured` totals: late switches, holes, root-seconds coarser, loads, reloads, lead, `arrivedUnwanted`), `scenethread` (requests, composes, extracts, assets in flight and held,
   residency), `gpuscene` (change lists, upload queue and budget, geometry pool), `pipelines`, `profile`, `status` (`src/introspect/README.md`); several lines into one file are fine. Read it
   with `jq 'select(.record == "render") | .value.passes' /tmp/records.jsonl`.
-- `dump-profile PATH` (script verb): the profiler history as a Chrome trace file (`jq '.traceEvents'`, or open in Perfetto).
-- `--script=FILE`: `<frame> <verb> [args]` per line, same verbs as the flags plus `quit`, `pick <x> <y>` (select what is drawn at that framebuffer pixel,
+- `dump-profile PATH` (console command): the profiler history as a Chrome trace file (`jq '.traceEvents'`, or open in Perfetto).
+- `--script=FILE`: `<frame> <command> [args]` per line, same console commands as the flags plus `quit`, `pick <x> <y>` (select what is drawn at that framebuffer pixel,
   read back from the GPU; the `Picked` event names it), `translate /prim dx,dy,dz` (a session opinion of the view, never saved),
   `purposes guide=on|off,proxy=on|off` (draw guide and proxy prims), `repack <id>...|scene` (force the asset server to repack them, and
   rebuild the scene; a live view takes a source edit by itself, from the asset server's change notice, so this is for repacking an unchanged source),
@@ -101,7 +101,7 @@ SDL_VIDEODRIVER=offscreen ./ngen-cli view <scene> --frames=30 \
   capture) and `dump-texture <texture> <level> <path>` (one mip level as PNG; the texture index as the `render` record's `textures` list it); several screenshots in one run.
 - `--fail-on-validation`: exit code 2 if the validation layer reported anything. `--geometry-limit=<MiB>`: cap each geometry pool buffer
   below the device's limit, to exercise a full pool on a small scene (the `GeometryPoolFull` warning, the `memory` record's `geometryPool`). `--render-debug`: draw log on without the window.
-- Introspection verbs (debug and release builds; each writes when its data arrives, a few frames after the verb):
+- Introspection console commands (debug and release builds; each writes when its data arrives, a few frames after the console command):
   - `capture <pass|-|+> <resource> <path> [x y w h]`: any frame-graph resource right after `<pass>` (`-` = end of frame, also `gpuscene.meshtable`,
     `gpuscene.materials`; `+` = after the pass that writes it last this frame, or the end of the frame when none does; named in the result). Buffers as JSON rows decoded with their schema; textures as PNG plus `<path>.json` (format, size, channel ranges, and the
     texel values when the region is 64 texels or fewer).
@@ -123,7 +123,7 @@ SDL_VIDEODRIVER=offscreen ./ngen-cli view <scene> --frames=30 \
 
 ## Live investigation over RPC
 
-A running ngen-view answers RPC calls (`src/rpc/README.md`). Every script verb is also a method, and records return their JSON directly:
+A running ngen-view answers RPC calls (`src/rpc/README.md`). Every console command is also a method, and records return their JSON directly:
 
 ```sh
 SDL_VIDEODRIVER=offscreen ./ngen-cli view <scene> &          # keeps running; no --frames

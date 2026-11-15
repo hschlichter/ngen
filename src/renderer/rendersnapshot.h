@@ -16,7 +16,7 @@
 #include <vector>
 
 // Material sampler state, editable live from the Render Debug View tab and the
-// `sampler` session verb.
+// `sampler` console command.
 struct SamplerSettings {
     float maxAnisotropy = 8.0f; // 0 = off
     float lodBias = 0.0f;

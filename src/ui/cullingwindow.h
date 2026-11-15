@@ -4,7 +4,7 @@
 
 // Culling window: the culling switches, the frozen frustum for inspecting what a camera pose culls, the red/green AABB overlay, the
 // meshlet culling debug view, and the latest counts read back from the GPU culling, in its steps: the scene, what instance culling
-// keeps, what meshlet culling draws. The flags are the UI's; session verbs write the same.
+// keeps, what meshlet culling draws. The flags are the UI's; console commands write the same.
 struct CullingWindowInputs {
     bool& enabled;
     bool& frozen;

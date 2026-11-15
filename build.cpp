@@ -179,7 +179,7 @@ auto main(int argc, char** argv) -> int {
             .public_include({"src/asset"})
             .link(rpccore);
 
-    // Session commands: verbs shared by CLI flags, scripts and the camera window.
+    // Session commands: console commands shared by CLI flags, scripts and the camera window.
     auto session =
         cxx::static_library("session")
             .sources(glob({.include = "src/session/**/*.cpp"}))
@@ -303,7 +303,7 @@ auto main(int argc, char** argv) -> int {
             .link(jobs)
             .link(profile);
 
-    // The view's commands (src/view/README.md): every engine method, script verb and record, by domain, and the dumps that answer frames later.
+    // The view's commands (src/view/README.md): every engine method, console command and record, by domain, and the dumps that answer frames later.
     // What an agent reaches without the tools or the UI.
     auto viewCommands =
         cxx::static_library("viewcommands")

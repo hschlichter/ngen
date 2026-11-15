@@ -6,7 +6,7 @@ library may declare values, and nothing in it knows the engine.
 
 ![The Cvars window: every value by group with an editor for its type](../../screenshots/config_hero.png)
 
-![A value declared in code registers by name; the cvars record, the cvar RPC methods and verbs and the windows read and set it on the main thread, and ViewFrame hands what the render thread needs to it on a change or in the RenderSnapshot](../../screenshots/config_value_flow.svg)
+![A value declared in code registers by name; the cvars record, the cvar RPC methods and console commands and the windows read and set it on the main thread, and ViewFrame hands what the render thread needs to it on a change or in the RenderSnapshot](../../screenshots/config_value_flow.svg)
 
 ## Declaring a value
 
@@ -59,7 +59,7 @@ There are no callbacks, so nothing runs inside a `set`.
   choices.
 - **RPC**: `cvar.get {name?}` (one value by name, or every one under a prefix), `cvar.set {name, value}` or `{values: {name: value}}`
   (checked together: nothing is set when one fails; `reset` names values put back to their defaults first), `cvar.reset {name?}`.
-- **Verbs**: `cvar <name> <value>`, `cvar-reset [<name or prefix>]`. Older verbs that set settings (`view`, `debugview`, `shadow`,
+- **Console commands**: `cvar <name> <value>`, `cvar-reset [<name or prefix>]`. Older console commands that set settings (`view`, `debugview`, `shadow`,
   `sampler`, `ambient`, `prepass`, `aa`, `gpuscene`, `cull`, `overlay`, `purposes`, `lod-show`, `streaming-show`, `camera-follow`,
   `debug-camera`) are kept as short forms that set the matching values.
 - **Window**: Windows > Cvars (`window cvars`): every value by group with an editor for its type, its description and default on

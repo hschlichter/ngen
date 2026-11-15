@@ -2,7 +2,7 @@
 
 The words the engine, its code and its documents use, each in a line or two, grouped by the part of the engine they belong to. It is for a
 quick look-up: the library README named under each heading is where a term is explained in full. [`REFERENCE.md`](REFERENCE.md) is the
-companion cheat sheet for commands, flags, verbs, methods and records.
+companion cheat sheet for commands, flags, console commands, methods and records.
 
 Several common words mean different things in different parts of the engine (*level*, *pack*, *slot*, *group*, *view*, *record*…).
 [Words with more than one meaning](#words-with-more-than-one-meaning) at the end lists them side by side.
@@ -95,7 +95,7 @@ Every program's `main` is in `src/apps/` (the build system's and the RHI example
 - **Packer** — a standalone program for one asset type, run with a fixed argument contract (`--source`, `--out`, `--depfile`, `--param`).
 - **Pack rule** — an entry in the root `pack.cpp`: extensions, packer, parameters and a version to bump on a format change. Compiled into the
   asset server.
-- **Repack** — ask the server to pack assets again even when its cache is up to date (`force`); the view's Assets window and `repack` verb.
+- **Repack** — ask the server to pack assets again even when its cache is up to date (`force`); the view's Assets window and `repack` console command.
 - **Scene pack** — the binary `NGPK` format for layer, mesh and material packs: a header, a string table and typed sections.
 
 ## USD and composition
@@ -227,11 +227,11 @@ sense of a map; that is a scene.
 - **Scene update** — one round of the scene thread: the requests and arrivals it took, a compose, a placement pass, and a publish.
 - **Scene thread** — `ViewScene`'s thread: owns the composer, the packs and the libraries; composes, places and publishes.
 - **`SceneSnapshot`** — what the scene thread publishes; the main thread takes the latest once a frame and every query reads it.
-- **Script** — `--script=<file>`, lines of `<frame> <verb> [args]`; frames count from the first residency. The *script clock* holds while
+- **Script** — `--script=<file>`, lines of `<frame> <command> [args]`; frames count from the first residency. The *script clock* holds while
   something waits (residency, a flight).
 - **Sky / environment** — the scene's dome light as the lit view's background and ambient (`RenderWorld::environment`).
 - **Step** — one call of `ViewFrame`'s fixed order: `updateScene`, `runFrameCommands`, `advanceTime`, …, `buildSnapshot`, `plotFrame`.
-- **`ViewContext`** — what the engine commands are registered over: references into the `ViewFrame` and the main loop.
+- **`ViewContext`** — what the engine's methods, console commands and records are registered over: references into the `ViewFrame` and the main loop.
 - **`ViewFrame`** — one frame of the engine as a fixed order of steps, called by `src/apps/view.cpp`'s loop.
 - **`ViewScene`** — the scene the view shows: the World composed from packs and flattened into the renderer's inputs.
 - **Walk** (`ContentWalk`) — a content walked once per version and inherited state; every placement of it reuses the walk.
@@ -275,7 +275,7 @@ sense of a map; that is a scene.
 - **`CullResult`** — culling's readback handed to the main thread: counts per view, meshlet counts, triangles.
 - **Culling** — per instance (frustum, then occlusion), then per meshlet in the task shader (frustum, normal cone, occlusion).
 - **Cutout material** — a material with `opacityThreshold > 0`: drawn where its opacity reaches the threshold, through `discard`, no blending.
-- **Debug view** — what `DebugViewPass` draws (`debugview` verb): wireframe, triangle size, overdraw, instance, mesh, material and primitive ids,
+- **Debug view** — what `DebugViewPass` draws (`debugview` console command): wireframe, triangle size, overdraw, instance, mesh, material and primitive ids,
   UV, streaming, meshlet, meshlet culling.
 - **Deferred shading** — the geometry pass writes the G-buffer; a fullscreen lighting pass shades it.
 - **Deletion queue** — the renderer's deferred destroys, each held until the frame that last used the resource has passed its fence.
@@ -320,7 +320,7 @@ sense of a map; that is a scene.
 - **Texture slot** — a texture's index in the bindless 1024-texture array; slot 0 is the fallback, slot 1 white.
 - **Upload budget** — bytes of queued scene uploads a frame takes (`render.upload.budgetMiB`, 64 MiB).
 - **View** (culling) — 0 the camera, 1–4 the shadow cascades, 5 the camera's second occlusion phase.
-- **View mode** — what the lighting pass shows (`view` verb, `--view`): lit, albedo, normals, depth, shadow views, worldpos,
+- **View mode** — what the lighting pass shows (`view` console command, `--view`): lit, albedo, normals, depth, shadow views, worldpos,
   mip level, cascades, LOD level, hzb.
 - **Work item** — one `{instance, meshlet}` pair in a draw list; a task workgroup takes 32 consecutive ones.
 
@@ -343,11 +343,11 @@ sense of a map; that is a scene.
 
 `src/rpc/README.md`, `src/introspect/README.md`, `src/trace/README.md`, `src/profile/README.md`, `src/cvar/README.md`.
 
-- **Command** (engine command) — a method, verb or record of the engine, registered by domain in `src/view/*commands.cpp`; the tools and the UI
-  register their own.
+- **Console command** — a script line's and the command line's word (`camera`, `lod`, `record`) that maps to a method; script lines and live
+  calls run the same code. The engine has no console window: a script and `ngen-cli introspect call` are the console.
 - **Cvar** — a console variable: a typed setting (`cvar::Bool`, `Int`, `Float`, `Enum`, `Vec3`) declared in code by its owner with a dotted
   name (`render.shadow.cascades`), a default and a description. Read and set through the `cvars` record, the `cvar.*` methods, the `cvar`
-  verb and the Cvars window. Its *group* is the name's first two parts.
+  console command and the Cvars window. Its *group* is the name's first two parts.
 - **Endpoint** (`RpcEndpoint`) — one per long-running process: an RPC server, a discovery file, main-thread dispatch and the trace stream.
 - **Event** (trace) — `TRACE_EVENT` / `TRACE_WARNING` / `TRACE_ERROR` with a category (`Scene`, `Render`, `Engine`, `Asset`), a CamelCase
   type, a stable name, a text and fields.
@@ -371,7 +371,6 @@ sense of a map; that is a scene.
   the trace.
 - **Track** — one thread's zones in the profiler (Main, Render, Scene, Worker N, RPC I/O, …), plus the GPU track.
 - **Tracy** — the external profiler, a second sink inside the collector for whole sessions; nothing in the engine reads back from it.
-- **Verb** — a script and command-line word (`camera`, `lod`, `record`) that maps to a method; script lines and live calls run the same code.
 - **Zone** — a timed CPU or GPU range from a marker (`PROFILE_ZONE`, `PROFILE_GPU_ZONE`); frame-graph passes, RPC calls, jobs and render
   extension hooks get one by themselves.
 
@@ -383,13 +382,13 @@ sense of a map; that is a scene.
 - **Plan** — `docs/plan_<topic>.md`: status, current state, scope, steps, visibility, verification. *Landed*, *in progress*, *superseded*.
 - **Review** — a review artifact in `docs/reviews/`.
 - **Roadmap** — `docs/roadmap.md`: planned, open and parked work. Items *parked* with a *trigger* that would bring them back.
-- **Runtime access and visibility** — the standing rule that everything is reachable by an agent (records, methods, verbs) and visible to a
+- **Runtime access and visibility** — the standing rule that everything is reachable by an agent (records, methods, console commands) and visible to a
   human (a window, view or overlay).
 - **Test scenes** — `assets/three_cubes.usda` (smoke test), `assets/layered/root.usda` (composition), Intel's New Sponza (materials), the test
   world (streaming), Caldera (large; no longer the streaming target).
 - **Vertical slice** — the roadmap's order of work: the thinnest working version of every piece (streaming, meshlets, editor, gameplay,
   physics, animation, rendering gaps, a first game) before depth.
-- **Visibility pass** — the check at the end of each vertical-slice step over what it touched: records, methods, verbs, windows, and where it
+- **Visibility pass** — the check at the end of each vertical-slice step over what it touched: records, methods, console commands, windows, and where it
   sits in the engine's flow.
 
 ## Words with more than one meaning
@@ -410,7 +409,7 @@ sense of a map; that is a scene.
 | pack | to pack (the process); a pack (a packed scene file: layer, mesh, material pack); a meshlet pack (task shader output) |
 | pass | a frame-graph pass (GPU work); a placement pass (scene thread) |
 | phase | occlusion culling's first and second phase |
-| record | an RPC record (named JSON data); a GPU instance, culling or draw record; an asset cache record; the `record` verb |
+| record | an RPC record (named JSON data); a GPU instance, culling or draw record; an asset cache record; the `record` console command |
 | residency | a LOD level's residency (asked for by the camera's position); a render-LOD group's residency mask (which levels' meshes are in the geometry pool) |
 | resident | the scene being resident (everything loaded, uploaded, drawn); a LOD level being resident (loaded by residency) |
 | root | a LOD root; the root layer; the asset server's working directory (asset ids are relative to it) |
@@ -419,5 +418,5 @@ sense of a map; that is a scene.
 | state | a resource state (RHI barriers); a streaming state (finest resident level); a tool's state struct |
 | tag | the LOD tag (normal alpha); a GPU zone's tag (its source location's id) |
 | variant | a build variant (platform/config); a USD variant (of a variant set) |
-| view | ngen-view; the `view` library; a culling view (camera, cascades, phase 2); a view mode (`view` verb) or debug view (`debugview` verb) |
+| view | ngen-view; the `view` library; a culling view (camera, cascades, phase 2); a view mode (`view` console command) or debug view (`debugview` console command) |
 | version | a World content's version (each compose); a pack rule's version; the IR and scene-pack format versions |

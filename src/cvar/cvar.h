@@ -45,7 +45,7 @@ public:
     auto isDefault() const -> bool { return text() == defaultText(); }
 
     virtual auto type() const -> Type = 0;
-    // The value as the verb takes it and a file would hold it: true/false, a number, a choice's name, "x,y,z".
+    // The value as the console command takes it and a file would hold it: true/false, a number, a choice's name, "x,y,z".
     virtual auto text() const -> std::string = 0;
     virtual auto defaultText() const -> std::string = 0;
     // Parses and checks (range, choices); unchanged on an error, which says why.

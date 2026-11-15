@@ -233,7 +233,7 @@ auto lodToolRecord(const ViewContext& view, const ToolsState& tools) -> Json {
 
 } // namespace
 
-auto registerToolCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& records, ViewContext& view, ToolsState& tools) -> void {
+auto registerToolCommands(RpcRegistry& registry, ConsoleCommands& console, RpcRecords& records, ViewContext& view, ToolsState& tools) -> void {
     view.debugCamera = [&tools]() -> Camera* {
         return toolscvars::debugCamera.get() ? &tools.debugCamera.camera : nullptr;
     };
@@ -306,9 +306,9 @@ auto registerToolCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& re
             responder.respond(streamingInspectionJson(*inspection));
         });
 
-    verbs.add("debug-camera", "view.camera.debug", parseDebugCamera);
-    verbs.add("lod-show", "cvar.set", parseLodShow);
-    verbs.add("streaming-show", "cvar.set", parseStreamingShow);
+    console.add("debug-camera", "view.camera.debug", parseDebugCamera);
+    console.add("lod-show", "cvar.set", parseLodShow);
+    console.add("streaming-show", "cvar.set", parseStreamingShow);
 
     records.add("debugcamera", "the debug camera: its position, yaw and pitch, and the main camera's trail points; its switches are the cvars record's tools.debugcamera.*", [&tools](RpcResponder responder) {
         responder.respond(debugCameraJson(tools.debugCamera));

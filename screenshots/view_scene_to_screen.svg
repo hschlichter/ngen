@@ -161,5 +161,5 @@
   <!-- The scene thread asks the client for what it lacks -->
   <path d="M226,374 H208 V251 H198" fill="none" stroke="#94a3b8" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#arrow)"/>
   <text x="28" y="569" class="s">Dashed: the scene thread asks the client for what it lacks (the packs a compose names, the meshes, materials and textures a placement wants).</text>
-  <text x="28" y="587" class="s">The upload budget and the pool's limit are cvars (the gpuscene budget=…,limit=… verb), handed to the render thread when they change.</text>
+  <text x="28" y="587" class="s">The upload budget and the pool's limit are cvars (the gpuscene budget=…,limit=… console command), handed to the render thread when they change.</text>
 </svg>

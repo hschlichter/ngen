@@ -571,7 +571,7 @@ auto serviceRenderLodRequests(ViewContext& view) -> bool {
     return !view.renderLodRequests.empty();
 }
 
-auto registerLodCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& records, ViewContext& view) -> void {
+auto registerLodCommands(RpcRegistry& registry, ConsoleCommands& console, RpcRecords& records, ViewContext& view) -> void {
     registry.add(
         {
             .name = "view.lod.set",
@@ -700,18 +700,18 @@ auto registerLodCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& rec
                      responder.respond(Json::object());
                  });
 
-    verbs.add("lod", "view.lod.set", parseLod);
-    verbs.add("lod-reset", "view.lod.reset", parseLodRoot);
-    verbs.add("lod-heuristic", "view.lod.heuristic", parseOnOff);
-    verbs.add("lod-prefer", "view.lod.heuristic", parseLodPreference);
-    verbs.add("lod-thresholds", "view.lod.override", parseLodThresholdList);
-    verbs.add("lod-blend-thresholds", "view.lod.override", parseLodBlendList);
-    verbs.add("lod-unload-thresholds", "view.lod.override", parseLodUnloadList);
-    verbs.add("lod-override-reset", "view.lod.override.reset", parseLodOverrideReset);
-    verbs.add("lod-bias", "view.lod.tuning", parseLodBias);
-    verbs.add("lod-hysteresis", "view.lod.tuning", parseLodHysteresis);
-    verbs.add("lod-blending", "view.lod.tuning", parseLodBlending);
-    verbs.add("streaming-reset", "view.streaming.reset", RpcVerbs::none);
+    console.add("lod", "view.lod.set", parseLod);
+    console.add("lod-reset", "view.lod.reset", parseLodRoot);
+    console.add("lod-heuristic", "view.lod.heuristic", parseOnOff);
+    console.add("lod-prefer", "view.lod.heuristic", parseLodPreference);
+    console.add("lod-thresholds", "view.lod.override", parseLodThresholdList);
+    console.add("lod-blend-thresholds", "view.lod.override", parseLodBlendList);
+    console.add("lod-unload-thresholds", "view.lod.override", parseLodUnloadList);
+    console.add("lod-override-reset", "view.lod.override.reset", parseLodOverrideReset);
+    console.add("lod-bias", "view.lod.tuning", parseLodBias);
+    console.add("lod-hysteresis", "view.lod.tuning", parseLodHysteresis);
+    console.add("lod-blending", "view.lod.tuning", parseLodBlending);
+    console.add("streaming-reset", "view.streaming.reset", ConsoleCommands::none);
 
     records.add("lod", "every LOD root drawn: its levels, the level it defaults to, wants and draws, the levels loaded, and whether set by hand", [&view](RpcResponder responder) {
         responder.respond(lodRecord(view));

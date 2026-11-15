@@ -55,7 +55,7 @@
   <text x="840" y="190" class="s">RPC methods</text>
   <rect x="660" y="210" width="296" height="36" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
   <text x="674" y="233" class="code" font-weight="700">cvar, cvar-reset</text>
-  <text x="840" y="233" class="s">verbs; view, shadow…</text>
+  <text x="840" y="233" class="s">console commands; view, shadow…</text>
   <rect x="660" y="253" width="296" height="36" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
   <text x="674" y="276" class="t" font-weight="700">windows</text>
   <text x="736" y="276" class="s">Cvars; View menu, Render Debug</text>

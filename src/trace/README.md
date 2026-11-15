@@ -9,7 +9,7 @@ what happened and in what order (a process started, a scene opened, a file was w
 
 **The trace is not for data.** Counts, statistics, timings, pass lists, what is resident on the GPU, the camera: anything that can be asked
 for is a record (`src/rpc/README.md`, "Records"), read when it is needed with `ngen-introspect get`, or at an exact frame with the `record`
-script verb. Nothing is traced every frame. A steady state is silent: a frame that runs like the last one adds nothing to the trace.
+console command. Nothing is traced every frame. A steady state is silent: a frame that runs like the last one adds nothing to the trace.
 
 Events stay in the code. There's no "remove when done" step: they document intent and narrate behaviour the next time anything near that code
 runs.

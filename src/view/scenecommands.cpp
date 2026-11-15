@@ -78,7 +78,7 @@ auto parseGoToAsset(const std::string& args) -> std::expected<Json, std::string>
 
 auto parsePurposes(const std::string& args) -> std::expected<Json, std::string> {
     Json params = Json::object();
-    for (const auto& [key, value] : RpcVerbs::items(args)) {
+    for (const auto& [key, value] : ConsoleCommands::items(args)) {
         if ((key != "guide" && key != "proxy") || (value != "on" && value != "off")) {
             return std::unexpected(std::format("expected guide=on|off,proxy=on|off, got '{}={}'", key, value));
         }
@@ -396,7 +396,7 @@ auto assetsRecord(const ViewContext& view) -> Json {
 
 } // namespace
 
-auto registerSceneCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& records, ViewContext& view) -> void {
+auto registerSceneCommands(RpcRegistry& registry, ConsoleCommands& console, RpcRecords& records, ViewContext& view) -> void {
     registry.add(
         {
             .name = "view.select",
@@ -577,15 +577,15 @@ auto registerSceneCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& r
         responder.respond(Json::object());
     });
 
-    verbs.add("select", "view.select", parsePrim);
-    verbs.add("translate", "view.translate", parseTranslate);
-    verbs.add("pick", "view.pick", parsePick);
-    verbs.add("purposes", "view.purposes", parsePurposes);
-    verbs.add("repack", "view.repack", parseRepack);
-    verbs.add("goto-asset", "view.gotoAsset", parseGoToAsset);
-    verbs.add("assets-of", "view.assetsOf", parsePrim);
-    verbs.add("wait-resident", "view.waitResident", RpcVerbs::none);
-    verbs.add("quit", "view.quit", RpcVerbs::none);
+    console.add("select", "view.select", parsePrim);
+    console.add("translate", "view.translate", parseTranslate);
+    console.add("pick", "view.pick", parsePick);
+    console.add("purposes", "view.purposes", parsePurposes);
+    console.add("repack", "view.repack", parseRepack);
+    console.add("goto-asset", "view.gotoAsset", parseGoToAsset);
+    console.add("assets-of", "view.assetsOf", parsePrim);
+    console.add("wait-resident", "view.waitResident", ConsoleCommands::none);
+    console.add("quit", "view.quit", ConsoleCommands::none);
 
     records.add("status", "frame counter, scene, selection, the main camera and the camera modes; the render settings are the cvars record's, the debug camera's the debugcamera record", [&view](RpcResponder responder) {
         responder.respond(statusRecord(view));

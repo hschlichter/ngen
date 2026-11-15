@@ -66,7 +66,7 @@
   <text x="640" y="206" class="s"><tspan class="m">introspect.list</tspan>, <tspan class="m">introspect.get</tspan></text>
 
   <rect x="628" y="220" width="332" height="40" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
-  <text x="640" y="237" class="b">Script verbs</text>
+  <text x="640" y="237" class="b">console commands</text>
   <text x="640" y="252" class="s">a <tspan class="m">--script</tspan> line runs the same method, in process</text>
 
   <rect x="628" y="266" width="332" height="40" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
@@ -110,6 +110,6 @@
   <text x="626" y="570" class="m">src/rpc</text>
   <text x="696" y="570" class="s">built on the core and the trace</text>
   <text x="536" y="592" class="s"><tspan class="m">RpcRegistry</tspan>: methods, parameter schemas, <tspan class="m">rpc.*</tspan> builtins</text>
-  <text x="536" y="608" class="s"><tspan class="m">RpcVerbs</tspan>: script lines to parameters; <tspan class="m">RpcEndpoint</tspan>: dispatch, trace</text>
+  <text x="536" y="608" class="s"><tspan class="m">ConsoleCommands</tspan>: script lines to parameters; <tspan class="m">RpcEndpoint</tspan>: dispatch, trace</text>
   <text x="536" y="628" class="s">used by ngen-view</text>
 </svg>

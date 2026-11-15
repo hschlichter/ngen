@@ -168,7 +168,7 @@ before the reset isn't counted. This is how a run checks the main and render thr
   - `zones`: every source location over the last 60 frames (a process without frames: the whole history) per track and on the GPU, with its file,
     line, function, group, level, count, total, self time (`selfMs`), the share its children cover (`coveredShare`), per frame, median and
     longest time.
-- **Methods and verb**: `introspect.plot {name, seconds?}`: one plot's samples (`ms` before now, `value`). `introspect.profile {path, seconds?, level?}` / `dump-profile <path> [seconds] [guide|detail]`: the history as Chrome
+- **Methods and console command**: `introspect.plot {name, seconds?}`: one plot's samples (`ms` before now, `value`). `introspect.profile {path, seconds?, level?}` / `dump-profile <path> [seconds] [guide|detail]`: the history as Chrome
   trace JSON (Perfetto, `chrome://tracing`), the last `seconds` (default all), guide zones only or everything (default). An event's `cat` is its
   group; its `args` hold group, level, depth, value, file and line. Zones that overlap the window are included whole, so the first ones start before it.
   Plots are counter events (`"ph": "C"`), one series per plot. The asset server answers both methods too (`ngen-cli introspect call asset introspect.profile '{"path": …}'`).
@@ -176,7 +176,7 @@ before the reset isn't counted. This is how a run checks the main and render thr
 - **Cvars**: `profile.history.seconds`, `profile.gpu.detail`, `profile.tracy.frameImages`, `profile.stall.seconds` (the stall watch's
   threshold), and `profile.budget.frameMs`: the frame time content is measured against (default 16.7 ms, 60 frames a second), and what
   `overBudget` counts against (`cvars` record,
-  `cvar` verb, Cvars window).
+  `cvar` console command, Cvars window).
 - **Trace**: `Stall` (a warning) and `StallEnded`, category Profile, from the stall watch; `ProfileReset` (category Engine) when the counts
   start again.
 - **Window**: Performance, the main, render, worker and GPU tracks on one clock in their group colours, with frame times, zone details (with the

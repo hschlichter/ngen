@@ -42,7 +42,7 @@ out and changes level around the camera as it moves.*
   that watches the main camera's frustum, culling and streaming from outside, camera modes (following the ground, orbiting), camera flights.
 - **Introspection**: the frame graph with live previews, a frame debugger (barriers, commands, descriptor sets), resource captures, GPU
   counters, a GPU scene inspector, the memory of every allocation, a CPU and GPU profiler, and RenderDoc.
-- **For agents**: every window's data is also a record, every action an RPC method and a script verb. `ngen-view` runs headless with a script
+- **For agents**: every window's data is also a record, every action an RPC method and a console command. `ngen-view` runs headless with a script
   (`--script`, `--screenshot`), and `ngen-introspect` lists, reads and calls any running process, and streams its trace.
 
 **Tooling**
@@ -202,7 +202,7 @@ and configurations).
 `ngen-cli` is the front door to the engine's tools. You pick a platform and config once with `set`; after that, `build` and the tool commands use
 it, so you stop spelling out `-p`/`-c` and `_out/<platform>/<config>/` on every command.
 
-[`REFERENCE.md`](REFERENCE.md) is the quick reference for every tool's commands and flags, ngen-view's keys and script verbs, the RPC methods,
+[`REFERENCE.md`](REFERENCE.md) is the quick reference for every tool's commands and flags, ngen-view's keys and console commands, the RPC methods,
 the records and the cvars.
 
 ### First-time setup
@@ -270,14 +270,14 @@ Forwarded tools replace the cli process, so their output, signals and exit code 
 | `--camera=<pose or /path>` | Start at a pose (`x,y,z,yaw,pitch`) or a camera the scene authors |
 | `--view=<lit, albedo, normals, …>` | The G-buffer or debug view to show |
 | `--overlay=<name=on/off,…>` | Overlays: grid, origin, gizmo, aabbs, lightgizmos, cascadefrusta, buffer, shadow, aa |
-| `--script=<file>` | Script lines: `<frame> <verb> <args>`, frames counted once the scene is resident |
+| `--script=<file>` | Script lines: `<frame> <command> <args>`, frames counted once the scene is resident |
 | `--screenshot=<file>`, `--frames=<n>` | A PNG of the last frame, and quit after `n` frames |
 | `--validation`, `--fail-on-validation` | Vulkan validation; with the second, exit nonzero on any validation error |
 | `--show-ui` | Keep the UI in screenshots |
 | `--no-wait-resident` | Count script frames from start-up instead of from the scene being resident |
 | `--renderdoc`, `--no-rpc`, `--render-debug`, `--geometry-limit=<MiB>`, `--select=<path>`, `--camera-frame=<path>` | RenderDoc capture, no endpoint, the render debug snapshot always on, the geometry pool's limit, a selection, framing a prim |
 
-`SDL_VIDEODRIVER=offscreen` runs it without a window. The verbs, records and methods are listed by `./ngen-cli introspect describe` against a
+`SDL_VIDEODRIVER=offscreen` runs it without a window. The console commands, records and methods are listed by `./ngen-cli introspect describe` against a
 running view; `src/view/README.md` has them by domain.
 
 ### Controls

@@ -565,7 +565,7 @@ material and passes it flat to `gbuffer.frag`; a draw spans many instances, so t
 - **`ResourcePool`.** Transient textures for the frame graph, reused across frames by size, format and usage; flushed on swapchain recreation.
 - **Textures.** Material textures are RGBA8 sRGB with full mip chains; a dome's sky is `E5B9G9R9_UFLOAT` with one level ("The sky"). Textures from files arrive packed by the asset server with every level
   (`src/asset/README.md`), and are uploaded as they are; the generated 1×1 textures of constant colours have one level. The material sampler is
-  trilinear with anisotropy and editable live (`SamplerSettings`, `sampler` session verb); changing it rebuilds the geometry descriptor sets.
+  trilinear with anisotropy and editable live (`SamplerSettings`, `sampler` console command); changing it rebuilds the geometry descriptor sets.
 
 ## Shadows
 

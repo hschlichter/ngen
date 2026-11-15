@@ -45,7 +45,7 @@ auto parseDump(const std::string& args) -> std::expected<Json, std::string> {
 
 } // namespace
 
-auto registerProfileCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& records) -> void {
+auto registerProfileCommands(RpcRegistry& registry, ConsoleCommands& console, RpcRecords& records) -> void {
     registry.add(
         {
             .name = "introspect.profile",
@@ -69,7 +69,7 @@ auto registerProfileCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords&
             responder.respond(*result);
         });
 
-    verbs.add("dump-profile", "introspect.profile", parseDump);
+    console.add("dump-profile", "introspect.profile", parseDump);
 
     registry.add(
         {
@@ -103,7 +103,7 @@ auto registerProfileCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords&
             responder.respond(Json::object());
         });
 
-    verbs.add("profile-reset", "profile.reset", RpcVerbs::none);
+    console.add("profile-reset", "profile.reset", ConsoleCommands::none);
 
     profile::registerProfileRecords(records);
 

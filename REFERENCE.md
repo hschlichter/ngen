@@ -1,6 +1,6 @@
 # ngen quick reference
 
-A cheat sheet of the commands, flags, script verbs, RPC methods and records, for humans and agents. Every row says what it does in one line;
+A cheat sheet of the commands, flags, console commands, RPC methods and records, for humans and agents. Every row says what it does in one line;
 the library READMEs linked at the end explain how and why. The live sources of truth are `./ngen-cli introspect describe view` (every
 method and its parameters) and the `cvars` record (every cvar).
 
@@ -23,7 +23,7 @@ wait $trace
 jq -c 'select(.severity != "info") | {process, severity, type, text}' /tmp/trace.jsonl   # empty on a clean run
 ```
 
-A script file holds `<frame> <verb> [args]` per line, for example `120 record render /tmp/records.jsonl`. Frames count from when the scene is
+A script file holds `<frame> <command> [args]` per line, for example `120 record render /tmp/records.jsonl`. Frames count from when the scene is
 first resident.
 
 Test scenes: `assets/three_cubes.usda` (smoke test), `assets/layered/root.usda` (composition), `assets/main_sponza/NewSponza_Main_USD_Zup_003.usda`
@@ -83,7 +83,7 @@ substring of a library, program, tool or alias name.
 | Flag | Does |
 |---|---|
 | `--frames=N` | Quit after N frames (counted from the scene first being resident). |
-| `--script=FILE` | Run a script: `<frame> <verb> [args]` per line. |
+| `--script=FILE` | Run a script: `<frame> <command> [args]` per line. |
 | `--screenshot=PATH` | Write the presented frame as PNG on the last frame (frame 3 without `--frames`). The UI is left out. |
 | `--show-ui` | Keep the UI (menu bar, windows, status bar) in screenshots. |
 | `--camera=x,y,z,yaw,pitch` | Start camera pose, set before the scene loads. |
@@ -122,14 +122,14 @@ Headless: set `SDL_VIDEODRIVER=offscreen`.
 | Ctrl+5 | Every view and overlay off for the plain lit image; again restores them. |
 | F12 | Screenshot. |
 
-## Script verbs
+## Console commands
 
-A script line is `<frame> <verb> [args]`. Every verb runs an RPC method with the same code, so the method column also tells you what to call
+A script line is `<frame> <command> [args]`. Every console command runs an RPC method with the same code, so the method column also tells you what to call
 live.
 
 ### Scene and selection
 
-| Verb | Method | Does |
+| Console command | Method | Does |
 |---|---|---|
 | `select /prim` | `view.select` | Select a prim; an empty path deselects. |
 | `pick <x> <y>` | `view.pick` | Select what is drawn at a framebuffer pixel (GPU readback; the `Picked` event names it). |
@@ -143,7 +143,7 @@ live.
 
 ### Camera
 
-| Verb | Method | Does |
+| Console command | Method | Does |
 |---|---|---|
 | `camera x,y,z,yaw,pitch [debug]` | `view.camera.set` | Place the main camera, or the debug camera (turn it on first: `debug-camera on`). |
 | `camera-use /camera/prim` | `view.camera.use` | Move to a camera the scene authors. |
@@ -159,7 +159,7 @@ live.
 
 ### LOD and streaming
 
-| Verb | Method | Does |
+| Console command | Method | Does |
 |---|---|---|
 | `lod <root> <level>` | `view.lod.set` | The level a LOD root wants; loads it. Holds the script until drawn. |
 | `lod-reset <root>` | `view.lod.reset` | Back to the default level. |
@@ -181,7 +181,7 @@ live.
 
 These set cvars. `cvar <name> <value>` sets any value; `cvar-reset [<name or prefix>]` puts values back to their defaults.
 
-| Verb | Does |
+| Console command | Does |
 |---|---|
 | `cvar <name> <value>` | Set any cvar (`cvar render.shadow.cascades 1`). |
 | `cvar-reset [<name or prefix>]` | Reset one value, a group, or all. |
@@ -201,7 +201,7 @@ These set cvars. `cvar <name> <value>` sets any value; `cvar-reset [<name or pre
 
 ### Output, capture and UI
 
-| Verb | Method | Does |
+| Console command | Method | Does |
 |---|---|---|
 | `record <record> <file>` | `introspect.record` | Append a record to a file as one JSON line: `{record, requested_frame, frame, ts_ns, value}`. |
 | `screenshot <path>` | `view.screenshot` | Write the presented image as PNG. |
@@ -214,9 +214,9 @@ These set cvars. `cvar <name> <value>` sets any value; `cvar-reset [<name or pre
 | `renderdoc-capture` | `renderdoc.capture` | RenderDoc capture of the next frame (needs `--renderdoc`). |
 | `window <name> on\|off` | `view.window` | Open or close a window: `memory`, `capture`, `framedebugger`, `gpuscene`, `counters`, `shaders`, `culling`, `assets`, `lod`, `streaming`, `camera`, `renderdebug`, `framegraph`, `performance`, `cvars`. |
 
-## RPC methods without a verb
+## RPC methods without a console command
 
-Every method above is also callable live: `./ngen-cli introspect call view <method> '<json params>'`. These ngen-view methods have no verb.
+Every method above is also callable live: `./ngen-cli introspect call view <method> '<json params>'`. These ngen-view methods have no console command.
 The asset server serves only its own methods (next section), and no `rpc.*`.
 
 | Method | Does |

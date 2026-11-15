@@ -1,5 +1,6 @@
 #include "assetclient.h"
 #include "assetid.h"
+#include "consolecommands.h"
 #include "gizmorender.h"
 #include "ground.h"
 #include "imguibackendvulkan.h"
@@ -13,7 +14,6 @@
 #include "rhidevicevulkan.h"
 #include "rpcendpoint.h"
 #include "rpcregistry.h"
-#include "rpcverbs.h"
 #include "sessionscript.h"
 #include "stallwatch.h"
 #include "toolcommands.h"
@@ -263,7 +263,7 @@ auto main(int argc, char* argv[]) -> int {
             keep.push_back(std::move(c));
         }
         for (auto& c : keep) {
-            session.add(c.frame, c.verb, c.args);
+            session.add(c.frame, c.name, c.args);
         }
     }
     TRACE_EVENT("Engine", "ProcessStarted", "view")
@@ -460,7 +460,7 @@ auto main(int argc, char* argv[]) -> int {
     std::vector<ResidentWaiter> residentWaiters;
     std::vector<RenderLodRequest> renderLodRequests;
     ScriptClock script = {.waitForResident = waitForResident, .lastFrame = maxFrames};
-    // Dumps and captures that finish frames later, for script verbs and RPC calls alike.
+    // Dumps and captures that finish frames later, for console commands and RPC calls alike.
     ViewDumps dumps(
         [&scene]() -> const RenderWorld& { return scene.renderWorld(); },
         [&scene](uint32_t prim) -> std::string { return scene.primPath(prim); },
@@ -498,12 +498,12 @@ auto main(int argc, char* argv[]) -> int {
         .autoFrame = frame.autoFrame,
         .sceneLabel = positional.size() >= 2 ? std::string(positional[1]) : std::string("(new scene)"),
     };
-    // Each layer adds its methods, script verbs and records: the engine's, the tools', the UI's.
-    RpcVerbs verbs;
+    // Each layer adds its methods, console commands and records: the engine's, the tools', the UI's.
+    ConsoleCommands console;
     RpcRecords records;
-    registerViewCommands(registry, verbs, records, viewContext);
-    registerToolCommands(registry, verbs, records, viewContext, tools);
-    registerUiCommands(registry, verbs, records, viewUI);
+    registerViewCommands(registry, console, records, viewContext);
+    registerToolCommands(registry, console, records, viewContext, tools);
+    registerUiCommands(registry, console, records, viewUI);
     registerRpcRecords(registry, records);
     // The endpoint is tooling: debug and release only (NGEN_INTROSPECTION), off with --no-rpc.
     RpcEndpoint endpoint;
@@ -520,7 +520,7 @@ auto main(int argc, char* argv[]) -> int {
     if (startCamera.starts_with("/")) {
         frame.startCamera = startCamera;
     } else if (!startCamera.empty()) {
-        verbs.run(registry, "camera", startCamera);
+        console.run(registry, "camera", startCamera);
         frame.autoFrame = false;
     }
     if (startFrameTarget != "scene") {
@@ -539,7 +539,7 @@ auto main(int argc, char* argv[]) -> int {
             PROFILE_ZONE_DETAIL("Hooks.afterScene", Frame);
             hooks.afterScene(frame);
         }
-        runFrameCommands(viewContext, session, registry, verbs, endpoint);
+        runFrameCommands(viewContext, session, registry, console, endpoint);
         frame.advanceTime(SDL_GetTicksNS());
         frame.resetCameras();
         {

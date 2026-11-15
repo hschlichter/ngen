@@ -11,7 +11,7 @@
 #include <sstream>
 #include <string_view>
 
-// The cvars' commands (src/cvar/README.md): cvar.get, set and reset, the cvars record, and the verbs that set values,
+// The cvars' commands (src/cvar/README.md): cvar.get, set and reset, the cvars record, and the console commands that set values,
 // `cvar` and the older short forms.
 
 namespace {
@@ -55,7 +55,7 @@ auto parseOverlay(const std::string& args) -> std::expected<Json, std::string> {
         {"aa", "render.antialiasing"},
     }};
     Json values = Json::object();
-    for (const auto& [name, state] : RpcVerbs::items(args)) {
+    for (const auto& [name, state] : ConsoleCommands::items(args)) {
         auto found = std::ranges::find(overlays, std::string_view(name), &std::pair<std::string_view, const char*>::first);
         if (found == overlays.end() || state.empty()) {
             return std::unexpected(std::format("expected name=on|off for grid, origin, gizmo, aabbs, lightgizmos, buffer, shadow, aa or cascadefrusta, got '{}'", name));
@@ -83,7 +83,7 @@ auto parseCull(const std::string& args) -> std::expected<Json, std::string> {
 
 auto parseSampler(const std::string& args) -> std::expected<Json, std::string> {
     Json values = Json::object();
-    for (const auto& [key, value] : RpcVerbs::items(args)) {
+    for (const auto& [key, value] : ConsoleCommands::items(args)) {
         if (key == "aniso") {
             values["render.sampler.anisotropy"] = value;
         } else if (key == "bias") {
@@ -101,7 +101,7 @@ auto parseSampler(const std::string& args) -> std::expected<Json, std::string> {
 
 auto parseShadow(const std::string& args) -> std::expected<Json, std::string> {
     Json values = Json::object();
-    for (const auto& [key, value] : RpcVerbs::items(args)) {
+    for (const auto& [key, value] : ConsoleCommands::items(args)) {
         if (key == "cascades") {
             values["render.shadow.cascades"] = value;
         } else if (key == "tile") {
@@ -141,7 +141,7 @@ auto parseAmbient(const std::string& args) -> std::expected<Json, std::string> {
 
 auto parseGpuScene(const std::string& args) -> std::expected<Json, std::string> {
     Json values = Json::object();
-    for (const auto& [key, value] : RpcVerbs::items(args)) {
+    for (const auto& [key, value] : ConsoleCommands::items(args)) {
         if (key == "budget") {
             values["render.upload.budgetMiB"] = value;
         } else if (key == "limit") {
@@ -254,7 +254,7 @@ auto cvarText(const Json& value) -> std::string {
 
 } // namespace
 
-// The verbs that set cvars (`view lit`, `prepass on`, …): their arguments as cvar.set's {values}.
+// The console commands that set cvars (`view lit`, `prepass on`, …): their arguments as cvar.set's {values}.
 auto cvarValues(std::initializer_list<std::pair<const char*, std::string>> values) -> Json {
     Json out = Json::object();
     for (const auto& [name, value] : values) {
@@ -263,7 +263,7 @@ auto cvarValues(std::initializer_list<std::pair<const char*, std::string>> value
     return Json{{"values", out}};
 }
 
-auto registerCvarCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& records) -> void {
+auto registerCvarCommands(RpcRegistry& registry, ConsoleCommands& console, RpcRecords& records) -> void {
     registry.add(
         {
             .name = "cvar.get",
@@ -341,20 +341,20 @@ auto registerCvarCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& re
             responder.respond({{"values", out}});
         });
 
-    verbs.add("cvar", "cvar.set", parseCvar);
-    verbs.add("cvar-reset", "cvar.reset", parseCvarReset);
-    verbs.add("view", "cvar.set", parseViewMode);
-    verbs.add("debugview", "cvar.set", parseDebugView);
-    verbs.add("overlay", "cvar.set", parseOverlay);
-    verbs.add("cull", "cvar.set", parseCull);
-    verbs.add("sampler", "cvar.set", parseSampler);
-    verbs.add("shadow", "cvar.set", parseShadow);
-    verbs.add("prepass", "cvar.set", parsePrepass);
-    verbs.add("occlusion", "cvar.set", parseOcclusion);
-    verbs.add("hzb-level", "cvar.set", parseHzbLevel);
-    verbs.add("aa", "cvar.set", parseAntiAliasing);
-    verbs.add("ambient", "cvar.set", parseAmbient);
-    verbs.add("gpuscene", "cvar.set", parseGpuScene);
+    console.add("cvar", "cvar.set", parseCvar);
+    console.add("cvar-reset", "cvar.reset", parseCvarReset);
+    console.add("view", "cvar.set", parseViewMode);
+    console.add("debugview", "cvar.set", parseDebugView);
+    console.add("overlay", "cvar.set", parseOverlay);
+    console.add("cull", "cvar.set", parseCull);
+    console.add("sampler", "cvar.set", parseSampler);
+    console.add("shadow", "cvar.set", parseShadow);
+    console.add("prepass", "cvar.set", parsePrepass);
+    console.add("occlusion", "cvar.set", parseOcclusion);
+    console.add("hzb-level", "cvar.set", parseHzbLevel);
+    console.add("aa", "cvar.set", parseAntiAliasing);
+    console.add("ambient", "cvar.set", parseAmbient);
+    console.add("gpuscene", "cvar.set", parseGpuScene);
 
     records.add("cvars", "the cvars: every value with its type, value, default, description and range or choices", [](RpcResponder responder) {
         responder.respond(cvarRecord(""));

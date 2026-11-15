@@ -161,7 +161,7 @@ enum class LodPreference : uint8_t {
     Authored,   // the first usable heuristic, as UsdLod has a renderer choose
 };
 
-// A preference's name, as the verb and the records say it ("distance", "screen", "authored"), and back.
+// A preference's name, as the console command and the records say it ("distance", "screen", "authored"), and back.
 auto lodPreferenceName(LodPreference preference) -> const char*;
 auto lodPreferenceFromName(std::string_view name) -> std::optional<LodPreference>;
 

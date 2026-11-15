@@ -84,7 +84,7 @@
   <rect x="28" y="424" width="170" height="104" rx="10" fill="#ffffff" stroke="#cbd5e1"/>
   <text x="44" y="450" class="h">Agents, scripts</text>
   <text x="44" y="474" class="t">read records, call</text>
-  <text x="44" y="492" class="t">methods, run verbs</text>
+  <text x="44" y="492" class="t">methods, run console commands</text>
   <text x="44" y="512" class="s mono">ngen-view --script</text>
 
   <line x1="198" y1="476" x2="242" y2="476" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>

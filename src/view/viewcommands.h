@@ -2,10 +2,10 @@
 
 #include "assetgoto.h"
 #include "cameraflight.h"
+#include "consolecommands.h"
 #include "ground.h"
 #include "rpcrecords.h"
 #include "rpcregistry.h"
-#include "rpcverbs.h"
 #include "viewframe.h"
 #include <nlohmann/json.hpp>
 
@@ -94,22 +94,22 @@ struct ViewContext {
     std::function<Camera*()> debugCamera;
 };
 
-// Registers ngen-view's engine commands, each domain's methods, script verbs and records: the camera (cameracommands.cpp), the scene
+// Registers ngen-view's engine commands, each domain's methods, console commands and records: the camera (cameracommands.cpp), the scene
 // (scenecommands.cpp), LOD and streaming (lodcommands.cpp), the cvars (cvarcommands.cpp), the renderer's display and captures
 // (displaycommands.cpp), the profiler (profilecommands.cpp), and introspect.record. The tools and the UI add theirs (src/tools/toolcommands.h,
 // src/ui/uicommands.h). `records` must outlive the registry.
-auto registerViewCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& records, ViewContext& view) -> void;
+auto registerViewCommands(RpcRegistry& registry, ConsoleCommands& console, RpcRecords& records, ViewContext& view) -> void;
 
-auto registerCameraCommands(RpcRegistry& registry, RpcVerbs& verbs, ViewContext& view) -> void;
-auto registerSceneCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& records, ViewContext& view) -> void;
-auto registerLodCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& records, ViewContext& view) -> void;
-auto registerCvarCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& records) -> void;
-auto registerDisplayCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& records, ViewContext& view) -> void;
-auto registerProfileCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& records) -> void;
+auto registerCameraCommands(RpcRegistry& registry, ConsoleCommands& console, ViewContext& view) -> void;
+auto registerSceneCommands(RpcRegistry& registry, ConsoleCommands& console, RpcRecords& records, ViewContext& view) -> void;
+auto registerLodCommands(RpcRegistry& registry, ConsoleCommands& console, RpcRecords& records, ViewContext& view) -> void;
+auto registerCvarCommands(RpcRegistry& registry, ConsoleCommands& console, RpcRecords& records) -> void;
+auto registerDisplayCommands(RpcRegistry& registry, ConsoleCommands& console, RpcRecords& records, ViewContext& view) -> void;
+auto registerProfileCommands(RpcRegistry& registry, ConsoleCommands& console, RpcRecords& records) -> void;
 
 // The commands due this frame: the script's lines at its frame while nothing holds its clock, then the calls the endpoint received. Once a
 // frame, after the scene update and the tools' lists.
-auto runFrameCommands(ViewContext& view, SessionScript& session, const RpcRegistry& registry, const RpcVerbs& verbs, RpcEndpoint& endpoint) -> void;
+auto runFrameCommands(ViewContext& view, SessionScript& session, const RpcRegistry& registry, const ConsoleCommands& console, RpcEndpoint& endpoint) -> void;
 
 // Answers the methods waiting for the scene to be resident once it is; once a frame, after residency is updated.
 auto answerResidentWaiters(ViewContext& view) -> void;
@@ -121,5 +121,5 @@ auto serviceRenderLodRequests(ViewContext& view) -> bool;
 // The view's LOD tuning as the records give it: bias, hysteresis, blending, and every override by authored root and heuristic.
 auto lodTuningJson(const LodTuning& tuning) -> rpc::Json;
 
-// The verbs that set cvars (`view lit`, `prepass on`, `lod-show labels on`, …): their arguments as cvar.set's {values}.
+// The console commands that set cvars (`view lit`, `prepass on`, `lod-show labels on`, …): their arguments as cvar.set's {values}.
 auto cvarValues(std::initializer_list<std::pair<const char*, std::string>> values) -> rpc::Json;

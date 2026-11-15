@@ -36,7 +36,7 @@
   <text x="44" y="386.0" class="layer" fill="#16a34a">Instrumentation</text>
   <rect x="202" y="356" width="229" height="50" rx="7" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
   <text x="214" y="377" class="lib">viewcommands</text>
-  <text x="214" y="395" class="s">methods, verbs, records by domain</text>
+  <text x="214" y="395" class="s">methods, console commands, records by domain</text>
   <rect x="441" y="356" width="322" height="50" rx="7" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
   <text x="453" y="377" class="lib">rendertools</text>
   <text x="453" y="395" class="s">snapshots, frame debugger, counters, screenshots</text>

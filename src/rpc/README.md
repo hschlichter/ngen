@@ -10,7 +10,7 @@ discovery files.
 | Part | Files | Depends on |
 |---|---|---|
 | Core | `core/rpcframe.*` (frames), `core/rpcprotocol.*` (JSON-RPC messages, error codes), `core/rpcsocket.*` (loopback TCP), `core/rpcserver.*` (an endpoint with an I/O thread that listens, connects out, or both), `core/rpcclient.*` (blocking client), `core/rpcdiscovery.*` (discovery files), `core/rpcresponder.*` (replies that can complete later), `core/rpcrecords.*` (named records: `introspect.list`, `introspect.get`) | the standard library and header-only nlohmann/json (`external/json`) |
-| Engine layer | `rpcregistry.*` (methods, parameter schemas, `rpc.*` builtins, records as methods), `rpcverbs.*` (script verbs: a line's text to a method's parameters), `rpcendpoint.*` (server + discovery + main-thread dispatch, the trace stream) | the core, `src/trace` |
+| Engine layer | `rpcregistry.*` (methods, parameter schemas, `rpc.*` builtins, records as methods), `consolecommands.*` (console commands: a line's text to a method's parameters), `rpcendpoint.*` (server + discovery + main-thread dispatch, the trace stream) | the core, `src/trace` |
 | Tool | `ngen-introspect` (`src/introspect/`) | the core |
 
 The core stays free of engine code, so a process that isn't the engine uses it alone: the asset server serves its methods and records on the core's `RpcServer` and `RpcRecords` with a dispatch of its own (and so has no `rpc.describe`), and `ngen-introspect` is a client on it. Only `.cpp` files include `nlohmann/json.hpp`; headers
@@ -65,7 +65,7 @@ process is gone, so a crashed process leaves nothing behind after the next listi
    - a result description
 3. Write the handler: parameters are checked before it runs, so it can read them with `get<>()`. Answer through the responder; use
    `rpc::appError` with a message for engine failures.
-4. If it should also be a script verb, add it to the `RpcVerbs` table beside the method (`verbs.add(verb, method, parser)`), with a parser from
+4. If it should also be a console command, add it to the `ConsoleCommands` table beside the method (`console.add(name, method, parser)`), with a parser from
    the script's text to the parameters. Script lines and live calls then run the same code.
 5. `rpc.describe` lists the new method automatically.
 
