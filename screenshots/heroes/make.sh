@@ -103,7 +103,7 @@ hero_trace() {
     magick "$out/trace/shot.png" -strip -depth 8 $shots/trace_hero.png
 }
 
-# The Configuration window over the castle, cropped to it.
+# The Cvars window over the castle, cropped to it.
 hero_config() {
     fresh config
     view "$world" --camera=/cameras/castle --show-ui --script=$shots/heroes/config.txt > "$out/config.log" 2>&1

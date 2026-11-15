@@ -84,10 +84,10 @@ auto parseCameraFollow(const std::string& args) -> std::expected<Json, std::stri
     std::string metres;
     in >> first >> metres;
     if ((first == "on" || first == "off") && metres.empty()) {
-        return configValues({{"view.camera.follow", first}});
+        return cvarValues({{"view.camera.follow", first}});
     }
     if (first == "height" && !metres.empty()) {
-        return configValues({{"view.camera.followHeight", metres}});
+        return cvarValues({{"view.camera.followHeight", metres}});
     }
     return std::unexpected(std::format("expected 'on|off' or 'height <metres>', got '{}'", args));
 }
@@ -248,7 +248,7 @@ auto registerCameraCommands(RpcRegistry& registry, RpcVerbs& verbs, ViewContext&
     verbs.add("camera-frame", "view.camera.frame", parseTarget);
     verbs.add("camera-use", "view.camera.use", parseCameraPath);
     verbs.add("camera-orbit", "view.camera.orbit", parseCameraOrbit);
-    verbs.add("camera-follow", "config.set", parseCameraFollow);
+    verbs.add("camera-follow", "cvar.set", parseCameraFollow);
     verbs.add("fly", "view.camera.fly", parseFly);
     verbs.add("fly-stop", "view.camera.fly.stop", RpcVerbs::none);
 }

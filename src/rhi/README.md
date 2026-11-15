@@ -246,7 +246,7 @@ program can check.
   around what the driver can make slow: `RhiCreateBuffer` (value: the bytes asked for) and `RhiCreateTexture`, each with a `vkAllocateMemory`
   zone inside (a texture's value: the bytes allocated), `vkMapMemory`, `RhiDestroyBuffer` and `RhiDestroyTexture`. They sit inside the caller's
   zone, so growing a buffer shows the driver's allocation under the zone that grew it. The interface headers stay free of it; a program
-  that links the backend links `profile`, `tracy` and `config` too.
+  that links the backend links `profile`, `tracy` and `cvar` too.
 - **Barriers.** `pipelineBarrier` maps each state to a layout (textures), stage mask and access mask and records one
   `vkCmdPipelineBarrier2` for all texture and buffer barriers.
 - **Command buffers.** Each `RhiCommandBufferVulkan` owns a timestamp query pool for up to 1,024 GPU zones, reset at

@@ -5,7 +5,7 @@
 #include "debugview.h"
 #include "drawlists.h"
 #include "primpath.h"
-#include "renderconfig.h"
+#include "rendercvars.h"
 #include "viewscene.h"
 
 #include <glm/glm.hpp>
@@ -55,7 +55,7 @@ auto parseLodShow(const std::string& args) -> std::expected<Json, std::string> {
     std::string state;
     in >> layer >> state;
     if (layer == "color" && (state == "level" || state == "depth")) {
-        return configValues({{"tools.lod.colorByDepth", state == "depth" ? "true" : "false"}});
+        return cvarValues({{"tools.lod.colorByDepth", state == "depth" ? "true" : "false"}});
     }
     static constexpr std::array<std::pair<std::string_view, const char*>, 4> layers = {{
         {"labels", "tools.lod.labels"},
@@ -67,7 +67,7 @@ auto parseLodShow(const std::string& args) -> std::expected<Json, std::string> {
     if (found == layers.end() || (state != "on" && state != "off")) {
         return std::unexpected(std::format("expected 'labels|gizmo|gizmo-all|flash on|off' or 'color level|depth', got '{}'", args));
     }
-    return configValues({{found->second, state}});
+    return cvarValues({{found->second, state}});
 }
 
 // `streaming-show bounds|rings|rings-all|labels on|off`.
@@ -86,10 +86,10 @@ auto parseStreamingShow(const std::string& args) -> std::expected<Json, std::str
     if (found == layers.end() || (state != "on" && state != "off")) {
         return std::unexpected(std::format("expected 'bounds|rings|rings-all|labels on|off', got '{}'", args));
     }
-    return configValues({{found->second, state}});
+    return cvarValues({{found->second, state}});
 }
 
-// The debug camera's state: its pose and the trail's length (its switches are the config record's tools.debugcamera.*).
+// The debug camera's state: its pose and the trail's length (its switches are the cvars record's tools.debugcamera.*).
 auto debugCameraJson(const DebugCameraState& debug) -> Json {
     return {
         {"position", Json(debug.camera.position)},
@@ -225,7 +225,7 @@ auto lodToolRecord(const ViewContext& view, const ToolsState& tools) -> Json {
         {"selectedRoot", root.empty() ? Json(nullptr) : Json(root)},
         {"inspection", inspection},
         {"tuning", lodTuningJson(view.scene.lodTuning())},
-        {"levelView", renderconfig::viewMode.get() == (size_t) ViewMode::LodLevel},
+        {"levelView", rendercvars::viewMode.get() == (size_t) ViewMode::LodLevel},
         {"pops", view.lodPops},
         {"windowRows", window.rows.size()},
     };
@@ -235,13 +235,13 @@ auto lodToolRecord(const ViewContext& view, const ToolsState& tools) -> Json {
 
 auto registerToolCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& records, ViewContext& view, ToolsState& tools) -> void {
     view.debugCamera = [&tools]() -> Camera* {
-        return toolsconfig::debugCamera.get() ? &tools.debugCamera.camera : nullptr;
+        return toolscvars::debugCamera.get() ? &tools.debugCamera.camera : nullptr;
     };
 
     registry.add(
         {
             .name = "view.camera.debug",
-            .summary = "The debug camera's actions: place puts it 15 m behind and 10 m above the main camera, clearTrail forgets the main camera's trail. Its switches are configuration values (tools.debugcamera.on, controlMain, lod, cull, shadows, trail); the switches here set them, as the debug-camera verb does.",
+            .summary = "The debug camera's actions: place puts it 15 m behind and 10 m above the main camera, clearTrail forgets the main camera's trail. Its switches are cvars (tools.debugcamera.on, controlMain, lod, cull, shadows, trail); the switches here set them, as the debug-camera verb does.",
             .params = {optionalField("place", RpcType::Bool, "put it behind and above the main camera"),
                        optionalField("clearTrail", RpcType::Bool, "forget the trail"),
                        optionalField("on", RpcType::Bool, "tools.debugcamera.on"),
@@ -254,12 +254,12 @@ auto registerToolCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& re
         },
         [&tools](const Json& p, RpcResponder responder) {
             auto& debug = tools.debugCamera;
-            for (auto [field, value] : {std::pair{"on", &toolsconfig::debugCamera},
-                                        std::pair{"controlMain", &toolsconfig::debugControlMain},
-                                        std::pair{"lodFromDebug", &toolsconfig::debugLod},
-                                        std::pair{"cullFromDebug", &toolsconfig::debugCull},
-                                        std::pair{"shadowsFromDebug", &toolsconfig::debugShadows},
-                                        std::pair{"trail", &toolsconfig::debugTrail}}) {
+            for (auto [field, value] : {std::pair{"on", &toolscvars::debugCamera},
+                                        std::pair{"controlMain", &toolscvars::debugControlMain},
+                                        std::pair{"lodFromDebug", &toolscvars::debugLod},
+                                        std::pair{"cullFromDebug", &toolscvars::debugCull},
+                                        std::pair{"shadowsFromDebug", &toolscvars::debugShadows},
+                                        std::pair{"trail", &toolscvars::debugTrail}}) {
                 if (p.contains(field)) {
                     value->set(p[field].get<bool>());
                 }
@@ -307,10 +307,10 @@ auto registerToolCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& re
         });
 
     verbs.add("debug-camera", "view.camera.debug", parseDebugCamera);
-    verbs.add("lod-show", "config.set", parseLodShow);
-    verbs.add("streaming-show", "config.set", parseStreamingShow);
+    verbs.add("lod-show", "cvar.set", parseLodShow);
+    verbs.add("streaming-show", "cvar.set", parseStreamingShow);
 
-    records.add("debugcamera", "the debug camera: its position, yaw and pitch, and the main camera's trail points; its switches are the config record's tools.debugcamera.*", [&tools](RpcResponder responder) {
+    records.add("debugcamera", "the debug camera: its position, yaw and pitch, and the main camera's trail points; its switches are the cvars record's tools.debugcamera.*", [&tools](RpcResponder responder) {
         responder.respond(debugCameraJson(tools.debugCamera));
     });
     records.add("streamingtool",

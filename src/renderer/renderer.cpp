@@ -1,6 +1,6 @@
 #include "renderer.h"
 
-#include "renderconfig.h"
+#include "rendercvars.h"
 
 #include "blitpass.h"
 #include "instanceuploadpass.h"
@@ -1423,14 +1423,14 @@ auto Renderer::destroy() -> void {
     delete swapchain;
 }
 
-namespace renderconfig {
+namespace rendercvars {
 
-config::Bool antiAliasing{"render.antialiasing", true, "FXAA on the lit image; off shows it as the passes wrote it (a LOD fade's dither unblurred)."};
-config::Bool depthPrepass{"render.prepass", false, "A depth-only pass before the geometry pass; off by default, as it costs more than it saves without heavy overdraw."};
-config::Float samplerAnisotropy{"render.sampler.anisotropy", 8.0, "The material sampler's maximum anisotropy; 0 turns it off.", {.min = 0.0, .max = 16.0}};
-config::Float samplerLodBias{"render.sampler.lodBias", 0.0, "Added to the mip level the material sampler picks; positive is blurrier.", {.min = -16.0, .max = 16.0}};
-config::Float samplerMinLod{"render.sampler.minLod", 0.0, "The finest mip level the material sampler may use; raising it forces coarser levels.", {.min = 0.0, .max = 16.0}};
-config::Bool samplerNearestMip{"render.sampler.nearestMip", false, "The nearest mip level instead of a blend of the two nearest."};
+cvar::Bool antiAliasing{"render.antialiasing", true, "FXAA on the lit image; off shows it as the passes wrote it (a LOD fade's dither unblurred)."};
+cvar::Bool depthPrepass{"render.prepass", false, "A depth-only pass before the geometry pass; off by default, as it costs more than it saves without heavy overdraw."};
+cvar::Float samplerAnisotropy{"render.sampler.anisotropy", 8.0, "The material sampler's maximum anisotropy; 0 turns it off.", {.min = 0.0, .max = 16.0}};
+cvar::Float samplerLodBias{"render.sampler.lodBias", 0.0, "Added to the mip level the material sampler picks; positive is blurrier.", {.min = -16.0, .max = 16.0}};
+cvar::Float samplerMinLod{"render.sampler.minLod", 0.0, "The finest mip level the material sampler may use; raising it forces coarser levels.", {.min = 0.0, .max = 16.0}};
+cvar::Bool samplerNearestMip{"render.sampler.nearestMip", false, "The nearest mip level instead of a blend of the two nearest."};
 
 auto samplerSettings() -> SamplerSettings {
     return {
@@ -1448,4 +1448,4 @@ auto setSamplerSettings(const SamplerSettings& settings) -> void {
     samplerNearestMip.set(settings.nearestMip);
 }
 
-} // namespace renderconfig
+} // namespace rendercvars

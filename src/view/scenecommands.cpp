@@ -489,11 +489,11 @@ auto registerSceneCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& r
         },
         [&view](const Json& p, RpcResponder responder) {
             if (p.contains("guide")) {
-                viewconfig::purposeGuide.set(p["guide"].get<bool>());
+                viewcvars::purposeGuide.set(p["guide"].get<bool>());
                 view.scene.setPurposeShown(Purpose::Guide, p["guide"].get<bool>());
             }
             if (p.contains("proxy")) {
-                viewconfig::purposeProxy.set(p["proxy"].get<bool>());
+                viewcvars::purposeProxy.set(p["proxy"].get<bool>());
                 view.scene.setPurposeShown(Purpose::Proxy, p["proxy"].get<bool>());
             }
             view.residentWaiters.push_back({.responder = std::move(responder), .result = Json::object()});
@@ -587,7 +587,7 @@ auto registerSceneCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& r
     verbs.add("wait-resident", "view.waitResident", RpcVerbs::none);
     verbs.add("quit", "view.quit", RpcVerbs::none);
 
-    records.add("status", "frame counter, scene, selection, the main camera and the camera modes; the render settings are the config record's, the debug camera's the debugcamera record", [&view](RpcResponder responder) {
+    records.add("status", "frame counter, scene, selection, the main camera and the camera modes; the render settings are the cvars record's, the debug camera's the debugcamera record", [&view](RpcResponder responder) {
         responder.respond(statusRecord(view));
     });
     records.add("scene", "the open scene: its layer stack, up axis and units, prims (instances expanded), prototypes, draws, lights and LOD levels set", [&view](RpcResponder responder) {

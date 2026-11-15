@@ -95,7 +95,7 @@ struct ViewContext {
 };
 
 // Registers ngen-view's engine commands, each domain's methods, script verbs and records: the camera (cameracommands.cpp), the scene
-// (scenecommands.cpp), LOD and streaming (lodcommands.cpp), the configuration (configcommands.cpp), the renderer's display and captures
+// (scenecommands.cpp), LOD and streaming (lodcommands.cpp), the cvars (cvarcommands.cpp), the renderer's display and captures
 // (displaycommands.cpp), the profiler (profilecommands.cpp), and introspect.record. The tools and the UI add theirs (src/tools/toolcommands.h,
 // src/ui/uicommands.h). `records` must outlive the registry.
 auto registerViewCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& records, ViewContext& view) -> void;
@@ -103,7 +103,7 @@ auto registerViewCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& re
 auto registerCameraCommands(RpcRegistry& registry, RpcVerbs& verbs, ViewContext& view) -> void;
 auto registerSceneCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& records, ViewContext& view) -> void;
 auto registerLodCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& records, ViewContext& view) -> void;
-auto registerConfigCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& records) -> void;
+auto registerCvarCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& records) -> void;
 auto registerDisplayCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& records, ViewContext& view) -> void;
 auto registerProfileCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& records) -> void;
 
@@ -121,5 +121,5 @@ auto serviceRenderLodRequests(ViewContext& view) -> bool;
 // The view's LOD tuning as the records give it: bias, hysteresis, blending, and every override by authored root and heuristic.
 auto lodTuningJson(const LodTuning& tuning) -> rpc::Json;
 
-// The verbs that set configuration values (`view lit`, `prepass on`, `lod-show labels on`, …): their arguments as config.set's {values}.
-auto configValues(std::initializer_list<std::pair<const char*, std::string>> values) -> rpc::Json;
+// The verbs that set cvars (`view lit`, `prepass on`, `lod-show labels on`, …): their arguments as cvar.set's {values}.
+auto cvarValues(std::initializer_list<std::pair<const char*, std::string>> values) -> rpc::Json;

@@ -483,12 +483,12 @@ auto inspectLodRoot(const ViewScene& scene, const CullResult& cull, const std::s
 }
 
 auto drawLodGizmos(const LodToolState& state, DebugDraw& draw, const glm::vec3& up, float windowArea) -> void {
-    if (!toolsconfig::lodGizmo.get() && !toolsconfig::lodGizmoAll.get()) {
+    if (!toolscvars::lodGizmo.get() && !toolscvars::lodGizmoAll.get()) {
         return;
     }
     for (const auto& row : state.rows) {
         bool selected = row.path == state.selectedRoot;
-        bool wanted = (toolsconfig::lodGizmo.get() && selected) || (toolsconfig::lodGizmoAll.get() && lodRowShown(state, row));
+        bool wanted = (toolscvars::lodGizmo.get() && selected) || (toolscvars::lodGizmoAll.get() && lodRowShown(state, row));
         if (!wanted || row.shape.kind == LodShape::Kind::None) {
             continue;
         }
@@ -551,12 +551,12 @@ auto lodRowShown(const LodToolState& state, const LodRow& row) -> bool {
     return true;
 }
 
-namespace toolsconfig {
+namespace toolscvars {
 
-config::Bool lodLabels{"tools.lod.labels", false, "Over each LOD root the LOD window lists: its name, drawn level (and the level fading in) and measure."};
-config::Bool lodGizmo{"tools.lod.gizmo", false, "The selected LOD root's heuristic in the viewport: its centre or box, a ring at each threshold."};
-config::Bool lodGizmoAll{"tools.lod.gizmoAll", false, "The heuristic of every LOD root the LOD window lists."};
-config::Bool lodPopFlash{"tools.lod.popFlash", false, "A render-LOD root's meshes flash white for half a second when its level changes without a fade, over any view."};
-config::Bool lodColorByDepth{"tools.lod.colorByDepth", false, "The LOD Level view coloured by how many LOD roots deep a draw is instead of by its drawn level."};
+cvar::Bool lodLabels{"tools.lod.labels", false, "Over each LOD root the LOD window lists: its name, drawn level (and the level fading in) and measure."};
+cvar::Bool lodGizmo{"tools.lod.gizmo", false, "The selected LOD root's heuristic in the viewport: its centre or box, a ring at each threshold."};
+cvar::Bool lodGizmoAll{"tools.lod.gizmoAll", false, "The heuristic of every LOD root the LOD window lists."};
+cvar::Bool lodPopFlash{"tools.lod.popFlash", false, "A render-LOD root's meshes flash white for half a second when its level changes without a fade, over any view."};
+cvar::Bool lodColorByDepth{"tools.lod.colorByDepth", false, "The LOD Level view coloured by how many LOD roots deep a draw is instead of by its drawn level."};
 
-} // namespace toolsconfig
+} // namespace toolscvars

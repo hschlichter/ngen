@@ -2,7 +2,7 @@
 
 Where the time goes, on every thread and on the GPU: markers that bracket a piece of work, a built-in collector that keeps the last seconds of
 them in memory, and Tracy as a second sink for whole sessions. The library (`profile`) is standard library only apart from Tracy's client and
-`config`, and is a foundation library like `trace`: `rpccore`, `trace`, `packer` and the RHI backend link it, so every program does — ngen-view, the asset server,
+`cvar`, and is a foundation library like `trace`: `rpccore`, `trace`, `packer` and the RHI backend link it, so every program does — ngen-view, the asset server,
 the packers and the tools.
 
 The built-in collector is the source of every profile number the engine shows or answers with: the Performance window, the `profile` and
@@ -62,7 +62,7 @@ starts, and blocks whose newest zone is older than the history window leave the 
 zone rate; the `profile` record says how much each track holds. Frames and GPU frames are kept for the same window. Readers copy out from any
 thread; a writer waits for a reader only while it starts a block.
 
-- **History**: `profile.history.seconds` (default 10, 1 to 120), a configuration value handed to the collector by the main loop when it changes.
+- **History**: `profile.history.seconds` (default 10, 1 to 120), a cvar handed to the collector by the main loop when it changes.
 - **Pausing** (the Performance window's Pause) drops new zones so the history stays as it is; zone stacks keep balancing. Tracy keeps recording.
 - **Tracks** are taken by a thread's first zone or `registerThread`. When a thread exits its track is free, and a thread registering the same name
   takes it over, so threads started again and again (the mip chain's workers) keep one track per name. 64 tracks at most.
@@ -173,10 +173,10 @@ before the reset isn't counted. This is how a run checks the main and render thr
   group; its `args` hold group, level, depth, value, file and line. Zones that overlap the window are included whole, so the first ones start before it.
   Plots are counter events (`"ph": "C"`), one series per plot. The asset server answers both methods too (`ngen-cli introspect call asset introspect.profile '{"path": …}'`).
   `profile.reset` / `profile-reset` (ngen-view): start `overBudget`'s counts again.
-- **Configuration**: `profile.history.seconds`, `profile.gpu.detail`, `profile.tracy.frameImages`, `profile.stall.seconds` (the stall watch's
+- **Cvars**: `profile.history.seconds`, `profile.gpu.detail`, `profile.tracy.frameImages`, `profile.stall.seconds` (the stall watch's
   threshold), and `profile.budget.frameMs`: the frame time content is measured against (default 16.7 ms, 60 frames a second), and what
-  `overBudget` counts against (`config` record,
-  `config` verb, Configuration window).
+  `overBudget` counts against (`cvars` record,
+  `cvar` verb, Cvars window).
 - **Trace**: `Stall` (a warning) and `StallEnded`, category Profile, from the stall watch; `ProfileReset` (category Engine) when the counts
   start again.
 - **Window**: Performance, the main, render, worker and GPU tracks on one clock in their group colours, with frame times, zone details (with the

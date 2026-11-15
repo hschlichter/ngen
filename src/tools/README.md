@@ -16,7 +16,7 @@ pan and zoom). Nothing here includes the UI, so the UI can be left out and the t
 | LOD | `lodtool.*` | `LodToolState`: the rows (every streaming root and render-LOD group), the inspection, the list's filters, the selection, the render-LOD counts, the window's requests | labels, the heuristic gizmo, the pop flash, the LOD Level view's colours (`tools.lod.*`) |
 | Streaming | `streamingtool.*` | `StreamingToolState`: the rows, totals, inspection, filters, selection, the strip chart's history, the cameras for the map, the flight, the requests | bounds, load and unload rings, labels (`tools.streaming.*`) |
 | Debug camera | `debugcamera.*` | `DebugCameraState`: its pose and the main camera's trail | the main camera's frustum, body and trail; its switches are `tools.debugcamera.*` |
-| Overlays | `overlays.*` | none: their switches are configuration values (`tools.overlay.*`) | the grid, the origin, every instance's bounds, the bounds by cull result, the frozen frustum, the cascades' light frusta, the lights' directions, the selection's bounds |
+| Overlays | `overlays.*` | none: their switches are cvars (`tools.overlay.*`) | the grid, the origin, every instance's bounds, the bounds by cull result, the frozen frustum, the cascades' light frusta, the lights' directions, the selection's bounds |
 | Gizmos | `gizmo.h`, `axis3dgizmo.*`, `translategizmo.*`, `rotategizmo.*`, `scalegizmo.*`, `gizmopass.*`, `gizmorender.*` | the active tool (`ToolsState::activeTool`, the menu's) | the transform gizmos on the selection and their drags; the axis gizmo in the view's corner, whose click turns the camera rendered from. All on the main thread; the render thread only draws their lines (`GizmoRender`, a render extension: `GizmoPass` after the debug lines) |
 
 `tools.h` holds the three as `ToolsState`, which `src/apps/view.cpp` owns and binds into `ViewUI` (`bindTools`).
@@ -35,12 +35,12 @@ streaming are decided from. How each tool works is in `src/view/README.md` ("The
 
 ## Rules
 
-- **Layering**: the library links `view`, `viewcommands`, `renderer` and `config`; `ui` links it. Its render-thread part is a render extension
+- **Layering**: the library links `view`, `viewcommands`, `renderer` and `cvar`; `ui` links it. Its render-thread part is a render extension
   (`GizmoRender`), so the renderer names none of it. Nothing here includes a `src/ui` header, and
   nothing in `src/view` or the renderer includes a header from here. SDL's event types are the one window-layer header here: the hooks take the
   window's events as the view's loop polls them.
 - **State**: a tool's state is data the tools' hooks fill and the windows read; requests (a level set, a root framed, radii tuned) are
   fields the window sets and the hooks apply and clear in the frame, never calls into the engine from the window.
 - **Hooks**: what a tool does each frame goes in `ToolsHooks` at its point in the frame, never in `src/apps/view.cpp`'s loop.
-- **Settings**: a tool's switches and layers are configuration values (`src/config/README.md`), named `tools.<tool>.*`, declared in its
+- **Settings**: a tool's switches and layers are cvars (`src/cvar/README.md`), named `tools.<tool>.*`, declared in its
   `.cpp` and named in its header; windows edit them by name.

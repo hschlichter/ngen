@@ -26,7 +26,7 @@ struct ViewMenuBarState {
     bool& antiAliasing;
     bool& showFrameGraph;
     bool& showPerformance;
-    bool& showConfig;
+    bool& showCvars;
     bool& showStatusBar;
     bool& showRenderDebug;
     bool& showCamera;

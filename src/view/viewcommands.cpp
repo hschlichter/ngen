@@ -33,7 +33,7 @@ auto registerViewCommands(RpcRegistry& registry, RpcVerbs& verbs, RpcRecords& re
     registerCameraCommands(registry, verbs, view);
     registerSceneCommands(registry, verbs, records, view);
     registerLodCommands(registry, verbs, records, view);
-    registerConfigCommands(registry, verbs, records);
+    registerCvarCommands(registry, verbs, records);
     registerDisplayCommands(registry, verbs, records, view);
     registerProfileCommands(registry, verbs, records);
 

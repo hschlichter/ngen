@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.h"
+#include "cvar.h"
 
 #include "material.h"
 #include "mesh.h"
@@ -279,11 +279,11 @@ struct SceneSnapshot {
     std::optional<SceneEnvironment> environment;
 };
 
-// The view's configuration values (src/config/README.md) for the scene: which purposes beyond the default it loads and draws.
-namespace viewconfig {
-extern config::Bool purposeGuide; // scene.purposes.guide
-extern config::Bool purposeProxy; // scene.purposes.proxy
-} // namespace viewconfig
+// The view's cvars (src/cvar/README.md) for the scene: which purposes beyond the default it loads and draws.
+namespace viewcvars {
+extern cvar::Bool purposeGuide; // scene.purposes.guide
+extern cvar::Bool purposeProxy; // scene.purposes.proxy
+} // namespace viewcvars
 
 // The scene ngen-view shows: its World, composed from the scene's packs, and the renderer's inputs placed from it: a tree of placements of
 // the World's contents (placement.h), whose instances are RenderWorld's slots (one per prim submesh), and the meshes, materials and textures they

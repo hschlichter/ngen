@@ -3,10 +3,10 @@
 #include "assetswindow.h"
 #include "camerawindow.h"
 #include "capturewindow.h"
-#include "config.h"
-#include "configwindow.h"
 #include "counterswindow.h"
 #include "cullingwindow.h"
+#include "cvar.h"
+#include "cvarwindow.h"
 #include "debugviewwindow.h"
 #include "framedebuggerwindow.h"
 #include "framegraphdebug.h"
@@ -80,7 +80,7 @@ public:
     auto setCullResult(const CullResult& cull) -> void { cullResult = &cull; }
 
     // The windows view.window opens and closes, by name.
-    static constexpr std::array windowNames = {"memory", "capture", "framedebugger", "gpuscene", "counters", "shaders", "culling", "assets", "lod", "streaming", "camera", "renderdebug", "framegraph", "performance", "config"};
+    static constexpr std::array windowNames = {"memory", "capture", "framedebugger", "gpuscene", "counters", "shaders", "culling", "assets", "lod", "streaming", "camera", "renderdebug", "framegraph", "performance", "cvars"};
     // Whether a window is open, by its name in windowNames; null for an unknown name.
     auto windowFlag(std::string_view name) -> bool*;
     // Opens or closes a window by its name in windowNames; false for an unknown name.
@@ -154,8 +154,8 @@ private:
     bool frameSelectedRequested = false;
     bool showFrameGraphWindow = false;
     bool showPerformanceWindow = false;
-    bool showConfigWindow = false;
-    ConfigWindowState configState;
+    bool showCvarWindow = false;
+    CvarWindowState cvarState;
     bool showStatusBar = true;
     StatusBarData statusBarData;
     bool showRenderDebugWindow = false;

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.h"
+#include "cvar.h"
 
 #include <glm/glm.hpp>
 
@@ -218,11 +218,11 @@ auto drawLodGizmos(const LodToolState& state, DebugDraw& draw, const glm::vec3& 
 // The distance unit a stage's metres per unit names: "m", "cm", else "units".
 auto lodUnitName(double metersPerUnit) -> const char*;
 
-// The LOD tool's configuration values (src/config/README.md): its viewport layers.
-namespace toolsconfig {
-extern config::Bool lodLabels;       // tools.lod.labels
-extern config::Bool lodGizmo;        // tools.lod.gizmo: the selected root's heuristic
-extern config::Bool lodGizmoAll;     // tools.lod.gizmoAll: every shown root's
-extern config::Bool lodPopFlash;     // tools.lod.popFlash
-extern config::Bool lodColorByDepth; // tools.lod.colorByDepth: the LOD Level view's colours
-} // namespace toolsconfig
+// The LOD tool's cvars (src/cvar/README.md): its viewport layers.
+namespace toolscvars {
+extern cvar::Bool lodLabels;       // tools.lod.labels
+extern cvar::Bool lodGizmo;        // tools.lod.gizmo: the selected root's heuristic
+extern cvar::Bool lodGizmoAll;     // tools.lod.gizmoAll: every shown root's
+extern cvar::Bool lodPopFlash;     // tools.lod.popFlash
+extern cvar::Bool lodColorByDepth; // tools.lod.colorByDepth: the LOD Level view's colours
+} // namespace toolscvars

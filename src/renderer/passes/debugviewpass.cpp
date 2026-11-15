@@ -1,7 +1,7 @@
 #include "debugviewpass.h"
 
 #include "profilegpu.h"
-#include "renderconfig.h"
+#include "rendercvars.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
 #include "trace.h"
@@ -325,12 +325,12 @@ auto DebugViewPass::addPass(
         });
 }
 
-namespace renderconfig {
+namespace rendercvars {
 
-config::Enum debugView{"render.view.debug",
-                       std::vector<std::string>(debugViewNames.begin(), debugViewNames.end()),
-                       0,
-                       "A debug view drawn in place of the lit image: wireframe, triangle size, overdraw, instance, mesh, material and primitive IDs, UVs, "
-                       "streaming state, meshlets and the test that culls each meshlet."};
+cvar::Enum debugView{"render.view.debug",
+                     std::vector<std::string>(debugViewNames.begin(), debugViewNames.end()),
+                     0,
+                     "A debug view drawn in place of the lit image: wireframe, triangle size, overdraw, instance, mesh, material and primitive IDs, UVs, "
+                     "streaming state, meshlets and the test that culls each meshlet."};
 
-} // namespace renderconfig
+} // namespace rendercvars

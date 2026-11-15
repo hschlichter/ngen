@@ -14,7 +14,7 @@
     </marker>
   </defs>
   <rect x="0" y="0" width="1000" height="600" rx="14" fill="#f8fafc" stroke="#e2e8f0"/>
-  <text x="28" y="40" class="title">Configuration: a value from its declaration to its use</text>
+  <text x="28" y="40" class="title">Cvars: a value from its declaration to its use</text>
   <text x="28" y="62" class="s" style="font-size:12px">Declared in code, found by name, read and set on the main thread; a consumer acts on a change at its place in the frame.</text>
 
   <!-- Main thread -->
@@ -25,7 +25,7 @@
   <!-- Declaration -->
   <rect x="44" y="124" width="296" height="166" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
   <text x="58" y="146" class="t" font-weight="700">declared in code by its owner</text>
-  <text x="58" y="168" class="code">config::Int shadowCascades{</text>
+  <text x="58" y="168" class="code">cvar::Int shadowCascades{</text>
   <text x="72" y="184" class="code">"render.shadow.cascades",</text>
   <text x="72" y="200" class="code">3, "Shadow cascades from …",</text>
   <text x="72" y="216" class="code">{.min = 1, .max = 4}};</text>
@@ -36,9 +36,9 @@
   <!-- Registry -->
   <rect x="388" y="124" width="222" height="166" rx="8" fill="#f1f5f9" stroke="#64748b" stroke-opacity="0.6"/>
   <text x="402" y="146" class="t" font-weight="700">the registry, by name</text>
-  <text x="402" y="166" class="code">config::all()</text>
-  <text x="402" y="182" class="code">config::find(name)</text>
-  <text x="402" y="198" class="code">config::under(prefix)</text>
+  <text x="402" y="166" class="code">cvar::all()</text>
+  <text x="402" y="182" class="code">cvar::find(name)</text>
+  <text x="402" y="198" class="code">cvar::under(prefix)</text>
   <text x="402" y="222" class="s">each value: text(), defaultText(),</text>
   <text x="402" y="237" class="s">changes(), set, setText, reset</text>
   <text x="402" y="258" class="s">set checks the range or choices,</text>
@@ -48,17 +48,17 @@
 
   <!-- Readers and writers -->
   <rect x="660" y="124" width="296" height="36" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
-  <text x="674" y="147" class="code" font-weight="700">config</text>
+  <text x="674" y="147" class="code" font-weight="700">cvars</text>
   <text x="730" y="147" class="s">record: each value, default, range</text>
   <rect x="660" y="167" width="296" height="36" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
-  <text x="674" y="190" class="code" font-weight="700">config.get/set/reset</text>
+  <text x="674" y="190" class="code" font-weight="700">cvar.get/set/reset</text>
   <text x="840" y="190" class="s">RPC methods</text>
   <rect x="660" y="210" width="296" height="36" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
-  <text x="674" y="233" class="code" font-weight="700">config, config-reset</text>
+  <text x="674" y="233" class="code" font-weight="700">cvar, cvar-reset</text>
   <text x="840" y="233" class="s">verbs; view, shadow…</text>
   <rect x="660" y="253" width="296" height="36" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
   <text x="674" y="276" class="t" font-weight="700">windows</text>
-  <text x="736" y="276" class="s">Configuration; View menu, Render Debug</text>
+  <text x="736" y="276" class="s">Cvars; View menu, Render Debug</text>
   <line x1="612" y1="207" x2="658" y2="207" stroke="#475569" stroke-width="1.6" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
   <text x="635" y="198" class="edge" text-anchor="middle">by name</text>
 
@@ -74,8 +74,8 @@
   <rect x="508" y="330" width="448" height="122" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
   <text x="522" y="352" class="lib">ViewFrame::buildSnapshot</text>
   <text x="522" y="372" class="t">reads the render thread's values every frame</text>
-  <text x="522" y="394" class="code">.viewMode = … renderconfig::viewMode.get(),</text>
-  <text x="522" y="410" class="code">.debugView = … renderconfig::debugView.get(),</text>
+  <text x="522" y="394" class="code">.viewMode = … rendercvars::viewMode.get(),</text>
+  <text x="522" y="410" class="code">.debugView = … rendercvars::debugView.get(),</text>
   <text x="522" y="432" class="s">the scene thread's values go in its requests</text>
 
   <path d="M470,290 L470,310 L264,310 L264,328" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>

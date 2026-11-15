@@ -279,7 +279,7 @@ A table that outgrows its buffer gets a larger one, which takes hundreds of mill
   than it did when the growth failed. The table keeps its buffers, and what doesn't fit keeps waiting.
 - **Seen from outside.** The `gpuscene` record's `growth` lists every growable: capacity and use in its own unit (slots, records, items,
   elements, bytes), a growth in flight and for how long, whether it waits, how often it grew ahead, grew at once and waited, and how long it
-  last waited. `render.growth.ahead` is a configuration value (0 grows only when needed, still on a job). The jobs show in the Performance
+  last waited. `render.growth.ahead` is a cvar (0 grows only when needed, still on a job). The jobs show in the Performance
   window's worker tracks as `BufferGrowth`, with the table's name inside. The Memory window lists the buffers, not the growths: a gap.
 
 `GpuInstance` is the CPU mirror the renderer keeps (`Renderer::gpuInstances`), by instance slot, in a `ChunkedList` (chunks of 4,096 that never

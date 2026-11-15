@@ -2,7 +2,7 @@
 
 #include "culling.h"
 #include "drawlists.h"
-#include "renderconfig.h"
+#include "rendercvars.h"
 #include "renderdoccapture.h"
 #include "renderer.h"
 #include "renderthread.h"
@@ -136,8 +136,8 @@ auto cullingRecord(const ViewContext& view) -> Json {
         {"drawLists", drawListsJson(cull)},
         {"occlusion",
          {{"ran", cull.occlusion},
-          {"enabled", renderconfig::cullingOcclusion.get()},
-          {"frozen", renderconfig::cullingFrozen.get()},
+          {"enabled", rendercvars::cullingOcclusion.get()},
+          {"frozen", rendercvars::cullingFrozen.get()},
           {"depthFrom", cull.occlusionCullCamera ? "culling camera" : "rendered camera"},
           {"drawnFirst", cull.earlyDrawn},
           {"drawnSecond", cull.lateDrawn},

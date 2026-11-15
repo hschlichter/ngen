@@ -1,6 +1,6 @@
 #include "streamingwindow.h"
 
-#include "configwindow.h"
+#include "cvarwindow.h"
 
 #include <imgui.h>
 
@@ -166,13 +166,13 @@ auto drawControls(StreamingToolState& state) -> void {
         ImGui::SetTooltip("Replaces the lit image: each mesh in the colour of its nearest streaming root's state (debugview streaming).");
     }
     ImGui::SameLine();
-    configCheckbox("Bounds", "tools.streaming.bounds");
+    cvarCheckbox("Bounds", "tools.streaming.bounds");
     ImGui::SameLine();
-    configCheckbox("Rings", "tools.streaming.rings");
+    cvarCheckbox("Rings", "tools.streaming.rings");
     ImGui::SameLine();
-    configCheckbox("of every root", "tools.streaming.ringsAll");
+    cvarCheckbox("of every root", "tools.streaming.ringsAll");
     ImGui::SameLine();
-    configCheckbox("Labels", "tools.streaming.labels");
+    cvarCheckbox("Labels", "tools.streaming.labels");
 }
 
 // One root of the list: click selects, double-click frames.
@@ -592,7 +592,7 @@ auto drawStreamingWindow(bool& show, StreamingToolState& state, StreamingWindowS
 }
 
 auto drawStreamingLabels(StreamingToolState& state, const glm::mat4& viewProj, glm::vec2 viewport) -> void {
-    if (auto* labels = configBool("tools.streaming.labels"); labels == nullptr || !labels->get()) {
+    if (auto* labels = cvarBool("tools.streaming.labels"); labels == nullptr || !labels->get()) {
         return;
     }
     // Under the windows, so a label never covers a window.

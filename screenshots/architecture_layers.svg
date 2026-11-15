@@ -64,7 +64,7 @@
   <rect x="306" y="524" width="76" height="50" rx="7" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
   <text x="318" y="554.0" class="lib">trace</text>
   <rect x="392" y="524" width="85" height="50" rx="7" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
-  <text x="404" y="554.0" class="lib">config</text>
+  <text x="404" y="554.0" class="lib">cvar</text>
   <rect x="487" y="524" width="94" height="50" rx="7" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
   <text x="499" y="554.0" class="lib">rpccore</text>
   <rect x="592" y="524" width="94" height="50" rx="7" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>

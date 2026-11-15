@@ -146,7 +146,7 @@ auto UiHooks::drawUi(ViewFrame& frame) -> void {
         drawLodLabels(state.lod, viewProj, glm::vec2(io.DisplaySize.x, io.DisplaySize.y));
         drawStreamingLabels(state.streaming, viewProj, glm::vec2(io.DisplaySize.x, io.DisplaySize.y));
     }
-    if (uiconfig::budgetOverlay.get()) {
+    if (uicvars::budgetOverlay.get()) {
         PROFILE_ZONE("BudgetOverlay", Ui);
         drawBudgetOverlay(frame.renderThread.latestSceneGpuStats().frameCommands);
     }

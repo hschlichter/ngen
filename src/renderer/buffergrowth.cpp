@@ -1,7 +1,7 @@
 #include "buffergrowth.h"
 
 #include "profile.h"
-#include "renderconfig.h"
+#include "rendercvars.h"
 #include "rhidevice.h"
 #include "trace.h"
 
@@ -71,15 +71,15 @@ auto BufferGrowth::quiet(uint64_t needed, uint64_t capacity) const -> bool {
     return !startsAhead;
 }
 
-namespace renderconfig {
+namespace rendercvars {
 
-config::Float growthAhead{"render.growth.ahead",
-                          0.75,
-                          "How full a GPU table (instances, draw lists, LOD groups, the geometry pool, meshlet work) gets before its next, larger "
-                          "buffers are made on a background job, ready before it fills. 0: grow only when full, on the render thread.",
-                          {.min = 0.0, .max = 1.0}};
+cvar::Float growthAhead{"render.growth.ahead",
+                        0.75,
+                        "How full a GPU table (instances, draw lists, LOD groups, the geometry pool, meshlet work) gets before its next, larger "
+                        "buffers are made on a background job, ready before it fills. 0: grow only when full, on the render thread.",
+                        {.min = 0.0, .max = 1.0}};
 
-} // namespace renderconfig
+} // namespace rendercvars
 
 auto BufferGrowth::makeNow(RhiDevice* device, const std::vector<GrowthBufferDesc>& descs) -> std::vector<GrownBuffer> {
     State now(descs);

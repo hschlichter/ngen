@@ -2,7 +2,7 @@
 
 #include "axis3dgizmo.h"
 #include "profile.h"
-#include "profileconfig.h"
+#include "profilecvars.h"
 #include "scenegpustats.h"
 
 #include <imgui.h>
@@ -138,7 +138,7 @@ auto drawBudgetOverlay(const RenderFrameCommands& commands) -> void {
         row->ms += pass.msPerFrame;
         row->passes.push_back(pass);
     }
-    double budgetMs = profileconfig::frameBudgetMs.get();
+    double budgetMs = profilecvars::frameBudgetMs.get();
 
     const auto* viewport = ImGui::GetMainViewport();
     // First under the corner axis gizmo, which takes the viewport's top-right corner (in pixels from the window's top, as the gizmo is
@@ -187,11 +187,11 @@ auto drawBudgetOverlay(const RenderFrameCommands& commands) -> void {
     ImGui::End();
 }
 
-namespace uiconfig {
+namespace uicvars {
 
-config::Bool budgetOverlay{"ui.overlay.budget",
-                           false,
-                           "The frame budget overlay: the GPU's passes by group as bars against profile.budget.frameMs, averaged over 60 frames "
-                           "(Ctrl+B)."};
+cvar::Bool budgetOverlay{"ui.overlay.budget",
+                         false,
+                         "The frame budget overlay: the GPU's passes by group as bars against profile.budget.frameMs, averaged over 60 frames "
+                         "(Ctrl+B)."};
 
-} // namespace uiconfig
+} // namespace uicvars

@@ -292,7 +292,7 @@ auto inspectStreamingRoot(const ViewScene& scene, const std::string& path, const
 }
 
 auto drawStreamingOverlays(const StreamingToolState& state, DebugDraw& draw, const glm::vec3& up) -> void {
-    if (!toolsconfig::streamingBounds.get() && !toolsconfig::streamingRings.get() && !toolsconfig::streamingRingsAll.get()) {
+    if (!toolscvars::streamingBounds.get() && !toolscvars::streamingRings.get() && !toolscvars::streamingRingsAll.get()) {
         return;
     }
     for (const auto& row : state.rows) {
@@ -300,11 +300,11 @@ auto drawStreamingOverlays(const StreamingToolState& state, DebugDraw& draw, con
             continue;
         }
         auto color = streamingStateColor(row.rootState);
-        if (toolsconfig::streamingBounds.get()) {
+        if (toolscvars::streamingBounds.get()) {
             draw.box(AABB{.min = row.boundsMin, .max = row.boundsMax}, row.findings.empty() ? color : glm::vec4(1.0f, 0.85f, 0.25f, 1.0f));
         }
         bool selected = row.path == state.selectedRoot;
-        if ((toolsconfig::streamingRingsAll.get() || (toolsconfig::streamingRings.get() && selected)) && row.kind == "distance") {
+        if ((toolscvars::streamingRingsAll.get() || (toolscvars::streamingRings.get() && selected)) && row.kind == "distance") {
             for (size_t k = 0; k < row.load.size(); k++) {
                 drawRing(draw, row.boundsMin, row.boundsMax, up, row.load[k], glm::vec4(1.0f, 0.75f, 0.3f, 1.0f));
                 if (k < row.unload.size()) {
@@ -377,11 +377,11 @@ auto streamingRowShown(const StreamingToolState& state, const StreamingRow& row)
     return true;
 }
 
-namespace toolsconfig {
+namespace toolscvars {
 
-config::Bool streamingBounds{"tools.streaming.bounds", false, "Each streaming root's bounds in the viewport, in its state's colour."};
-config::Bool streamingRings{"tools.streaming.rings", false, "The selected streaming root's load (solid) and unload (faint) radii in the viewport."};
-config::Bool streamingRingsAll{"tools.streaming.ringsAll", false, "The load and unload radii of every streaming root the Streaming window lists."};
-config::Bool streamingLabels{"tools.streaming.labels", false, "Over each streaming root: its name, drawn and desired levels and state."};
+cvar::Bool streamingBounds{"tools.streaming.bounds", false, "Each streaming root's bounds in the viewport, in its state's colour."};
+cvar::Bool streamingRings{"tools.streaming.rings", false, "The selected streaming root's load (solid) and unload (faint) radii in the viewport."};
+cvar::Bool streamingRingsAll{"tools.streaming.ringsAll", false, "The load and unload radii of every streaming root the Streaming window lists."};
+cvar::Bool streamingLabels{"tools.streaming.labels", false, "Over each streaming root: its name, drawn and desired levels and state."};
 
-} // namespace toolsconfig
+} // namespace toolscvars

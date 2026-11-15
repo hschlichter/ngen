@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.h"
+#include "cvar.h"
 #include "scenetypes.h"
 #include "shadowcascades.h"
 
@@ -26,15 +26,15 @@ auto drawOverlays(DebugDraw& draw,
                   std::span<const ShadowCascade> cascades,
                   const AABB* selectedBounds) -> void;
 
-// The overlays' configuration values (src/config/README.md).
-namespace toolsconfig {
-extern config::Bool overlayGrid;          // tools.overlay.grid
-extern config::Bool overlayOrigin;        // tools.overlay.origin
-extern config::Bool overlayGizmos;        // tools.overlay.gizmos: the axis and transform gizmos
-extern config::Bool overlayAabbs;         // tools.overlay.aabbs: every instance's bounds
-extern config::Bool overlaySelectedAabb;  // tools.overlay.selectedAabb
-extern config::Bool overlayLightGizmos;   // tools.overlay.lightGizmos
-extern config::Bool overlayCulled;        // tools.overlay.culled: the instances' bounds by their cull result
-extern config::Int overlayCulledView;     // tools.overlay.culledView: whose result, 0 the camera, 1.. the cascades
-extern config::Bool overlayCascadeFrusta; // tools.overlay.cascadeFrusta
-} // namespace toolsconfig
+// The overlays' cvars (src/cvar/README.md).
+namespace toolscvars {
+extern cvar::Bool overlayGrid;          // tools.overlay.grid
+extern cvar::Bool overlayOrigin;        // tools.overlay.origin
+extern cvar::Bool overlayGizmos;        // tools.overlay.gizmos: the axis and transform gizmos
+extern cvar::Bool overlayAabbs;         // tools.overlay.aabbs: every instance's bounds
+extern cvar::Bool overlaySelectedAabb;  // tools.overlay.selectedAabb
+extern cvar::Bool overlayLightGizmos;   // tools.overlay.lightGizmos
+extern cvar::Bool overlayCulled;        // tools.overlay.culled: the instances' bounds by their cull result
+extern cvar::Int overlayCulledView;     // tools.overlay.culledView: whose result, 0 the camera, 1.. the cascades
+extern cvar::Bool overlayCascadeFrusta; // tools.overlay.cascadeFrusta
+} // namespace toolscvars

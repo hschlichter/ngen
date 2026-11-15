@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.h"
+#include "cvar.h"
 
 #include "mesh.h"
 #include "renderworld.h"
@@ -17,7 +17,7 @@
 class DebugDraw;
 
 // The camera modes' state, for the camera that has the controls: following the ground (its eye kept a height above the render geometry
-// under it; on and the height are configuration values, `view.camera.follow*`) and orbiting (Left Alt held: right-drag turns around the
+// under it; on and the height are cvars, `view.camera.follow*`) and orbiting (Left Alt held: right-drag turns around the
 // surface under the cursor, the wheel moves toward it). ngen-view fills it in each frame (src/view/README.md, "Camera modes").
 struct CameraModesState {
     // The last ground test: what it hit (none: no drawn surface under the camera, the height held), and what it tested.
@@ -69,8 +69,8 @@ auto groundBelow(const RenderWorld& world, const SceneBoundsCache& chunkBounds, 
 // at it.
 auto drawCameraModes(const CameraModesState& modes, const glm::vec3& eye, double metersPerUnit, DebugDraw& draw) -> void;
 
-// The camera modes' configuration values (src/config/README.md), for the camera that has the controls.
-namespace viewconfig {
-extern config::Bool follow;        // view.camera.follow
-extern config::Float followHeight; // view.camera.followHeight, metres
-} // namespace viewconfig
+// The camera modes' cvars (src/cvar/README.md), for the camera that has the controls.
+namespace viewcvars {
+extern cvar::Bool follow;        // view.camera.follow
+extern cvar::Float followHeight; // view.camera.followHeight, metres
+} // namespace viewcvars

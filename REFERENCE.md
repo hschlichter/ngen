@@ -2,7 +2,7 @@
 
 A cheat sheet of the commands, flags, script verbs, RPC methods and records, for humans and agents. Every row says what it does in one line;
 the library READMEs linked at the end explain how and why. The live sources of truth are `./ngen-cli introspect describe view` (every
-method and its parameters) and the `config` record (every configuration value).
+method and its parameters) and the `cvars` record (every cvar).
 
 ## Quick start
 
@@ -149,7 +149,7 @@ live.
 | `camera-use /camera/prim` | `view.camera.use` | Move to a camera the scene authors. |
 | `camera-frame [scene\|/prim]` | `view.camera.frame` | Frame the scene or a prim. |
 | `camera-orbit x,y,z yaw pitch [debug]` | `view.camera.orbit` | Turn around a pivot by angles, the distance kept. |
-| `camera-follow on\|off`, `camera-follow height <m>` | `config.set` | Keep the eye a height above the highest drawn surface under it. |
+| `camera-follow on\|off`, `camera-follow height <m>` | `cvar.set` | Keep the eye a height above the highest drawn surface under it. |
 | `fly <path prefix> <m/s>` | `view.camera.fly` | Fly through the scene's cameras with that prefix, in path order. Holds the script while flying. |
 | `fly-stop` | `view.camera.fly.stop` | Stop the flight. |
 | `debug-camera on\|off\|place` | `view.camera.debug` | Debug camera on, off, or placed 15 m behind and 10 m above the main camera. |
@@ -172,19 +172,19 @@ live.
 | `lod-bias <f>` | `view.lod.tuning` | Pick every root as if this many times closer. |
 | `lod-hysteresis <fraction>` | `view.lod.tuning` | Hysteresis at a boundary without a blend band. |
 | `lod-blending on\|off` | `view.lod.tuning` | LOD blending. |
-| `lod-show labels\|gizmo\|gizmo-all\|flash on\|off` | `config.set` | LOD tool viewport layers. |
-| `lod-show color level\|depth` | `config.set` | What the `lodlevel` view colours by. |
-| `streaming-show bounds\|rings\|rings-all\|labels on\|off` | `config.set` | Streaming tool viewport layers. |
+| `lod-show labels\|gizmo\|gizmo-all\|flash on\|off` | `cvar.set` | LOD tool viewport layers. |
+| `lod-show color level\|depth` | `cvar.set` | What the `lodlevel` view colours by. |
+| `streaming-show bounds\|rings\|rings-all\|labels on\|off` | `cvar.set` | Streaming tool viewport layers. |
 | `streaming-reset` | `view.streaming.reset` | Zero the `streaming` record's measured totals. |
 
 ### Rendering settings
 
-These set configuration values. `config <name> <value>` sets any value; `config-reset [<name or prefix>]` puts values back to their defaults.
+These set cvars. `cvar <name> <value>` sets any value; `cvar-reset [<name or prefix>]` puts values back to their defaults.
 
 | Verb | Does |
 |---|---|
-| `config <name> <value>` | Set any configuration value (`config render.shadow.cascades 1`). |
-| `config-reset [<name or prefix>]` | Reset one value, a group, or all. |
+| `cvar <name> <value>` | Set any cvar (`cvar render.shadow.cascades 1`). |
+| `cvar-reset [<name or prefix>]` | Reset one value, a group, or all. |
 | `view <mode>` | View mode, same modes as `--view`. |
 | `debugview <mode>` | `off`, `wireframe`, `trianglesize`, `overdraw`, `instance`, `mesh`, `material`, `primitive`, `uv`, `streaming`, `meshlet`, `meshletcull`. |
 | `overlay name=on\|off,...` | Overlays, same names as `--overlay`. |
@@ -212,7 +212,7 @@ These set configuration values. `config <name> <value>` sets any value; `config-
 | `dump-gpuscene <dir>` | `introspect.gpuscene` | GPU scene tables, culling buffers and `instances_joined.json`. |
 | `dump-profile <path>` | `introspect.profile` | Profiler history as a Chrome trace (Perfetto). |
 | `renderdoc-capture` | `renderdoc.capture` | RenderDoc capture of the next frame (needs `--renderdoc`). |
-| `window <name> on\|off` | `view.window` | Open or close a window: `memory`, `capture`, `framedebugger`, `gpuscene`, `counters`, `shaders`, `culling`, `assets`, `lod`, `streaming`, `camera`, `renderdebug`, `framegraph`, `performance`, `config`. |
+| `window <name> on\|off` | `view.window` | Open or close a window: `memory`, `capture`, `framedebugger`, `gpuscene`, `counters`, `shaders`, `culling`, `assets`, `lod`, `streaming`, `camera`, `renderdebug`, `framegraph`, `performance`, `cvars`. |
 
 ## RPC methods without a verb
 
@@ -226,9 +226,9 @@ The asset server serves only its own methods (next section), and no `rpc.*`.
 | `rpc.version` | Protocol version and endpoint kind. |
 | `introspect.list` | The records this endpoint gives. |
 | `introspect.get` | One record as JSON. |
-| `config.get` | One value by name, or every one under a prefix. |
-| `config.set` | One value, or several as `{values: {name: value}}`; nothing is set when one fails. |
-| `config.reset` | Reset a value, a prefix, or all. |
+| `cvar.get` | One value by name, or every one under a prefix. |
+| `cvar.set` | One value, or several as `{values: {name: value}}`; nothing is set when one fails. |
+| `cvar.reset` | Reset a value, a prefix, or all. |
 | `view.camera.get` | A camera's position and yaw/pitch. |
 | `view.camera.list` | The cameras the scene authors. |
 | `view.transform` | A prim's local and world transform. |
@@ -299,7 +299,7 @@ frames later; record them at steady state (frame 120 or later).
 | Record | Holds |
 |---|---|
 | `status` | Frame counter, scene, selection, main camera, camera modes. |
-| `config` | Every configuration value: type, value, default, description, range or choices. |
+| `cvars` | Every cvar: type, value, default, description, range or choices. |
 | `scene` | Layer stack, up axis and units, prims, prototypes, draws, lights, LOD levels set. |
 | `environment` | The dome light, its image and the light it casts. |
 | `scenethread` | Requests, composes, placement passes, assets in flight and held, residency. |
@@ -327,9 +327,9 @@ frames later; record them at steady state (frame 120 or later).
 jq 'select(.record == "render") | .value.passes' /tmp/records.jsonl
 ```
 
-## Configuration values
+## Cvars
 
-Set with `config <name> <value>` or `config.set`; list with the `config` record or `config.get`. A prefix selects a group (`render.shadow`).
+Set with `cvar <name> <value>` or `cvar.set`; list with the `cvars` record or `cvar.get`. A prefix selects a group (`render.shadow`).
 
 | Group | Values |
 |---|---|
@@ -371,6 +371,6 @@ done
 
 [`src/rpc/README.md`](src/rpc/README.md) (protocol, adding a method), [`src/introspect/README.md`](src/introspect/README.md) (records, the
 tool), [`src/trace/README.md`](src/trace/README.md) (events), [`src/view/README.md`](src/view/README.md) (commands, camera, frame),
-[`src/config/README.md`](src/config/README.md) (configuration), [`src/asset/README.md`](src/asset/README.md) (asset server, packers),
+[`src/cvar/README.md`](src/cvar/README.md) (cvars), [`src/asset/README.md`](src/asset/README.md) (asset server, packers),
 [`src/build/README.md`](src/build/README.md) (build system), [`src/rhi/README.md`](src/rhi/README.md) (RHI examples), and the `run-headless`
 skill (`.claude/skills/run-headless/SKILL.md`).

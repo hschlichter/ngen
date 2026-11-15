@@ -1,6 +1,6 @@
 #include "lodwindow.h"
 
-#include "configwindow.h"
+#include "cvarwindow.h"
 
 #include <imgui.h>
 
@@ -82,13 +82,13 @@ auto parseList(const char* text) -> std::optional<std::vector<float>> {
 
 // Whether the labels are on (tools.lod.labels).
 auto labelsShown() -> bool {
-    auto* value = configBool("tools.lod.labels");
+    auto* value = cvarBool("tools.lod.labels");
     return value != nullptr && value->get();
 }
 
 // Whether the LOD Level view colours by depth (tools.lod.colorByDepth), which the swatches and labels follow.
 auto colorByDepth() -> bool {
-    auto* value = configBool("tools.lod.colorByDepth");
+    auto* value = cvarBool("tools.lod.colorByDepth");
     return value != nullptr && value->get();
 }
 
@@ -319,7 +319,7 @@ auto drawLayers(LodToolState& state) -> void {
         ImGui::SetTooltip("Over the lit image, at half strength: each mesh in its drawn level's colour, or in its LOD depth's (grey under no LOD root).\nA fade shows its two colours dithered together. Render-LOD roots at a forced level are striped, those drawing another level than they want\ncheckered.");
     }
     ImGui::SameLine();
-    auto* byDepth = configBool("tools.lod.colorByDepth");
+    auto* byDepth = cvarBool("tools.lod.colorByDepth");
     int colorBy = byDepth != nullptr && byDepth->get() ? 1 : 0;
     ImGui::RadioButton("by level", &colorBy, 0);
     if (ImGui::IsItemHovered()) {
@@ -334,13 +334,13 @@ auto drawLayers(LodToolState& state) -> void {
         byDepth->set(colorBy == 1);
     }
     ImGui::SameLine();
-    configCheckbox("Labels", "tools.lod.labels");
+    cvarCheckbox("Labels", "tools.lod.labels");
     ImGui::SameLine();
-    configCheckbox("Gizmo", "tools.lod.gizmo");
+    cvarCheckbox("Gizmo", "tools.lod.gizmo");
     ImGui::SameLine();
-    configCheckbox("of every shown root", "tools.lod.gizmoAll");
+    cvarCheckbox("of every shown root", "tools.lod.gizmoAll");
     ImGui::SameLine();
-    configCheckbox("Pop flash", "tools.lod.popFlash");
+    cvarCheckbox("Pop flash", "tools.lod.popFlash");
     ImGui::SameLine();
     if (ImGui::Button("Triangle Size view")) {
         state.triangleSizeRequested = true;

@@ -5,7 +5,7 @@
 #include "primpath.h"
 #include "profile.h"
 #include "projection.h"
-#include "renderconfig.h"
+#include "rendercvars.h"
 #include "rendersnapshot.h"
 #include "viewframe.h"
 
@@ -18,16 +18,16 @@
 
 auto ToolsHooks::afterScene(ViewFrame& frame) -> void {
     // The LOD tool's rows (the LOD window and its viewport layers), once per snapshot while either is shown.
-    lodShown = tools.lod.windowOpen || toolsconfig::lodLabels.get() || toolsconfig::lodGizmo.get() || toolsconfig::lodGizmoAll.get();
+    lodShown = tools.lod.windowOpen || toolscvars::lodLabels.get() || toolscvars::lodGizmo.get() || toolscvars::lodGizmoAll.get();
     if (lodShown && lodRowsSnapshot != frame.snapshotsTaken) {
         lodRowsSnapshot = frame.snapshotsTaken;
         PROFILE_ZONE("SceneWindowLists", Ui);
         buildLodRows(frame.scene, tools.lod);
     }
     // The Streaming tool's rows (its window, its viewport layers and the streaming view's states), once per snapshot while any is shown.
-    streamingView = renderconfig::debugView.get() == (size_t) DebugView::Streaming;
-    streamingShown = tools.streaming.windowOpen || toolsconfig::streamingBounds.get() || toolsconfig::streamingRings.get() || toolsconfig::streamingRingsAll.get() ||
-                     toolsconfig::streamingLabels.get() || streamingView;
+    streamingView = rendercvars::debugView.get() == (size_t) DebugView::Streaming;
+    streamingShown = tools.streaming.windowOpen || toolscvars::streamingBounds.get() || toolscvars::streamingRings.get() || toolscvars::streamingRingsAll.get() ||
+                     toolscvars::streamingLabels.get() || streamingView;
     if (streamingShown && streamingRowsSnapshot != frame.snapshotsTaken) {
         streamingRowsSnapshot = frame.snapshotsTaken;
         PROFILE_ZONE("SceneWindowLists", Ui);
@@ -38,7 +38,7 @@ auto ToolsHooks::afterScene(ViewFrame& frame) -> void {
 auto ToolsHooks::cameras(ViewFrame& frame) -> void {
     // The debug camera, placed behind the main camera when it is turned on or asked to be; the main camera's trail starts afresh.
     auto& debug = tools.debugCamera;
-    bool on = toolsconfig::debugCamera.get();
+    bool on = toolscvars::debugCamera.get();
     if (on && (!debugCameraWasOn || debug.placeRequested)) {
         placeDebugCamera(debug, frame.cam, frame.scene.lodMetersPerUnit());
         if (!debugCameraWasOn) {
@@ -54,14 +54,14 @@ auto ToolsHooks::cameras(ViewFrame& frame) -> void {
     // While on, the view renders from it and the keys move it, unless they are handed to the main camera; LOD and streaming, culling and
     // the shadow cascades follow it when set to.
     frame.cameras.view = &debug.camera;
-    if (!toolsconfig::debugControlMain.get()) {
+    if (!toolscvars::debugControlMain.get()) {
         frame.cameras.controlled = &debug.camera;
     }
     frame.cameras.lod = &lodCamera(debug, frame.cam);
-    if (toolsconfig::debugCull.get()) {
+    if (toolscvars::debugCull.get()) {
         frame.cameras.cull = &debug.camera;
     }
-    if (toolsconfig::debugShadows.get()) {
+    if (toolscvars::debugShadows.get()) {
         frame.cameras.shadows = &debug.camera;
     }
 }
@@ -69,8 +69,8 @@ auto ToolsHooks::cameras(ViewFrame& frame) -> void {
 auto ToolsHooks::event(ViewFrame& frame, const SDL_Event& event) -> bool {
     // C hands the controls between the debug camera and the main camera while the debug camera is on.
     bool plainKey = event.type == SDL_EVENT_KEY_DOWN && (event.key.mod & SDL_KMOD_CTRL) == 0 && !event.key.repeat;
-    if (plainKey && event.key.key == SDLK_C && toolsconfig::debugCamera.get()) {
-        toolsconfig::debugControlMain.set(!toolsconfig::debugControlMain.get());
+    if (plainKey && event.key.key == SDLK_C && toolscvars::debugCamera.get()) {
+        toolscvars::debugControlMain.set(!toolscvars::debugControlMain.get());
         return true;
     }
 
@@ -135,7 +135,7 @@ auto ToolsHooks::event(ViewFrame& frame, const SDL_Event& event) -> bool {
 }
 
 auto ToolsHooks::afterCamera(ViewFrame& frame) -> void {
-    if (toolsconfig::debugCamera.get()) {
+    if (toolscvars::debugCamera.get()) {
         extendDebugCameraTrail(tools.debugCamera, frame.cam.position, frame.scene.lodMetersPerUnit());
     }
     // While the LOD tool is shown, the frames read every render-LOD group's state back, and its rows take them.
@@ -148,11 +148,11 @@ auto ToolsHooks::afterCamera(ViewFrame& frame) -> void {
 auto ToolsHooks::debugDraw(ViewFrame& frame) -> void {
     // The culled overlay shows one view's GPU culling result, the camera or a cascade, from the visibility bits it has read back while on.
     std::vector<uint8_t> overlayVisible;
-    if (toolsconfig::overlayCulled.get()) {
+    if (toolscvars::overlayCulled.get()) {
         PROFILE_ZONE("CullOverlay", Tools);
         const auto& cull = frame.latestCull;
         overlayVisible.resize(cull.viewBits.size());
-        auto overlayBit = (uint8_t) (1u << std::clamp((int) toolsconfig::overlayCulledView.get(), 0, (int) maxShadowCascades));
+        auto overlayBit = (uint8_t) (1u << std::clamp((int) toolscvars::overlayCulledView.get(), 0, (int) maxShadowCascades));
         for (size_t i = 0; i < overlayVisible.size(); i++) {
             overlayVisible[i] = (cull.viewBits[i] & overlayBit) != 0 ? 1 : 0;
         }
@@ -173,8 +173,8 @@ auto ToolsHooks::debugDraw(ViewFrame& frame) -> void {
                  selectedPath.empty() ? nullptr : &boundsOfSelection);
     drawLodGizmos(tools.lod, draw, up, lodWindowArea(glm::radians(cameraFovDegrees), frame.viewAspect));
     drawStreamingOverlays(tools.streaming, draw, up);
-    if (toolsconfig::debugCamera.get()) {
-        drawMainCamera(tools.debugCamera, frame.cam, frame.proj * frame.cam.viewMatrix(), projectionDepthAt((float) renderconfig::shadowDistance.get()), metersPerUnit, draw);
+    if (toolscvars::debugCamera.get()) {
+        drawMainCamera(tools.debugCamera, frame.cam, frame.proj * frame.cam.viewMatrix(), projectionDepthAt((float) rendercvars::shadowDistance.get()), metersPerUnit, draw);
     }
 }
 
@@ -224,15 +224,15 @@ auto ToolsHooks::syncLodTool(ViewFrame& frame) -> void {
         scene.resetLodOverrides(root);
     }
     // The viewport's layers: the LOD Level view and the Triangle Size debug view are the view's modes.
-    lod.levelView = renderconfig::viewMode.get() == (size_t) ViewMode::LodLevel && renderconfig::debugView.get() == 0;
+    lod.levelView = rendercvars::viewMode.get() == (size_t) ViewMode::LodLevel && rendercvars::debugView.get() == 0;
     if (auto on = std::exchange(lod.levelViewRequested, std::nullopt)) {
-        (void) renderconfig::viewMode.set((size_t) (*on ? ViewMode::LodLevel : ViewMode::Lit));
+        (void) rendercvars::viewMode.set((size_t) (*on ? ViewMode::LodLevel : ViewMode::Lit));
         if (*on) {
-            (void) renderconfig::debugView.set((size_t) DebugView::None);
+            (void) rendercvars::debugView.set((size_t) DebugView::None);
         }
     }
     if (std::exchange(lod.triangleSizeRequested, std::nullopt)) {
-        (void) renderconfig::debugView.set((size_t) DebugView::TriangleSize);
+        (void) rendercvars::debugView.set((size_t) DebugView::TriangleSize);
     }
     lod.heuristic = scene.lodHeuristic();
     lod.preference = (int) scene.lodPreference();
@@ -289,7 +289,7 @@ auto ToolsHooks::syncStreamingTool(ViewFrame& frame) -> void {
     }
     const auto& lodCam = *frame.cameras.lod;
     streaming.cameraPosition = lodCam.position;
-    streaming.debugCameraPosition = toolsconfig::debugCamera.get() ? std::optional<glm::vec3>(tools.debugCamera.camera.position) : std::nullopt;
+    streaming.debugCameraPosition = toolscvars::debugCamera.get() ? std::optional<glm::vec3>(tools.debugCamera.camera.position) : std::nullopt;
     streaming.cameraForward = lodCam.forward();
     streaming.up = frame.cam.worldUp;
     const auto& flight = frame.flight;
@@ -300,7 +300,7 @@ auto ToolsHooks::syncStreamingTool(ViewFrame& frame) -> void {
     streaming.streamingView = streamingView;
     // What the window asked for.
     if (auto on = std::exchange(streaming.streamingViewRequested, std::nullopt)) {
-        (void) renderconfig::debugView.set((size_t) (*on ? DebugView::Streaming : DebugView::None));
+        (void) rendercvars::debugView.set((size_t) (*on ? DebugView::Streaming : DebugView::None));
     }
     if (std::exchange(streaming.resetRequested, false)) {
         scene.resetStreamingCounters();
@@ -370,15 +370,15 @@ auto ToolsHooks::fillSnapshot(ViewFrame& frame, RenderSnapshot& snapshot) -> voi
         rotateGizmo.update(extent, view, frame.proj, camera.position, frame.mouse.x, frame.mouse.y, shown && tool == ViewTool::Rotate, anchor);
         scaleGizmo.update(extent, view, frame.proj, camera.position, frame.mouse.x, frame.mouse.y, shown && tool == ViewTool::Scale, anchor);
     }
-    snapshot.readVisibility = toolsconfig::overlayCulled.get();
+    snapshot.readVisibility = toolscvars::overlayCulled.get();
     snapshot.streamingStates = streamingView ? tools.streaming.slotStates : std::vector<uint32_t>();
-    snapshot.lodPopFlash = toolsconfig::lodPopFlash.get();
-    snapshot.lodColorByDepth = toolsconfig::lodColorByDepth.get();
+    snapshot.lodPopFlash = toolscvars::lodPopFlash.get();
+    snapshot.lodColorByDepth = toolscvars::lodColorByDepth.get();
     // The gizmos' lines for the render thread: the axis gizmo in its corner (it hovers under the cursor), then the transform gizmos with
     // the view's view-projection over the whole backbuffer.
     auto gizmoFrame = std::make_unique<GizmoFrame>();
     auto viewMatrix = frame.cameras.view->viewMatrix();
-    if (toolsconfig::overlayGizmos.get()) {
+    if (toolscvars::overlayGizmos.get()) {
         axisGizmo.updateHover(frame.mouse.x, frame.mouse.y);
         auto axis = axisGizmo.draw({.width = (uint32_t) frame.width, .height = (uint32_t) frame.height}, viewMatrix);
         gizmoFrame->draws.push_back({

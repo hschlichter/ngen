@@ -1,6 +1,6 @@
 #include "gpuscene.h"
 
-#include "renderconfig.h"
+#include "rendercvars.h"
 
 #include "deletionqueue.h"
 #include "framegraph.h"
@@ -1386,16 +1386,16 @@ auto GpuScene::afterExecute(const FrameGraph& fg) -> void {
     instanceImported = false;
 }
 
-namespace renderconfig {
+namespace rendercvars {
 
-config::Int uploadBudgetMiB{"render.upload.budgetMiB",
-                            (int64_t) (GpuScene::defaultUploadBudget / (1024 * 1024)),
-                            "MiB the scene's uploads may copy per frame (the SceneUpload pass); the rest waits for the next frame. The staging ring "
-                            "holds this much, mapped, per frame context.",
-                            {.min = 1, .max = 1024}};
-config::Int geometryLimitMiB{"render.geometry.limitMiB",
-                             0,
-                             "MiB each geometry pool buffer may grow to; 0 for the device's limit. Lowering it stops growth, it doesn't shrink the pool.",
-                             {.min = 0}};
+cvar::Int uploadBudgetMiB{"render.upload.budgetMiB",
+                          (int64_t) (GpuScene::defaultUploadBudget / (1024 * 1024)),
+                          "MiB the scene's uploads may copy per frame (the SceneUpload pass); the rest waits for the next frame. The staging ring "
+                          "holds this much, mapped, per frame context.",
+                          {.min = 1, .max = 1024}};
+cvar::Int geometryLimitMiB{"render.geometry.limitMiB",
+                           0,
+                           "MiB each geometry pool buffer may grow to; 0 for the device's limit. Lowering it stops growth, it doesn't shrink the pool.",
+                           {.min = 0}};
 
-} // namespace renderconfig
+} // namespace rendercvars

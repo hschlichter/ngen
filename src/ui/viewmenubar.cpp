@@ -1,6 +1,6 @@
 #include "viewmenubar.h"
 
-#include "configwindow.h"
+#include "cvarwindow.h"
 #include "debugview.h"
 
 #include <imgui.h>
@@ -45,16 +45,16 @@ auto drawViewMenuBar(ViewMenuBarState& state) -> void {
         ImGui::MenuItem("Show AABBs", nullptr, &state.showAABBs);
         ImGui::MenuItem("Show Selected AABB", nullptr, &state.showSelectedAABB);
         ImGui::MenuItem("Show Light Gizmos", nullptr, &state.showLightGizmos);
-        configMenuItem("Frame Budget", "Ctrl+B", "ui.overlay.budget");
+        cvarMenuItem("Frame Budget", "Ctrl+B", "ui.overlay.budget");
         ImGui::Separator();
         ImGui::MenuItem("Depth Prepass", nullptr, &state.depthPrepass);
         ImGui::MenuItem("Show Buffer Overlay", "Ctrl+1", &state.showBufferOverlay);
         ImGui::MenuItem("Show Shadow Overlay", "Ctrl+2", &state.showShadowOverlay);
         ImGui::MenuItem("Anti-Aliasing (FXAA)", nullptr, &state.antiAliasing);
         ImGui::Separator();
-        configMenuItem("Follow Ground", "G", "view.camera.follow");
-        bool debugCamera = configMenuItem("Debug Camera", "Ctrl+D", "tools.debugcamera.on");
-        configMenuItem("Controls Move Main Camera", "C", "tools.debugcamera.controlMain", debugCamera);
+        cvarMenuItem("Follow Ground", "G", "view.camera.follow");
+        bool debugCamera = cvarMenuItem("Debug Camera", "Ctrl+D", "tools.debugcamera.on");
+        cvarMenuItem("Controls Move Main Camera", "C", "tools.debugcamera.controlMain", debugCamera);
         ImGui::Separator();
         ImGui::Text("View Mode");
         ImGui::RadioButton("Albedo", &state.viewMode, 1);
@@ -102,7 +102,7 @@ auto drawViewMenuBar(ViewMenuBarState& state) -> void {
         ImGui::Separator();
         ImGui::MenuItem("Frame Graph", nullptr, &state.showFrameGraph);
         ImGui::MenuItem("Performance", "Ctrl+P", &state.showPerformance);
-        ImGui::MenuItem("Configuration", nullptr, &state.showConfig);
+        ImGui::MenuItem("Cvars", nullptr, &state.showCvars);
         ImGui::MenuItem("Status Bar", nullptr, &state.showStatusBar);
         ImGui::MenuItem("Render Debug", nullptr, &state.showRenderDebug);
         ImGui::MenuItem("Camera", "Ctrl+C", &state.showCamera);

@@ -3,9 +3,9 @@
 #include "assetclient.h"
 #include "buffergrowth.h"
 #include "profile.h"
-#include "profileconfig.h"
+#include "profilecvars.h"
 #include "projection.h"
-#include "renderconfig.h"
+#include "rendercvars.h"
 #include "renderthread.h"
 #include "trace.h"
 #include "viewscene.h"
@@ -26,8 +26,8 @@ ViewFrame::ViewFrame(ViewScene& scene, Renderer& renderer, RenderThread& renderT
                                                                                         .mouseSensitivity = 0.15f,
                                                                                     }
     , postedCameraPosition(std::numeric_limits<float>::quiet_NaN())
-    , uploadBudgetChanges(renderconfig::uploadBudgetMiB.changes())
-    , geometryLimitChanges(renderconfig::geometryLimitMiB.changes()) {
+    , uploadBudgetChanges(rendercvars::uploadBudgetMiB.changes())
+    , geometryLimitChanges(rendercvars::geometryLimitMiB.changes()) {
     resetCameras();
 }
 
@@ -110,42 +110,42 @@ auto ViewFrame::sendSceneInputs() -> void {
     }
 
     // The purposes the View menu or a script turned on or off: the scene loads and draws them, and moves its revision on.
-    if (scene.purposeShown(Purpose::Guide) != viewconfig::purposeGuide.get()) {
-        scene.setPurposeShown(Purpose::Guide, viewconfig::purposeGuide.get());
+    if (scene.purposeShown(Purpose::Guide) != viewcvars::purposeGuide.get()) {
+        scene.setPurposeShown(Purpose::Guide, viewcvars::purposeGuide.get());
     }
-    if (scene.purposeShown(Purpose::Proxy) != viewconfig::purposeProxy.get()) {
-        scene.setPurposeShown(Purpose::Proxy, viewconfig::purposeProxy.get());
+    if (scene.purposeShown(Purpose::Proxy) != viewcvars::purposeProxy.get()) {
+        scene.setPurposeShown(Purpose::Proxy, viewcvars::purposeProxy.get());
     }
     // The upload budget and the geometry limit, handed to the render thread when their configuration changes.
-    if (renderconfig::uploadBudgetMiB.changes() != uploadBudgetChanges) {
-        uploadBudgetChanges = renderconfig::uploadBudgetMiB.changes();
-        renderThread.setUploadBudget((uint64_t) renderconfig::uploadBudgetMiB.get() * 1024 * 1024);
+    if (rendercvars::uploadBudgetMiB.changes() != uploadBudgetChanges) {
+        uploadBudgetChanges = rendercvars::uploadBudgetMiB.changes();
+        renderThread.setUploadBudget((uint64_t) rendercvars::uploadBudgetMiB.get() * 1024 * 1024);
     }
-    if (renderconfig::geometryLimitMiB.changes() != geometryLimitChanges) {
-        geometryLimitChanges = renderconfig::geometryLimitMiB.changes();
-        renderThread.setGeometryLimit((uint64_t) renderconfig::geometryLimitMiB.get() * 1024 * 1024);
+    if (rendercvars::geometryLimitMiB.changes() != geometryLimitChanges) {
+        geometryLimitChanges = rendercvars::geometryLimitMiB.changes();
+        renderThread.setGeometryLimit((uint64_t) rendercvars::geometryLimitMiB.get() * 1024 * 1024);
     }
     // How full a GPU table gets before it grows on a background job: the render thread reads it from any thread.
-    if (renderconfig::growthAhead.changes() != growthAheadChanges) {
-        growthAheadChanges = renderconfig::growthAhead.changes();
-        BufferGrowth::setAhead(renderconfig::growthAhead.get());
+    if (rendercvars::growthAhead.changes() != growthAheadChanges) {
+        growthAheadChanges = rendercvars::growthAhead.changes();
+        BufferGrowth::setAhead(rendercvars::growthAhead.get());
     }
     // The profiler's history window and GPU detail: the collector reads them from any thread.
-    if (profileconfig::historySeconds.changes() != profileHistoryChanges) {
-        profileHistoryChanges = profileconfig::historySeconds.changes();
-        profile::setHistorySeconds(profileconfig::historySeconds.get());
+    if (profilecvars::historySeconds.changes() != profileHistoryChanges) {
+        profileHistoryChanges = profilecvars::historySeconds.changes();
+        profile::setHistorySeconds(profilecvars::historySeconds.get());
     }
-    if (profileconfig::gpuDetail.changes() != profileGpuDetailChanges) {
-        profileGpuDetailChanges = profileconfig::gpuDetail.changes();
-        profile::setGpuDetail(profileconfig::gpuDetail.get());
+    if (profilecvars::gpuDetail.changes() != profileGpuDetailChanges) {
+        profileGpuDetailChanges = profilecvars::gpuDetail.changes();
+        profile::setGpuDetail(profilecvars::gpuDetail.get());
     }
-    if (profileconfig::stallSeconds.changes() != profileStallChanges) {
-        profileStallChanges = profileconfig::stallSeconds.changes();
-        profile::setStallSeconds(profileconfig::stallSeconds.get());
+    if (profilecvars::stallSeconds.changes() != profileStallChanges) {
+        profileStallChanges = profilecvars::stallSeconds.changes();
+        profile::setStallSeconds(profilecvars::stallSeconds.get());
     }
-    if (profileconfig::frameBudgetMs.changes() != profileBudgetChanges) {
-        profileBudgetChanges = profileconfig::frameBudgetMs.changes();
-        profile::setFrameBudgetMs(profileconfig::frameBudgetMs.get());
+    if (profilecvars::frameBudgetMs.changes() != profileBudgetChanges) {
+        profileBudgetChanges = profilecvars::frameBudgetMs.changes();
+        profile::setFrameBudgetMs(profilecvars::frameBudgetMs.get());
     }
     // What changed in the scene since the last frame: the render thread applies it, uploads go out a budget per frame.
     PROFILE_ZONE("TakeChanges", Frame);
@@ -327,8 +327,8 @@ auto ViewFrame::moveCamera(const CameraMove& move, bool orbitHeld) -> void {
     cam.followHeight.reset();
     cameras.view->followHeight.reset();
     auto& controlled = *cameras.controlled;
-    if (viewconfig::follow.get()) {
-        controlled.followHeight = (float) (viewconfig::followHeight.get() / metersPerUnit);
+    if (viewcvars::follow.get()) {
+        controlled.followHeight = (float) (viewcvars::followHeight.get() / metersPerUnit);
     }
     auto camBefore = controlled.position;
     controlled.update(move, dt);
@@ -337,10 +337,10 @@ auto ViewFrame::moveCamera(const CameraMove& move, bool orbitHeld) -> void {
         cameraModes.pivot += controlled.position - camBefore;
     }
     bool flown = flight.flying() && &controlled == &cam;
-    if (viewconfig::follow.get() && controlled.followHeight) {
-        (void) viewconfig::followHeight.set(*controlled.followHeight * metersPerUnit);
+    if (viewcvars::follow.get() && controlled.followHeight) {
+        (void) viewcvars::followHeight.set(*controlled.followHeight * metersPerUnit);
     }
-    if (!viewconfig::follow.get()) {
+    if (!viewcvars::follow.get()) {
         cameraModes.ground.reset();
         cameraModes.groundPrim.clear();
     } else if (!cameraModes.orbiting && !flown) {
@@ -374,8 +374,8 @@ auto ViewFrame::cull() -> void {
     // Culling runs on the GPU: the snapshot carries the frustum to cull against (live, or frozen so the culled set can be inspected from
     // elsewhere), and the results come back a few frames later.
     PROFILE_ZONE("Cull", Frame);
-    cullState.enabled = renderconfig::cullingEnabled.get();
-    cullState.frozen = renderconfig::cullingFrozen.get();
+    cullState.enabled = rendercvars::cullingEnabled.get();
+    cullState.frozen = rendercvars::cullingFrozen.get();
     cullViewProj = cullState.update(proj * cameras.cull->viewMatrix());
     if (auto result = renderThread.latestCullResult(); result.has_value()) {
         latestCull = std::move(*result);
@@ -398,11 +398,11 @@ auto ViewFrame::fitCascades() -> void {
     }
     auto lightDir = pickShadowLightDirection(scene.renderWorld().lights, cam.worldUp);
     PROFILE_ZONE_DETAIL("FitShadowCascades", Frame);
-    cascadeCount = fitShadowCascades(renderconfig::shadowSettings(), cameras.shadows->viewMatrix(), proj, projectionNear, lightDir, cam.worldUp, sceneWorldBounds, cascades);
+    cascadeCount = fitShadowCascades(rendercvars::shadowSettings(), cameras.shadows->viewMatrix(), proj, projectionNear, lightDir, cam.worldUp, sceneWorldBounds, cascades);
     frozenCorners.reset();
     if (cullState.frozenActive) {
         // The frozen frustum has no far plane: drawn out to the shadow distance.
-        frozenCorners = cullState.frozenCorners(projectionDepthAt((float) renderconfig::shadowDistance.get()));
+        frozenCorners = cullState.frozenCorners(projectionDepthAt((float) rendercvars::shadowDistance.get()));
     }
 }
 
@@ -436,24 +436,24 @@ auto ViewFrame::buildSnapshot() -> RenderSnapshot {
         .worldUp = cam.worldUp,
         .windowWidth = width,
         .windowHeight = height,
-        .viewMode = static_cast<ViewMode>(renderconfig::viewMode.get()),
-        .hzbLevel = (int) renderconfig::hzbLevel.get(),
-        .debugView = static_cast<DebugView>(renderconfig::debugView.get()),
-        .showBufferOverlay = renderconfig::bufferOverlay.get(),
-        .showShadowOverlay = renderconfig::shadowOverlay.get(),
-        .antiAliasing = renderconfig::antiAliasing.get(),
-        .depthPrepass = renderconfig::depthPrepass.get(),
-        .occlusion = renderconfig::cullingOcclusion.get(),
+        .viewMode = static_cast<ViewMode>(rendercvars::viewMode.get()),
+        .hzbLevel = (int) rendercvars::hzbLevel.get(),
+        .debugView = static_cast<DebugView>(rendercvars::debugView.get()),
+        .showBufferOverlay = rendercvars::bufferOverlay.get(),
+        .showShadowOverlay = rendercvars::shadowOverlay.get(),
+        .antiAliasing = rendercvars::antiAliasing.get(),
+        .depthPrepass = rendercvars::depthPrepass.get(),
+        .occlusion = rendercvars::cullingOcclusion.get(),
         .cullCameraSeparate = cameras.cull != cameras.view || cullState.frozenActive,
-        .sampler = renderconfig::samplerSettings(),
+        .sampler = rendercvars::samplerSettings(),
         .cullEnabled = cullState.enabled,
         .cullViewProj = cullViewProj,
         .readLodStates = readLodStates,
         .lodHysteresis = scene.lodTuning().hysteresis,
         .lodFlashFrames = (uint32_t) std::clamp(std::lround(0.5f / std::max(dt, 1e-4f)), 1L, 127L),
-        .shadowSettings = renderconfig::shadowSettings(),
-        .ambient = renderconfig::ambient(),
-        .sky = renderconfig::skyOn.get(),
+        .shadowSettings = rendercvars::shadowSettings(),
+        .ambient = rendercvars::ambient(),
+        .sky = rendercvars::skyOn.get(),
         .cascadeCount = cascadeCount,
         .cascades = cascades,
         .cascadeCamera = &shadowCamera != cameras.view ? std::optional<std::pair<glm::vec3, glm::vec3>>({shadowCamera.position, shadowCamera.forward()}) : std::nullopt,

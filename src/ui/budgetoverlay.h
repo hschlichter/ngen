@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.h"
+#include "cvar.h"
 
 struct RenderFrameCommands;
 
@@ -10,7 +10,7 @@ struct RenderFrameCommands;
 // are the profiler's over the last 60 frames, the zones record's GPU track over the same window.
 auto drawBudgetOverlay(const RenderFrameCommands& commands) -> void;
 
-// The UI's configuration values (src/config/README.md).
-namespace uiconfig {
-extern config::Bool budgetOverlay; // ui.overlay.budget
-} // namespace uiconfig
+// The UI's cvars (src/cvar/README.md).
+namespace uicvars {
+extern cvar::Bool budgetOverlay; // ui.overlay.budget
+} // namespace uicvars

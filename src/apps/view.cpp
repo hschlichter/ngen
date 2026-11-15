@@ -5,7 +5,7 @@
 #include "imguibackendvulkan.h"
 #include "jobsystem.h"
 #include "profile.h"
-#include "renderconfig.h"
+#include "rendercvars.h"
 #include "renderdoccapture.h"
 #include "renderer.h"
 #include "renderthread.h"
@@ -134,7 +134,7 @@ auto pollInput(SDL_Window* window, ViewFrame& frame, ViewHooks& hooks, WindowInp
             continue;
         }
         if (plainKey && ev.key.key == SDLK_G) {
-            viewconfig::follow.set(!viewconfig::follow.get());
+            viewcvars::follow.set(!viewcvars::follow.get());
             continue;
         }
         if (ev.type == SDL_EVENT_KEY_DOWN && ev.key.scancode == SDL_SCANCODE_LALT && !ev.key.repeat) {
@@ -223,7 +223,7 @@ auto main(int argc, char* argv[]) -> int {
             failOnValidation = true;
             enableValidation = true;
         } else if (arg.starts_with("--geometry-limit=")) {
-            (void) renderconfig::geometryLimitMiB.set((int64_t) std::stoull(flagValue(arg, "--geometry-limit=")));
+            (void) rendercvars::geometryLimitMiB.set((int64_t) std::stoull(flagValue(arg, "--geometry-limit=")));
         } else if (arg.starts_with("--frames=")) {
             maxFrames = std::stoull(flagValue(arg, "--frames="));
         } else if (arg.starts_with("--camera=")) {
@@ -418,7 +418,7 @@ auto main(int argc, char* argv[]) -> int {
         auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - rendererInitStart).count();
         TRACE_EVENT("Render", "RendererInitialized", "renderer").text(std::format("renderer initialized in {:.0f} ms", ms)).field("ms", ms);
     }
-    renderer.setGeometryLimit((uint64_t) renderconfig::geometryLimitMiB.get() * 1024 * 1024);
+    renderer.setGeometryLimit((uint64_t) rendercvars::geometryLimitMiB.get() * 1024 * 1024);
 
     // The passes have registered their pipelines: their shaders go out in one request, and each pipeline is made when its shaders arrive.
     // Nothing waits for them: the frame is the clear colour and the UI until the lit path's pipelines are there.

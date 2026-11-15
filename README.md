@@ -48,7 +48,7 @@ out and changes level around the camera as it moves.*
 **Tooling**
 - **A self-hosted build system**, `ngen-build`: the project is a C++ program (`build.cpp`) against a reusable framework; no CMake, no Ninja.
 - **`ngen-cli`**, the front door: build, run the view and the asset server, introspect.
-- **Configuration**: every engine setting is a typed value declared by its owner, readable and settable at runtime (`config.*`).
+- **Cvars**: every engine setting is a typed value declared by its owner, readable and settable at runtime (`cvar.*`).
 
 ## Screenshots
 
@@ -108,7 +108,7 @@ Each library documents its design and rules in a README next to the code:
   Tracy as a second sink.
 - [`src/jobs/README.md`](src/jobs/README.md) — the job system: the workers, frame jobs (waited for, parallel loops) and background jobs
   (polled), who may wait for what.
-- [`src/config/README.md`](src/config/README.md) — configuration: the engine's settings as typed values declared in code, their names, threads,
+- [`src/cvar/README.md`](src/cvar/README.md) — cvars: the engine's settings as typed values declared in code, their names, threads,
   changes, and how they are read and set at runtime.
 - [`src/rpc/README.md`](src/rpc/README.md) — how ngen processes and agents talk: JSON-RPC over loopback TCP, discovery, threading, adding a method, records.
 - [`src/introspect/README.md`](src/introspect/README.md) — `ngen-introspect`: every running process's records in a window or on the command line, and calling their methods.
@@ -203,7 +203,7 @@ and configurations).
 it, so you stop spelling out `-p`/`-c` and `_out/<platform>/<config>/` on every command.
 
 [`REFERENCE.md`](REFERENCE.md) is the quick reference for every tool's commands and flags, ngen-view's keys and script verbs, the RPC methods,
-the records and the configuration values.
+the records and the cvars.
 
 ### First-time setup
 

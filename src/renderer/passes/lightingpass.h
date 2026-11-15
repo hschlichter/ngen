@@ -71,7 +71,7 @@ struct LightingInputs {
     std::optional<Sky> sky;
 };
 
-// The view modes by name, in ViewMode's order: the `render.view.mode` configuration's choices.
+// The view modes by name, in ViewMode's order: the `render.view.mode` cvar's choices.
 inline constexpr std::array<const char*, 12> viewModeNames = {"lit", "albedo", "normals", "depth", "shadowfactor", "shadowmap", "shadowuv", "worldpos", "miplevel", "cascades", "lodlevel", "hzb"};
 
 enum class ViewMode : int {

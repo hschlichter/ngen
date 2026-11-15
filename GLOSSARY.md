@@ -16,7 +16,7 @@ Several common words mean different things in different parts of the engine (*le
 - [Cameras, selection and tools](#cameras-selection-and-tools)
 - [Renderer](#renderer)
 - [RHI](#rhi)
-- [Runtime access: RPC, records, trace, profile, configuration](#runtime-access-rpc-records-trace-profile-configuration)
+- [Runtime access: RPC, records, trace, profile, cvars](#runtime-access-rpc-records-trace-profile-cvars)
 - [Project and process](#project-and-process)
 - [Words with more than one meaning](#words-with-more-than-one-meaning)
 
@@ -80,7 +80,7 @@ Every program's `main` is in `src/apps/` (the build system's and the RHI example
   sends the hashes it holds (`have`) and gets `sent: false` when current.
 - **Depfile** — the Make-format list of every file a packer read; with the job key, what the up-to-date check compares.
 - **Discovery** — `.ngen-discovery/<kind>-<pid>.json` files an endpoint writes in its working directory, so processes in the same directory find
-  each other. See [RPC](#runtime-access-rpc-records-trace-profile-configuration).
+  each other. See [RPC](#runtime-access-rpc-records-trace-profile-cvars).
 - **Fragment / secondary output** — an asset a file's job writes besides the file itself, with the id `<file>#<fragment>`: a USD file's meshes
   and materials are `<file>#<prim path>`.
 - **Job** — one run of a packer for one source file; one job per file at a time, shared by every request for any of its ids.
@@ -339,15 +339,15 @@ sense of a map; that is a scene.
 - **RHI** — render hardware interface: a thin, header-only abstraction that executes and never schedules, waits or caches.
 - **`RhiWindow`** — the window layer's contract with the RHI (instance extensions, `createSurface`); no window system code under `src/rhi/`.
 
-## Runtime access: RPC, records, trace, profile, configuration
+## Runtime access: RPC, records, trace, profile, cvars
 
-`src/rpc/README.md`, `src/introspect/README.md`, `src/trace/README.md`, `src/profile/README.md`, `src/config/README.md`.
+`src/rpc/README.md`, `src/introspect/README.md`, `src/trace/README.md`, `src/profile/README.md`, `src/cvar/README.md`.
 
 - **Command** (engine command) — a method, verb or record of the engine, registered by domain in `src/view/*commands.cpp`; the tools and the UI
   register their own.
-- **Configuration value** — a typed setting (`config::Bool`, `Int`, `Float`, `Enum`, `Vec3`) declared in code by its owner with a dotted
-  name (`render.shadow.cascades`), a default and a description. Read and set through the `config` record, `config.*` methods, the `config`
-  verb and the Configuration window. Its *group* is the name's first two parts.
+- **Cvar** — a console variable: a typed setting (`cvar::Bool`, `Int`, `Float`, `Enum`, `Vec3`) declared in code by its owner with a dotted
+  name (`render.shadow.cascades`), a default and a description. Read and set through the `cvars` record, the `cvar.*` methods, the `cvar`
+  verb and the Cvars window. Its *group* is the name's first two parts.
 - **Endpoint** (`RpcEndpoint`) — one per long-running process: an RPC server, a discovery file, main-thread dispatch and the trace stream.
 - **Event** (trace) — `TRACE_EVENT` / `TRACE_WARNING` / `TRACE_ERROR` with a category (`Scene`, `Render`, `Engine`, `Asset`), a CamelCase
   type, a stable name, a text and fields.
@@ -402,7 +402,7 @@ sense of a map; that is a scene.
 | component | a World component (lights, LOD roots, instancers, payloads); a future gameplay component; a UI or software component in prose |
 | content | a World content (stage, prototype, level); "content developers" means the people authoring worlds |
 | frame | the main thread's `ViewFrame`; a render frame on a frame context; an RPC frame (length-prefixed message); a script's frame number |
-| group | a render-LOD group (GPU-picked LOD root); a profile group (zone colour); a config group (name prefix); a workgroup of 256 culling slots (group box) |
+| group | a render-LOD group (GPU-picked LOD root); a profile group (zone colour); a cvar group (name prefix); a workgroup of 256 culling slots (group box) |
 | history | occlusion culling's per-instance visibility from last frame; the profiler's seconds of zones (`profile.history.seconds`) |
 | hooks | `ViewHooks` (main-thread frame steps); `RenderExtension` hooks (render-thread frame points) |
 | instance | a USD instance (shares a prototype); an instance the renderer draws (one prim's submesh, `RenderMeshInstance`) and its GPU record; a point of a PointInstancer is neither |

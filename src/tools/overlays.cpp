@@ -11,13 +11,13 @@ auto drawOverlays(DebugDraw& draw,
                   const std::optional<std::array<glm::vec3, 8>>& frozenFrustum,
                   std::span<const ShadowCascade> cascades,
                   const AABB* selectedBounds) -> void {
-    if (toolsconfig::overlayGrid.get()) {
+    if (toolscvars::overlayGrid.get()) {
         draw.grid(eye, up, 1.0f, 50, {0.25f, 0.25f, 0.25f, 1.0f});
     }
-    if (toolsconfig::overlayOrigin.get()) {
+    if (toolscvars::overlayOrigin.get()) {
         draw.sphere({0, 0, 0}, 0.1f, {1.0f, 0.9f, 0.2f, 1.0f}, 16);
     }
-    if (toolsconfig::overlayAabbs.get()) {
+    if (toolscvars::overlayAabbs.get()) {
         for (const auto& inst : world.meshInstances) {
             if (inst.alive && inst.worldBounds.valid()) {
                 draw.box(inst.worldBounds, {0.0f, 1.0f, 0.0f, 1.0f});
@@ -26,7 +26,7 @@ auto drawOverlays(DebugDraw& draw,
     }
     // Culling debug: every instance AABB by its cull result, red for culled, green for drawn, and the frozen frustum's twelve edges in
     // yellow when the frustum is frozen.
-    if (toolsconfig::overlayCulled.get() && visible.size() == world.meshInstances.size()) {
+    if (toolscvars::overlayCulled.get() && visible.size() == world.meshInstances.size()) {
         for (size_t i = 0; i < visible.size(); i++) {
             const auto& inst = world.meshInstances[i];
             if (!inst.alive || !inst.worldBounds.valid()) {
@@ -48,7 +48,7 @@ auto drawOverlays(DebugDraw& draw,
     }
     // Each shadow cascade's light frustum (an ortho box) in its own colour: red, green, blue, yellow from near to far, the same colours
     // as the cascades view.
-    if (toolsconfig::overlayCascadeFrusta.get()) {
+    if (toolscvars::overlayCascadeFrusta.get()) {
         const std::array<glm::vec4, 4> colors = {{{1.0f, 0.3f, 0.3f, 1.0f}, {0.3f, 1.0f, 0.3f, 1.0f}, {0.3f, 0.5f, 1.0f, 1.0f}, {1.0f, 0.9f, 0.2f, 1.0f}}};
         for (size_t i = 0; i < cascades.size() && i < colors.size(); i++) {
             auto c = Frustum::corners(cascades[i].viewProj);
@@ -60,7 +60,7 @@ auto drawOverlays(DebugDraw& draw,
             }
         }
     }
-    if (toolsconfig::overlayLightGizmos.get() && !world.lights.empty()) {
+    if (toolscvars::overlayLightGizmos.get() && !world.lights.empty()) {
         // The sun floats a fixed distance in front of the camera along the toward-light direction: constant world size, so it reads the
         // same at any scene scale and never meets scene geometry. A directional compass, not an object in the scene.
         constexpr float sunDistance = 3.0f;
@@ -80,21 +80,21 @@ auto drawOverlays(DebugDraw& draw,
             draw.sunLight(sunPos, -towardUnit, discRadius, shaftLength, {1.0f, 0.85f, 0.2f, 1.0f});
         }
     }
-    if (selectedBounds != nullptr && toolsconfig::overlaySelectedAabb.get() && selectedBounds->valid()) {
+    if (selectedBounds != nullptr && toolscvars::overlaySelectedAabb.get() && selectedBounds->valid()) {
         draw.box(*selectedBounds, {1.0f, 0.0f, 0.6f, 1.0f});
     }
 }
 
-namespace toolsconfig {
+namespace toolscvars {
 
-config::Bool overlayGrid{"tools.overlay.grid", true, "A ground grid on the scene's up axis."};
-config::Bool overlayOrigin{"tools.overlay.origin", true, "The world's axes at the origin."};
-config::Bool overlayGizmos{"tools.overlay.gizmos", true, "The corner axis gizmo and the selection's transform gizmo."};
-config::Bool overlayAabbs{"tools.overlay.aabbs", false, "Every instance's world bounds."};
-config::Bool overlaySelectedAabb{"tools.overlay.selectedAabb", true, "The selection's world bounds."};
-config::Bool overlayLightGizmos{"tools.overlay.lightGizmos", true, "Each light's direction."};
-config::Bool overlayCulled{"tools.overlay.culled", false, "Every instance's bounds by its GPU cull result: green drawn, red culled."};
-config::Int overlayCulledView{"tools.overlay.culledView", 0, "Whose cull result the culled overlay shows: 0 the camera, 1 and up a shadow cascade.", {.min = 0, .max = 4}};
-config::Bool overlayCascadeFrusta{"tools.overlay.cascadeFrusta", false, "Each shadow cascade's light frustum, in the cascades view's colours."};
+cvar::Bool overlayGrid{"tools.overlay.grid", true, "A ground grid on the scene's up axis."};
+cvar::Bool overlayOrigin{"tools.overlay.origin", true, "The world's axes at the origin."};
+cvar::Bool overlayGizmos{"tools.overlay.gizmos", true, "The corner axis gizmo and the selection's transform gizmo."};
+cvar::Bool overlayAabbs{"tools.overlay.aabbs", false, "Every instance's world bounds."};
+cvar::Bool overlaySelectedAabb{"tools.overlay.selectedAabb", true, "The selection's world bounds."};
+cvar::Bool overlayLightGizmos{"tools.overlay.lightGizmos", true, "Each light's direction."};
+cvar::Bool overlayCulled{"tools.overlay.culled", false, "Every instance's bounds by its GPU cull result: green drawn, red culled."};
+cvar::Int overlayCulledView{"tools.overlay.culledView", 0, "Whose cull result the culled overlay shows: 0 the camera, 1 and up a shadow cascade.", {.min = 0, .max = 4}};
+cvar::Bool overlayCascadeFrusta{"tools.overlay.cascadeFrusta", false, "Each shadow cascade's light frustum, in the cascades view's colours."};
 
-} // namespace toolsconfig
+} // namespace toolscvars

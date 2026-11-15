@@ -7,7 +7,7 @@
 #include "pipelineregistry.h"
 #include "previewtextures.h"
 #include "profile.h"
-#include "profileconfig.h"
+#include "profilecvars.h"
 #include "renderer.h"
 #include "rendersnapshot.h"
 #include "resourcepool.h"
@@ -58,7 +58,7 @@ auto RenderTools::fillSnapshot(RenderSnapshot& snapshot) -> void {
     frame->textureInspect = textureInspect;
     frame->textureDumps = std::exchange(pendingDumps, {});
     frame->screenshots = std::exchange(pendingScreenshots, {});
-    frame->frameImages = profileconfig::tracyFrameImages.get();
+    frame->frameImages = profilecvars::tracyFrameImages.get();
     frame->profileFrame = profile::frameMarks();
     snapshot.setExtension(index(), std::move(frame));
     next = {};
