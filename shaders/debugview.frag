@@ -6,7 +6,7 @@
 // readout reads it back as is. Alpha 1 marks covered pixels (background stays 0), and
 // counts fragments in the overdraw view, where blending adds.
 layout(push_constant) uniform Push {
-    uint region;
+    uint drawList;
     uint flags;
     vec2 viewport;
     uint mode; // DebugView

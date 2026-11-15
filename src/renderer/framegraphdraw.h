@@ -13,5 +13,5 @@ struct FgDrawRecord {
     uint32_t prim = 0;
     uint32_t indexOffset = 0;
     uint32_t indexCount = 0; // the submesh's indices; 0 when the draw is a whole mesh (a shadow cascade)
-    uint32_t meshlets = 0;   // the instance's meshlets in the region, before the task shader culls them
+    uint32_t meshlets = 0;   // the instance's meshlets in the draw list, before the task shader culls them
 };

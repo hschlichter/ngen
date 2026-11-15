@@ -9,7 +9,7 @@
 #include "meshlet.glsl"
 
 layout(push_constant) uniform Push {
-    uint region;
+    uint drawList;
     uint flags;
     uint pad0;
     uint pad1;

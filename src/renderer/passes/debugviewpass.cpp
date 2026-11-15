@@ -206,8 +206,8 @@ auto DebugViewPass::addPass(
                 data.depth = builder.write(depthHandle, FgAccessFlags::DepthAttachment);
             }
             builder.read(instanceBuffer, FgAccessFlags::StorageRead);
-            // One draw per region: its RegionWork is the draw's command and the task shaders' range of work items.
-            builder.read(drawHandles.regionWork, FgAccessFlags::IndirectRead | FgAccessFlags::StorageRead);
+            // One draw per draw list: its DrawListWork is the draw's command and the task shaders' range of work items.
+            builder.read(drawHandles.drawListWork, FgAccessFlags::IndirectRead | FgAccessFlags::StorageRead);
             builder.read(drawHandles.workItems, FgAccessFlags::StorageRead);
             builder.read(hzb, FgAccessFlags::ShaderRead);
             if (drawHandles.lodStates.valid()) {
@@ -247,7 +247,7 @@ auto DebugViewPass::addPass(
                 .viewport = {(float) extent.width, (float) extent.height},
                 .mode = mode,
             };
-            auto* regionWork = ctx.buffer(drawHandles.regionWork);
+            auto* drawListWork = ctx.buffer(drawHandles.drawListWork);
             // Every camera bucket; debugview.frag discards cut-away texels itself, so the cutout
             // buckets draw with the same pipelines.
             // Both of occlusion's phases, their meshlets tested as the geometry pass tests them. The meshlet culling view classifies
@@ -263,7 +263,7 @@ auto DebugViewPass::addPass(
                     uint32_t bucket = index % DrawLists::bucketCount;
                     bool late = index >= DrawLists::bucketCount;
                     bool doubleSided = bucket % 2 != 0;
-                    auto region = late ? DrawLists::cameraLateRegion(doubleSided, bucket >= 2) : DrawLists::cameraRegion(doubleSided, bucket >= 2);
+                    auto drawList = late ? DrawLists::cameraLateDrawList(doubleSided, bucket >= 2) : DrawLists::cameraDrawList(doubleSided, bucket >= 2);
                     push.meshlet.flags = meshletFlagSplit | (occlusion ? meshletFlagOcclusion : 0u);
                     PipelineHandle handle = pipelines[doubleSided ? 1 : 0];
                     if (overdraw) {
@@ -275,10 +275,10 @@ auto DebugViewPass::addPass(
                     auto* pip = registry->get(handle);
                     cmd->bindPipeline(pip);
                     cmd->bindDescriptorSet(pip, 0, geometrySet);
-                    push.meshlet.region = region;
+                    push.meshlet.drawList = drawList;
                     cmd->pushConstants(pip, RhiShaderStage::Task | RhiShaderStage::Mesh | RhiShaderStage::Fragment, 0, sizeof(push), &push);
-                    PROFILE_GPU_ZONE(cmd, DrawLists::drawName(region), Geometry);
-                    DrawLists::drawRegion(cmd, regionWork, region);
+                    PROFILE_GPU_ZONE(cmd, DrawLists::drawName(drawList), Geometry);
+                    DrawLists::draw(cmd, drawListWork, drawList);
                 }
             }
             cmd->endRendering();

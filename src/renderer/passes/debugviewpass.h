@@ -19,7 +19,7 @@ struct DebugViewPassData {
     FgTextureHandle lit;   // the lit image, read by the streaming view, which lays its colours over it
 };
 
-// Viewport debug views: draws the camera's regions again through the task and mesh shaders, writing one raw value per pixel, then colours
+// Viewport debug views: draws the camera's draw lists again through the task and mesh shaders, writing one raw value per pixel, then colours
 // the values in a compute pass. The meshlet culling view draws every meshlet of the camera's drawn instances with the test that would cull
 // it, into a depth buffer of its own, then the meshlets the depth pyramid hides again where they lie behind it (an x-ray).
 // Only added to the graph while a view is on, and once its pipelines are ready: they are registered for first use, so their shaders are

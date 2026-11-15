@@ -94,20 +94,20 @@ auto meshletCountsJson(const MeshletCounts& counts) -> Json {
     };
 }
 
-auto regionsJson(const CullResult& cull) -> Json {
-    auto regions = Json::array();
-    for (uint32_t region = 0; region < cull.regionDraws.size(); region++) {
-        if (cull.regionDraws[region] == 0) {
+auto drawListsJson(const CullResult& cull) -> Json {
+    auto drawLists = Json::array();
+    for (uint32_t drawList = 0; drawList < cull.drawListDraws.size(); drawList++) {
+        if (cull.drawListDraws[drawList] == 0) {
             continue;
         }
-        regions.push_back({
-            {"region", DrawLists::regionName(region)},
-            {"draws", cull.regionDraws[region]},
-            {"meshlets", region < cull.regionMeshlets.size() ? cull.regionMeshlets[region] : 0u},
-            {"instanceTriangles", cull.regionTriangles[region]},
+        drawLists.push_back({
+            {"drawList", DrawLists::drawListName(drawList)},
+            {"draws", cull.drawListDraws[drawList]},
+            {"meshlets", drawList < cull.drawListMeshlets.size() ? cull.drawListMeshlets[drawList] : 0u},
+            {"instanceTriangles", cull.drawListTriangles[drawList]},
         });
     }
-    return regions;
+    return drawLists;
 }
 
 auto cullingRecord(const ViewContext& view) -> Json {
@@ -133,7 +133,7 @@ auto cullingRecord(const ViewContext& view) -> Json {
           {"instanceTriangles", cull.cameraInstanceTriangles},
           {"triangles", cull.cameraTriangles},
           {"meshlets", meshletCountsJson(cull.cameraMeshlets)}}},
-        {"regions", regionsJson(cull)},
+        {"drawLists", drawListsJson(cull)},
         {"occlusion",
          {{"ran", cull.occlusion},
           {"enabled", renderconfig::cullingOcclusion.get()},
@@ -143,7 +143,7 @@ auto cullingRecord(const ViewContext& view) -> Json {
           {"drawnSecond", cull.lateDrawn},
           {"occluded", cull.occluded}}},
         {"lodLevelNotDrawn", cull.lodDropped},
-        {"regionOverflow", cull.regionOverflow},
+        {"drawListOverflow", cull.drawListOverflow},
         {"sceneTriangles", cull.sceneTriangles},
         {"sceneMeshlets", cull.sceneMeshlets},
         {"cascades", cascades},

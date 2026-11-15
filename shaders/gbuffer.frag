@@ -17,7 +17,7 @@ layout(location = 1) out vec4 outNormal;
 layout(location = 2) out uint outInstance;
 
 void main() {
-    // A draw is a region's meshlets, whatever their instance: the texture differs within it.
+    // A draw is a draw list's meshlets, whatever their instance: the texture differs within it.
     vec4 texColor = texture(textures[nonuniformEXT(fragTexture)], fragTexCoord);
     // Alpha carries the mip level the sampler picked, for the mip level view mode.
     float lod = textureQueryLod(textures[nonuniformEXT(fragTexture)], fragTexCoord).x;

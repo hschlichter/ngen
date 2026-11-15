@@ -26,7 +26,7 @@ public:
     auto init(PipelineRegistry& pipelines, RhiFormat depthFormat, RhiDescriptorSetLayout* geometrySetLayout) -> bool;
 
     // One atlas texture of atlasExtent; each cascade draws into its tile with its own
-    // viewport, scissor and light matrix. Cascade c draws DrawLists::cascadeRegion(c, *)
+    // viewport, scissor and light matrix. Cascade c draws DrawLists::cascadeDrawList(c, *)
     // indirectly, its meshlets culled against the cascade (meshlet.task); its cutout buckets discard where the opacity is below the
     // threshold (shadowcutout.mesh, cutout.frag).
     auto addPass(

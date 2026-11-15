@@ -49,11 +49,11 @@ struct CullResult {
     uint32_t earlyDrawn = 0;
     uint32_t lateDrawn = 0;
     uint32_t occluded = 0;
-    uint32_t regionOverflow = 0; // draw records dropped past their region's end: the CPU's bucket counts disagree with the shader's (a bug)
-    // Per region (view * 4 + bucket, DrawLists::regionName): the draws, their meshlets (the work items) and the instances' triangles.
-    std::vector<uint32_t> regionDraws;
-    std::vector<uint32_t> regionMeshlets;
-    std::vector<uint64_t> regionTriangles;
+    uint32_t drawListOverflow = 0; // draw records dropped past their draw list's end: the CPU's bucket counts disagree with the shader's (a bug)
+    // Per draw list (view * 4 + bucket, DrawLists::drawListName): the draws, their meshlets (the work items) and the instances' triangles.
+    std::vector<uint32_t> drawListDraws;
+    std::vector<uint32_t> drawListMeshlets;
+    std::vector<uint64_t> drawListTriangles;
     // Per instance, bit v = visible in view v (0 camera, 1.. cascades); read back only for a frame whose snapshot asked (readVisibility),
     // empty otherwise.
     std::vector<uint8_t> viewBits;
@@ -82,8 +82,8 @@ struct CullResult {
     std::vector<uint8_t> lodFlags;
 };
 
-// One instance drawn in a region (instancecull.comp's DrawRecord), in instance order: its meshlets there (its submesh's) and where they
-// start in the work item buffer (an index into the whole buffer, not the region). What the draw log, the GPU Scene window and the frame debugger read; the draws
+// One instance drawn in a draw list (instancecull.comp's DrawRecord), in instance order: its meshlets there (its submesh's) and where they
+// start in the work item buffer (an index into the whole buffer, not the draw list). What the draw log, the GPU Scene window and the frame debugger read; the draws
 // themselves go through the work items.
 struct DrawRecord {
     uint32_t instance = 0;
@@ -112,22 +112,22 @@ struct MeshletWorkItem {
 };
 static_assert(sizeof(MeshletWorkItem) == 8);
 
-// A region's draw (instancecull.comp's scan writes it): the task workgroups for its work items, 32 meshlets each (x wraps into y past
+// A draw list's draw (instancecull.comp's scan writes it): the task workgroups for its work items, 32 meshlets each (x wraps into y past
 // maxTaskGroupsX), and its work items' range. The draw reads the command; its task shaders read the range.
-struct RegionWork {
+struct DrawListWork {
     RhiDrawMeshTasksIndirectCommand tasks;
     uint32_t firstItem = 0;
     uint32_t itemCount = 0;
     uint32_t pad[3] = {};
 };
-static_assert(sizeof(RegionWork) == 32);
+static_assert(sizeof(DrawListWork) == 32);
 inline constexpr uint32_t meshletsPerTask = 32;
 // The task workgroups a draw launches in x before it goes on in y: every device takes 65,535 a dimension.
 inline constexpr uint32_t maxTaskGroupsX = 32768;
 
-// The first words of every mesh pass's push constants (meshlet.glsl): the region whose commands draw, and meshletFlag*.
+// The first words of every mesh pass's push constants (meshlet.glsl): the draw list whose commands draw, and meshletFlag*.
 struct MeshletPush {
-    uint32_t region = 0;
+    uint32_t drawList = 0;
     uint32_t flags = 0;
 };
 inline constexpr uint32_t meshletFlagCount = 1u << 0;      // the pass adds to the meshlet counts (the camera's geometry pass, the shadow pass)
@@ -143,13 +143,13 @@ class FrameGraphContext;
 class RhiDevice;
 
 // What each view draws, per pipeline bucket, written on the GPU by the culling passes (src/renderer/README.md, "Culling and draw lists").
-// One region per (view, bucket): the camera, then each shadow cascade, then the camera's late phase (occlusion culling's second phase),
+// One draw list per (view, bucket): the camera, then each shadow cascade, then the camera's late phase (occlusion culling's second phase),
 // each split into single-sided and double-sided, opaque and cutout. A cutout bucket's pipelines discard where the material's opacity is
-// below its threshold. A region is drawn by one indirect mesh-task draw over its meshlet work items, every visible instance's meshlets in
+// below its threshold. A draw list is drawn by one indirect mesh-task draw over its meshlet work items, every visible instance's meshlets in
 // instance order, which share the frame context's one work item buffer.
 //
-// A region holds as many draw records as instances can land in it: each live instance is in one bucket, the same in every view, known
-// from its flags, so the regions are sized from counts kept as instances change (countInstance) and packed one after another (writeParams).
+// A draw list holds as many draw records as instances can land in it: each live instance is in one bucket, the same in every view, known
+// from its flags, so the draw lists are sized from counts kept as instances change (countInstance) and packed one after another (writeParams).
 //
 // Owns the frame context's buffers the culling passes read and write, and the readback that brings counts and visibility back to the CPU
 // once the slot's fence has passed, with the draw records too, into a buffer of their own, while the render debugger is open. Everything
@@ -160,23 +160,23 @@ public:
     static constexpr uint32_t bucketCount = 4; // single-sided, double-sided, then the same two cutout
     static constexpr uint32_t viewCount = 2 + maxShadowCascades;
     static constexpr uint32_t lateView = viewCount - 1; // the camera's second phase
-    static constexpr uint32_t regionCount = viewCount * bucketCount;
+    static constexpr uint32_t drawListCount = viewCount * bucketCount;
     // Visibility bits beside the views': drawn in the camera's first phase (visible last frame); bit lateView, drawn in its second.
     static constexpr uint32_t visibilityEarlyBit = 1u << 6;
     // Counters the culling shader produces per workgroup and in total (instancecull.comp).
     static constexpr uint32_t counterDraws = 0;
-    static constexpr uint32_t counterPrimitives = regionCount;
-    static constexpr uint32_t counterCameraCulled = regionCount * 2;
+    static constexpr uint32_t counterPrimitives = drawListCount;
+    static constexpr uint32_t counterCameraCulled = drawListCount * 2;
     static constexpr uint32_t counterCascadeCulled = counterCameraCulled + 1;
     static constexpr uint32_t counterCascadeDrawn = counterCascadeCulled + maxShadowCascades;
     static constexpr uint32_t counterLodDropped = counterCascadeDrawn + maxShadowCascades;
     static constexpr uint32_t counterCameraOccluded = counterLodDropped + 1;
-    static constexpr uint32_t counterMeshlets = counterCameraOccluded + 1;         // regionCount: work items per region
-    static constexpr uint32_t counterWorkOverflow = counterMeshlets + regionCount; // work items past the buffer's capacity, not drawn
-    // Draw records the scatters dropped past their region's end: the CPU's bucket counts (countInstance) undercounted a region. 0 unless the
+    static constexpr uint32_t counterMeshlets = counterCameraOccluded + 1;           // drawListCount: work items per draw list
+    static constexpr uint32_t counterWorkOverflow = counterMeshlets + drawListCount; // work items past the buffer's capacity, not drawn
+    // Draw records the scatters dropped past their draw list's end: the CPU's bucket counts (countInstance) undercounted a draw list. 0 unless the
     // CPU's bucket rule and the shader's disagree.
-    static constexpr uint32_t counterRegionOverflow = counterWorkOverflow + 1;
-    static constexpr uint32_t counterFading = counterRegionOverflow + 1; // instances drawn in a fading render-LOD group
+    static constexpr uint32_t counterDrawListOverflow = counterWorkOverflow + 1;
+    static constexpr uint32_t counterFading = counterDrawListOverflow + 1; // instances drawn in a fading render-LOD group
     static constexpr uint32_t counterCount = counterFading + 1;
     static constexpr uint32_t groupSize = 256;
     static constexpr uint32_t noBucket = UINT32_MAX;
@@ -191,9 +191,9 @@ public:
     static constexpr uint32_t meshletCounterCount = viewCount * meshletCountersPerView;
 
     static constexpr auto bucket(bool doubleSided, bool cutout) -> uint32_t { return (cutout ? 2 : 0) + (doubleSided ? 1 : 0); }
-    static constexpr auto cameraRegion(bool doubleSided, bool cutout = false) -> uint32_t { return bucket(doubleSided, cutout); }
-    static constexpr auto cameraLateRegion(bool doubleSided, bool cutout = false) -> uint32_t { return (lateView * bucketCount) + bucket(doubleSided, cutout); }
-    static constexpr auto cascadeRegion(uint32_t cascade, bool doubleSided, bool cutout = false) -> uint32_t { return ((1 + cascade) * bucketCount) + bucket(doubleSided, cutout); }
+    static constexpr auto cameraDrawList(bool doubleSided, bool cutout = false) -> uint32_t { return bucket(doubleSided, cutout); }
+    static constexpr auto cameraLateDrawList(bool doubleSided, bool cutout = false) -> uint32_t { return (lateView * bucketCount) + bucket(doubleSided, cutout); }
+    static constexpr auto cascadeDrawList(uint32_t cascade, bool doubleSided, bool cutout = false) -> uint32_t { return ((1 + cascade) * bucketCount) + bucket(doubleSided, cutout); }
 
     // Matches Params in instancecull.comp and meshlet.glsl (std430). cameraPosition is the culling camera's (the frozen one while frozen),
     // for the meshlets' normal-cone test.
@@ -201,18 +201,18 @@ public:
         uint32_t instanceCount = 0;
         uint32_t viewCount = 0; // the camera and the cascades: the views tested against their frustum
         uint32_t cullEnabled = 1;
-        uint32_t commandCapacity = 0; // draw records the buffer holds, every region
+        uint32_t commandCapacity = 0; // draw records the buffer holds, every draw list
         uint32_t groupCount = 0;
         uint32_t occlusion = 0; // two-phase occlusion on
         uint32_t hzbWidth = 1;  // the depth pyramid's mip 0
         uint32_t hzbHeight = 1;
-        uint32_t workCapacity = 0; // meshlet work items the buffer holds, every region together
-        uint32_t commandsUsed = 0; // the end of the last region
+        uint32_t workCapacity = 0; // meshlet work items the buffer holds, every draw list together
+        uint32_t commandsUsed = 0; // the end of the last draw list
         uint32_t pad[2] = {};
         glm::vec4 cameraPosition = glm::vec4(0.0f);
         glm::mat4 cameraViewProj = glm::mat4(1.0f);                  // the culling camera's, for the occlusion tests
         std::array<glm::vec4, DrawLists::viewCount * 6> planes = {}; // the late view repeats the camera's
-        std::array<uint32_t, regionCount> regionOffsets = {};        // each region's first draw record; last, so meshlet.glsl reads a prefix
+        std::array<uint32_t, drawListCount> drawListOffsets = {};    // each draw list's first draw record; last, so meshlet.glsl reads a prefix
     };
 
     // The bucket an instance's draws land in, in every view (the shader's bucketOf): its double-sidedness and cutout; noBucket for a dead
@@ -274,7 +274,7 @@ public:
         FgBufferHandle meshletStats;
         FgBufferHandle readback;
         FgBufferHandle history;
-        FgBufferHandle regionWork;
+        FgBufferHandle drawListWork;
         FgBufferHandle workItems;
         // Not the draw lists': the render-LOD state, which the cutout buckets' mesh shaders read for fades. Set by the renderer from
         // LodGroups::Handles, so the passes drawing these lists declare the read.
@@ -307,30 +307,30 @@ public:
         RhiBuffer* commands = nullptr;
         RhiBuffer* counts = nullptr;
         RhiBuffer* meshletStats = nullptr;
-        RhiBuffer* regionWork = nullptr;
+        RhiBuffer* drawListWork = nullptr;
         RhiBuffer* workItems = nullptr;
     };
     auto slotBuffers(uint32_t frameContext) const -> SlotBuffers;
     auto frameContexts() const -> uint32_t { return (uint32_t) slots.size(); }
 
-    // A region's draw records, as the frame's writeParams laid them out: its first and how many fit; its draw count is at countOffset in
+    // A draw list's draw records, as the frame's writeParams laid them out: its first and how many fit; its draw count is at countOffset in
     // the counts.
-    auto regionOffset(uint32_t region) const -> uint32_t { return frameOffsets[region]; }
-    auto regionCapacity(uint32_t region) const -> uint32_t { return frameCapacities[region]; }
+    auto drawListOffset(uint32_t drawList) const -> uint32_t { return frameOffsets[drawList]; }
+    auto drawListCapacity(uint32_t drawList) const -> uint32_t { return frameCapacities[drawList]; }
     auto commandCapacityTotal() const -> uint64_t { return commandCapacity; }
-    static auto countOffset(uint32_t region) -> uint64_t { return (uint64_t) region * sizeof(uint32_t); }
-    // Draws a region's meshlets with the bound mesh pipeline: one drawMeshTasksIndirect, its command the region's RegionWork.
-    static auto drawRegion(RhiCommandBuffer* cmd, RhiBuffer* regionWork, uint32_t region) -> void;
-    // A region as text ("camera.single", "cascade0.double", ...): the draw log, the records, the windows.
-    static auto regionName(uint32_t region) -> const char*;
-    // What a region draws ("Opaque", "Opaque two-sided", "Cutout", "Cutout two-sided"), whichever view: the name of its draw's GPU zone, under
+    static auto countOffset(uint32_t drawList) -> uint64_t { return (uint64_t) drawList * sizeof(uint32_t); }
+    // Draws a draw list's meshlets with the bound mesh pipeline: one drawMeshTasksIndirect, its command the draw list's DrawListWork.
+    static auto draw(RhiCommandBuffer* cmd, RhiBuffer* drawListWork, uint32_t drawList) -> void;
+    // A draw list as text ("camera.single", "cascade0.double", ...): the draw log, the records, the windows.
+    static auto drawListName(uint32_t drawList) -> const char*;
+    // What a draw list draws ("Opaque", "Opaque two-sided", "Cutout", "Cutout two-sided"), whichever view: the name of its draw's GPU zone, under
     // the pass and cascade zones that say whose view. A literal.
-    static auto drawName(uint32_t region) -> const char*;
+    static auto drawName(uint32_t drawList) -> const char*;
 
     // Latest readback (one frame-context cycle old).
     auto readbackFrame() const -> uint64_t { return latest.frame; }
-    auto drawsIn(uint32_t region) const -> uint32_t { return latest.totals[counterDraws + region]; }
-    auto primitivesIn(uint32_t region) const -> uint64_t { return latest.totals[counterPrimitives + region]; }
+    auto drawsIn(uint32_t drawList) const -> uint32_t { return latest.totals[counterDraws + drawList]; }
+    auto primitivesIn(uint32_t drawList) const -> uint64_t { return latest.totals[counterPrimitives + drawList]; }
     auto cameraCulled() const -> uint32_t { return latest.totals[counterCameraCulled]; }
     auto cascadeCulled(uint32_t cascade) const -> uint32_t { return latest.totals[counterCascadeCulled + cascade]; }
     auto cascadeDrawn(uint32_t cascade) const -> uint32_t { return latest.totals[counterCascadeDrawn + cascade]; }
@@ -338,9 +338,9 @@ public:
     auto cameraOccluded() const -> uint32_t { return latest.totals[counterCameraOccluded]; }
     auto occlusionEnabled() const -> bool { return latest.occlusion; }
     auto occlusionCullCamera() const -> bool { return latest.occlusionCullCamera; }
-    auto meshletsIn(uint32_t region) const -> uint32_t { return latest.totals[counterMeshlets + region]; }
+    auto meshletsIn(uint32_t drawList) const -> uint32_t { return latest.totals[counterMeshlets + drawList]; }
     auto workOverflow() const -> uint32_t { return latest.totals[counterWorkOverflow]; }
-    auto regionOverflow() const -> uint32_t { return latest.totals[counterRegionOverflow]; }
+    auto drawListOverflow() const -> uint32_t { return latest.totals[counterDrawListOverflow]; }
     auto fadingInstances() const -> uint32_t { return latest.totals[counterFading]; }
     // A view's meshlet count (meshletCounter*), latest readback.
     auto meshletCount(uint32_t view, uint32_t counter) const -> uint32_t { return latest.meshletStats[(view * meshletCountersPerView) + counter]; }
@@ -351,9 +351,9 @@ public:
     // Per instance, visibility bit v for view v (camera, then cascades), latest readback; empty when it didn't read them.
     auto viewBits() const -> const std::vector<uint8_t>& { return latest.viewBits; }
 
-    // For a pass that just issued `region` indirectly: folds the region's draws and primitives
+    // For a pass that just issued `draw list` indirectly: folds the draw list's draws and primitives
     // from the latest readback into the pass stats and logs its read-back commands.
-    auto report(FrameGraphContext& ctx, uint32_t region, const ChunkedList<GpuInstance>& instances) const -> void;
+    auto report(FrameGraphContext& ctx, uint32_t drawList, const ChunkedList<GpuInstance>& instances) const -> void;
 
 private:
     struct Slot {
@@ -368,13 +368,13 @@ private:
         RhiBuffer* commands = nullptr;
         RhiBuffer* counts = nullptr;
         RhiBuffer* meshletStats = nullptr;
-        RhiBuffer* regionWork = nullptr;
+        RhiBuffer* drawListWork = nullptr;
         RhiBuffer* workItems = nullptr;
         RhiBuffer* readback = nullptr; // GpuToCpu, mapped: totals, meshlet counts, visibility
         void* readbackMapped = nullptr;
         RhiBuffer* commandsReadback = nullptr; // GpuToCpu, mapped: the draw records; only while the render debugger asks
         void* commandsReadbackMapped = nullptr;
-        // What the slot's last recorded frame copied into the readback, and how it laid out the regions.
+        // What the slot's last recorded frame copied into the readback, and how it laid out the draw lists.
         bool pending = false;
         bool readVisibility = false;
         bool capturedCommands = false;
@@ -383,8 +383,8 @@ private:
         bool occlusion = false;
         bool occlusionCullCamera = false;
         uint32_t workCapacity = 0; // the work items the frame was built with: an overflow from fewer than now was answered already
-        std::array<uint32_t, regionCount> offsets = {};
-        std::array<uint32_t, regionCount> capacities = {};
+        std::array<uint32_t, drawListCount> offsets = {};
+        std::array<uint32_t, drawListCount> capacities = {};
     };
     struct Readback {
         uint64_t frame = 0;
@@ -396,7 +396,7 @@ private:
         std::array<uint32_t, meshletCounterCount> meshletStats = {};
         std::vector<uint8_t> viewBits;
         bool hasCommands = false;
-        std::array<std::vector<DrawRecord>, regionCount> commands;
+        std::array<std::vector<DrawRecord>, drawListCount> commands;
     };
 
     static auto readbackMeshletOffset() -> uint64_t { return counterCount * sizeof(uint32_t); }
@@ -412,19 +412,19 @@ private:
     RhiDevice* device = nullptr;
     DeletionQueue* deletionQueue = nullptr;
     uint32_t capacity = 0;         // instances
-    uint64_t commandCapacity = 0;  // draw records, every region
-    uint32_t workItemCapacity = 0; // meshlet work items per slot, every region together
+    uint64_t commandCapacity = 0;  // draw records, every draw list
+    uint32_t workItemCapacity = 0; // meshlet work items per slot, every draw list together
     // The next sizes, made on background jobs once use passes render.growth.ahead of the capacity.
     BufferGrowth instanceGrowth{"cull.instances"};
     BufferGrowth commandGrowth{"cull.commands"};
     BufferGrowth workGrowth{"cull.workitems"};
-    // Live instances per bucket and their meshlets; and this frame's region layout (writeParams).
+    // Live instances per bucket and their meshlets; and this frame's draw list layout (writeParams).
     std::array<uint64_t, bucketCount> buckets = {};
     uint64_t liveMeshletCount = 0;
     std::vector<GroupBox> groupBoxes; // per culling workgroup, as the slots are now
     size_t groupSlotCount = 0;        // the slot count groupBoxes were last computed for
-    std::array<uint32_t, regionCount> frameOffsets = {};
-    std::array<uint32_t, regionCount> frameCapacities = {};
+    std::array<uint32_t, drawListCount> frameOffsets = {};
+    std::array<uint32_t, drawListCount> frameCapacities = {};
     std::vector<Slot> slots;
     RhiBuffer* history = nullptr; // per instance slot, kept across frames
     FgAccessFlags historyAccess = FgAccessFlags::None;

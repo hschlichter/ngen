@@ -22,7 +22,7 @@
   <text x="726" y="196" class="res" transform="rotate(-55 726 196)">cullVisibility</text>
   <text x="762" y="196" class="res" transform="rotate(-55 762 196)">cullGroupCounters</text>
   <text x="798" y="196" class="res" transform="rotate(-55 798 196)">cullGroupOffsets</text>
-  <text x="834" y="196" class="res" transform="rotate(-55 834 196)">cullRegionWork</text>
+  <text x="834" y="196" class="res" transform="rotate(-55 834 196)">cullDrawListWork</text>
   <text x="870" y="196" class="res" transform="rotate(-55 870 196)">cullWorkItems</text>
   <text x="906" y="196" class="res" transform="rotate(-55 906 196)">drawCommands</text>
   <text x="942" y="196" class="res" transform="rotate(-55 942 196)">drawCounts</text>
@@ -127,7 +127,7 @@
   <circle cx="686" cy="476" r="5" fill="#16a34a"/>
   <circle cx="650" cy="476" r="4.5" fill="#ffffff" stroke="#16a34a" stroke-width="1.6"/>
   <text x="44" y="502" class="pass">InstanceCullLayout</text>
-  <text x="432" y="502" class="s" text-anchor="end">regions in the work items</text>
+  <text x="432" y="502" class="s" text-anchor="end">draw lists in the work items</text>
   <circle cx="830" cy="498" r="5" fill="#16a34a"/>
   <circle cx="938" cy="498" r="5" fill="#16a34a"/>
   <circle cx="974" cy="498" r="5" fill="#16a34a"/>
@@ -181,7 +181,7 @@
   <circle cx="758" cy="698" r="4.5" fill="#ffffff" stroke="#d97706" stroke-width="1.6"/>
   <circle cx="614" cy="698" r="4.5" fill="#ffffff" stroke="#d97706" stroke-width="1.6"/>
   <text x="44" y="724" class="pass">InstanceCullLateLayout</text>
-  <text x="432" y="724" class="s" text-anchor="end">after the first regions</text>
+  <text x="432" y="724" class="s" text-anchor="end">after the first draw lists</text>
   <circle cx="830" cy="720" r="5" fill="#d97706"/>
   <circle cx="938" cy="720" r="5" fill="#d97706"/>
   <circle cx="614" cy="720" r="4.5" fill="#ffffff" stroke="#d97706" stroke-width="1.6"/>

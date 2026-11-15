@@ -1,7 +1,7 @@
 // Meshlet drawing, shared by the task shader (meshlet.task) and the mesh shaders of every mesh pass (src/renderer/README.md, "Meshlets").
 // The geometry set (GeometryPass::descriptorBindings): the view, the scene tables, the geometry pool and the frame context's culling buffers.
 //
-// A draw is one region (instancecull.comp lays out every drawn instance's meshlets as work items, in instance order); each task workgroup
+// A draw is one draw list (instancecull.comp lays out every drawn instance's meshlets as work items, in instance order); each task workgroup
 // takes 32 work items, whatever their instance, tests them and launches a mesh workgroup per meshlet that survives, in order.
 
 // The rendered camera's view and projection, and the culling camera's view-projection (the depth prepass draws from it while it isn't the
@@ -96,7 +96,7 @@ layout(std430, set = 0, binding = 10) readonly buffer WorkItems {
 // The camera (0), the shadow cascades (1-4), the camera's late phase (5, occlusion culling's second phase).
 const uint maxViews = 6;
 const uint lateView = 5;
-// DrawLists::CullParams, up to the planes (the region offsets after them are the culling's): the views' frustum planes (normalized; the camera's far plane always passes; view 5 repeats the camera's), the
+// DrawLists::CullParams, up to the planes (the draw list offsets after them are the culling's): the views' frustum planes (normalized; the camera's far plane always passes; view 5 repeats the camera's), the
 // culling camera's position and view-projection, the depth pyramid's size.
 layout(std430, set = 0, binding = 11) readonly buffer Params {
     uint instanceCount;
@@ -131,8 +131,8 @@ layout(std430, set = 0, binding = 12) buffer MeshletStats {
 // The depth pyramid (DepthPyramid, hzb.glsl), for the meshlets' occlusion test.
 layout(set = 0, binding = 13) uniform sampler2D hzb;
 
-// RegionWork (instancecull.comp): a region's draw and its range of work items.
-struct RegionWork {
+// DrawListWork (instancecull.comp): a draw list's draw and its range of work items.
+struct DrawListWork {
     uint taskGroupsX;
     uint taskGroupsY;
     uint taskGroupsZ;
@@ -142,9 +142,9 @@ struct RegionWork {
     uint pad1;
     uint pad2;
 };
-layout(std430, set = 0, binding = 14) readonly buffer RegionWorks {
-    RegionWork data[];
-} regionWork;
+layout(std430, set = 0, binding = 14) readonly buffer DrawListWorks {
+    DrawListWork data[];
+} drawListWork;
 
 // Per render-LOD group, lodselect.comp's state: the level fading in and its share (lodfade.glsl). The mesh shaders of the cutout buckets,
 // where a fading group's instances draw, pass an instance's share of the fade to the fragment shader; gbuffer.mesh its LOD tag.
@@ -161,7 +161,7 @@ const uint flagDoubleSided = 1u << 1;
 const uint flagBoundsValid = 1u << 2;
 const uint flagCutout = 1u << 3;
 
-// Push-constant flags, the second word of every mesh pass's push constants (after the region).
+// Push-constant flags, the second word of every mesh pass's push constants (after the draw list).
 const uint meshletFlagCount = 1u << 0; // this pass adds to the meshlet counts
 const uint meshletFlagSplit = 1u << 1;     // two mesh workgroups per meshlet, each half its triangles (the debug views)
 const uint meshletFlagOcclusion = 1u << 2; // test meshlets against the depth pyramid

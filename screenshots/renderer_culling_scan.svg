@@ -17,8 +17,8 @@
   </defs>
   <rect x="0" y="0" width="1000" height="1132" rx="14" fill="#f8fafc" stroke="#e2e8f0"/>
   <text x="28" y="40" class="title">Renderer: culling and draw lists</text>
-  <text x="28" y="62" class="s" style="font-size:12px">Reduce, scan, lay out, scatter: four dispatches of instancecull.comp write each region's draw records and meshlet work items in</text>
-  <text x="28" y="78" class="s" style="font-size:12px">instance order, and each region's draw (example counts).</text>
+  <text x="28" y="62" class="s" style="font-size:12px">Reduce, scan, lay out, scatter: four dispatches of instancecull.comp write each draw list's draw records and meshlet work items in</text>
+  <text x="28" y="78" class="s" style="font-size:12px">instance order, and each draw list's draw (example counts).</text>
   <rect x="28" y="96" width="944" height="96" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-opacity="0.45"/>
   <text x="42" y="118" class="h">gpuscene.instances</text>
   <text x="42" y="136" class="s">a 48-byte culling record per slot</text>
@@ -103,9 +103,9 @@
   <text x="44" y="330" class="s">frustum, render-LOD level, history</text>
   <text x="44" y="345" class="s">(occlusion, first phase); the bucket</text>
   <text x="44" y="360" class="s">from the flags. Counts per workgroup</text>
-  <text x="44" y="375" class="s">and region: draws, meshlets, triangles.</text>
+  <text x="44" y="375" class="s">and draw list: draws, meshlets, triangles.</text>
   <text x="44" y="410" class="m" font-weight="700">cull.groupcounters</text>
-  <text x="44" y="425" class="ms">draws per region</text>
+  <text x="44" y="425" class="ms">draws per draw list</text>
   <text x="93" y="446" class="ch">r0</text>
   <text x="123" y="446" class="ch">r1</text>
   <text x="153" y="446" class="ch">r2</text>
@@ -147,9 +147,9 @@
   <text x="284" y="285" class="s">workgroups in order, 256 at a time:</text>
   <text x="284" y="300" class="s">subgroup prefix sums</text>
   <text x="284" y="315" class="s">(workgroupExclusiveSum) give each</text>
-  <text x="284" y="330" class="s">workgroup's start in the region,</text>
+  <text x="284" y="330" class="s">workgroup's start in the draw list,</text>
   <text x="284" y="345" class="s">for draw records and for work items;</text>
-  <text x="284" y="360" class="s">the total is the region's count.</text>
+  <text x="284" y="360" class="s">the total is the draw list's count.</text>
   <text x="284" y="410" class="m" font-weight="700">cull.groupoffsets</text>
   <text x="284" y="425" class="ms">draw record offsets</text>
   <text x="333" y="446" class="ch">r0</text>
@@ -198,14 +198,14 @@
   <circle cx="532" cy="238" r="11" fill="#16a34a"/>
   <text x="532" y="242" class="n">3</text>
   <text x="552" y="243" class="h">InstanceCullLayout</text>
-  <text x="524" y="270" class="s">one workgroup: the regions laid out</text>
+  <text x="524" y="270" class="s">one workgroup: the draw lists laid out</text>
   <text x="524" y="285" class="s">one after another in the work items,</text>
-  <text x="524" y="300" class="s">from the meshlet totals; each region's</text>
-  <text x="524" y="315" class="s">draw, RegionWork: task workgroups =</text>
+  <text x="524" y="300" class="s">from the meshlet totals; each draw list's</text>
+  <text x="524" y="315" class="s">draw, DrawListWork: task workgroups =</text>
   <text x="524" y="330" class="s">items ÷ 32 rounded up, in x up to</text>
   <text x="524" y="345" class="s">32,768, then on in y.</text>
-  <text x="524" y="410" class="m" font-weight="700">cull.regionwork</text>
-  <text x="524" y="425" class="ms">per region</text>
+  <text x="524" y="410" class="m" font-weight="700">cull.drawlistwork</text>
+  <text x="524" y="425" class="ms">per draw list</text>
   <text x="592" y="446" class="ch">first</text>
   <text x="644" y="446" class="ch">items</text>
   <text x="696" y="446" class="ch">tasks</text>
@@ -243,32 +243,32 @@
   <circle cx="772" cy="238" r="11" fill="#16a34a"/>
   <text x="772" y="242" class="n">4</text>
   <text x="792" y="243" class="h">InstanceCullScatter</text>
-  <text x="764" y="270" class="s">one thread per slot; per region a</text>
+  <text x="764" y="270" class="s">one thread per slot; per draw list a</text>
   <text x="764" y="285" class="s">prefix sum across the workgroup</text>
   <text x="764" y="300" class="s">(shared memory) places each instance.</text>
-  <text x="764" y="315" class="s">Skips regions the workgroup has</text>
+  <text x="764" y="315" class="s">Skips draw lists the workgroup has</text>
   <text x="764" y="330" class="s">nothing in, and empty workgroups.</text>
-  <text x="764" y="362" class="s">instance i of workgroup g, region r:</text>
+  <text x="764" y="362" class="s">instance i of workgroup g, draw list r:</text>
   <rect x="764" y="370" width="192" height="78" rx="7" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
   <text x="772" y="386" class="ms">DrawRecord at</text>
-  <text x="772" y="402" class="m">regionOffsets[r]</text>
+  <text x="772" y="402" class="m">drawListOffsets[r]</text>
   <text x="772" y="418" class="m">+ groupOffsets[g][r]</text>
   <text x="772" y="434" class="m">+ local prefix − 1</text>
   <rect x="764" y="456" width="192" height="78" rx="7" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
   <text x="772" y="472" class="ms">its meshlets' work items at</text>
-  <text x="772" y="488" class="m">regionWork[r].firstItem</text>
+  <text x="772" y="488" class="m">drawListWork[r].firstItem</text>
   <text x="772" y="504" class="m">+ item offset of g in r</text>
   <text x="772" y="520" class="m">+ meshlets before it</text>
   <text x="764" y="548" class="s">e.g. wg 2's 2nd instance in r0:</text>
   <text x="764" y="563" class="s">record 0 + 3 + 2 − 1 = 4</text>
-  <text x="764" y="581" class="s">past the region's end: dropped,</text>
-  <text x="764" y="596" class="s"><tspan class="m">regionOverflow</tspan>, CullRegionOverflow</text>
+  <text x="764" y="581" class="s">past the draw list's end: dropped,</text>
+  <text x="764" y="596" class="s"><tspan class="m">drawListOverflow</tspan>, CullDrawListOverflow</text>
   <line x1="620" y1="606" x2="620" y2="626" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
   <line x1="860" y1="606" x2="860" y2="626" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
   <rect x="28" y="628" width="944" height="360" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-opacity="0.45"/>
   <text x="42" y="652" class="h">cull.commands</text>
-  <text x="160" y="652" class="s">draw records, per frame context: each region as large as its bucket's CPU count (DrawLists::countInstance), at</text>
-  <text x="160" y="668" class="s"><tspan class="m">CullParams::regionOffsets</tspan> from <tspan class="m">writeParams</tspan>; filled to its count. A DrawRecord: instance, meshlets, first item (for the tools).</text>
+  <text x="160" y="652" class="s">draw records, per frame context: each draw list as large as its bucket's CPU count (DrawLists::countInstance), at</text>
+  <text x="160" y="668" class="s"><tspan class="m">CullParams::drawListOffsets</tspan> from <tspan class="m">writeParams</tspan>; filled to its count. A DrawRecord: instance, meshlets, first item (for the tools).</text>
   <rect x="42" y="710" width="121" height="20" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.8"/>
   <rect x="44" y="713" width="9" height="14" rx="2" fill="#86efac"/>
   <rect x="57" y="713" width="9" height="14" rx="2" fill="#86efac"/>
@@ -321,8 +321,8 @@
   <text x="680" y="730" class="m">view 5: r20–r23</text>
   <text x="680" y="744" class="s">occlusion's second phase</text>
   <text x="42" y="788" class="h">cull.workitems</text>
-  <text x="160" y="788" class="s">every drawn instance's meshlets as {instance, meshlet} (MeshletWorkItem), in instance order; the regions one after another</text>
-  <text x="160" y="804" class="s">at RegionWork's first item; a task workgroup takes 32 consecutive items, whatever their instance. Ticks: task workgroups.</text>
+  <text x="160" y="788" class="s">every drawn instance's meshlets as {instance, meshlet} (MeshletWorkItem), in instance order; the draw lists one after another</text>
+  <text x="160" y="804" class="s">at DrawListWork's first item; a task workgroup takes 32 consecutive items, whatever their instance. Ticks: task workgroups.</text>
   <rect x="42.0" y="840" width="168.0" height="20" fill="#86efac" stroke="#16a34a" stroke-opacity="0.8"/>
   <line x1="118.8" y1="835" x2="118.8" y2="865" stroke="#1f2733" stroke-width="1.2"/>
   <line x1="195.6" y1="835" x2="195.6" y2="865" stroke="#1f2733" stroke-width="1.2"/>
@@ -346,7 +346,7 @@
   <text x="538.8" y="876" class="ms">r7</text>
   <text x="594.8" y="855" class="t">…</text>
   <text x="42" y="902" class="s">r0: 70 items, task workgroups 0–2 (32 + 32 + 6); r1 starts at item 70, r2 at 82, r3 at 91 — the layout's table above. Room for twice the</text>
-  <text x="42" y="918" class="s">live instances' meshlets; the late regions (view 5) go after the first phase's.</text>
+  <text x="42" y="918" class="s">live instances' meshlets; the late draw lists (view 5) go after the first phase's.</text>
   <rect x="42" y="940" width="10" height="14" rx="2" fill="#86efac"/>
   <text x="58" y="952" class="s">written this frame</text>
   <rect x="178" y="940" width="12" height="14" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.8"/>
@@ -354,13 +354,13 @@
   <line x1="520" y1="938" x2="520" y2="956" stroke="#1f2733" stroke-width="1.2"/>
   <text x="528" y="952" class="s">a task workgroup's start (32 items)</text>
   <line x1="734" y1="938" x2="734" y2="956" stroke="#16a34a" stroke-width="1.5"/>
-  <text x="742" y="952" class="s">an empty region</text>
-  <text x="42" y="974" class="s">regions: r = view × 4 + bucket; buckets single-sided, double-sided, and the same two cutout; 6 views × 4 = 24 regions.</text>
+  <text x="742" y="952" class="s">an empty draw list</text>
+  <text x="42" y="974" class="s">draw lists: r = view × 4 + bucket; buckets single-sided, double-sided, and the same two cutout; 6 views × 4 = 24 draw lists.</text>
   <line x1="500" y1="988" x2="500" y2="1008" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
   <rect x="28" y="1010" width="944" height="98" rx="10" fill="#ffffff" stroke="#16a34a" stroke-opacity="0.6"/>
-  <text x="42" y="1032" class="m" font-weight="700">drawMeshTasksIndirect(cull.regionwork, r × 32 bytes, 1)</text>
-  <text x="418" y="1032" class="s">in DrawLists::drawRegion</text>
-  <text x="42" y="1052" class="s">one call per region, its command the region's RegionWork: the camera's four in GeometryPass (DepthPrepass, DebugViewPass); each cascade's</text>
-  <text x="42" y="1068" class="s">four in ShadowPass. Pipeline and geometry set bound once per bucket, the region pushed (MeshletPush). An empty region still costs a call.</text>
-  <text x="42" y="1088" class="s">Occlusion: view 5's regions are filled after the depth pyramid by InstanceCullOcclusion, InstanceCullLateScan, LateLayout and LateScatter, and drawn by GeometryPassLate.</text>
+  <text x="42" y="1032" class="m" font-weight="700">drawMeshTasksIndirect(cull.drawlistwork, r × 32 bytes, 1)</text>
+  <text x="418" y="1032" class="s">in DrawLists::draw</text>
+  <text x="42" y="1052" class="s">one call per draw list, its command the draw list's DrawListWork: the camera's four in GeometryPass (DepthPrepass, DebugViewPass); each cascade's</text>
+  <text x="42" y="1068" class="s">four in ShadowPass. Pipeline and geometry set bound once per bucket, the draw list pushed (MeshletPush). An empty draw list still costs a call.</text>
+  <text x="42" y="1088" class="s">Occlusion: view 5's draw lists are filled after the depth pyramid by InstanceCullOcclusion, InstanceCullLateScan, LateLayout and LateScatter, and drawn by GeometryPassLate.</text>
 </svg>

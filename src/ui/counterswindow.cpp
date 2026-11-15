@@ -59,7 +59,7 @@ auto countersMetricName(int metric) -> const char* {
 
 auto countersMetricValue(const GpuCounters& frame, const std::string& zone, int metric, double& out) -> bool {
     if (metric == 0) {
-        // Nested zones are keyed "Pass/zone": region names repeat across passes.
+        // Nested zones are keyed "Pass/zone": draw list names repeat across passes.
         std::string pass;
         for (const auto& z : frame.zones) {
             if (z.depth == 0) {

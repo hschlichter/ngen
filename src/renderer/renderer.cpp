@@ -791,7 +791,7 @@ auto Renderer::rebuildGeometryDescriptorSets() -> void {
             writes.push_back({.binding = 4 + b, .type = StorageBuffer, .buffer = meshletBuffers[b]});
         }
         writes.push_back({.binding = 13, .type = CombinedImageSampler, .texture = depthPyramid.texture(), .sampler = depthPyramid.sampler()});
-        writes.push_back({.binding = 14, .type = StorageBuffer, .buffer = cull.regionWork});
+        writes.push_back({.binding = 14, .type = StorageBuffer, .buffer = cull.drawListWork});
         writes.push_back({.binding = 15, .type = StorageBuffer, .buffer = lodGroups.stateBuffer()});
         device->updateDescriptorSet(geometryDescriptorSets[i], writes);
     }
@@ -824,7 +824,7 @@ auto Renderer::cullResult() const -> CullResult {
         .cameraCulled = drawLists.cameraCulled(),
         .cameraInstanceTriangles = trianglesIn(drawLists, 0) + trianglesIn(drawLists, DrawLists::lateView),
         .cascadeCount = drawLists.cascadeCount(),
-        .regionOverflow = drawLists.regionOverflow(),
+        .drawListOverflow = drawLists.drawListOverflow(),
         .viewBits = drawLists.viewBits(),
         .lodDropped = drawLists.lodDropped(),
         .lodFadingInstances = drawLists.fadingInstances(),
@@ -843,10 +843,10 @@ auto Renderer::cullResult() const -> CullResult {
     result.cameraTriangles = result.cameraMeshlets.triangles;
     result.occlusion = drawLists.occlusionEnabled();
     result.occlusionCullCamera = drawLists.occlusionCullCamera();
-    for (uint32_t region = 0; region < DrawLists::regionCount; region++) {
-        result.regionDraws.push_back(drawLists.drawsIn(region));
-        result.regionMeshlets.push_back(drawLists.meshletsIn(region));
-        result.regionTriangles.push_back(drawLists.primitivesIn(region));
+    for (uint32_t drawList = 0; drawList < DrawLists::drawListCount; drawList++) {
+        result.drawListDraws.push_back(drawLists.drawsIn(drawList));
+        result.drawListMeshlets.push_back(drawLists.meshletsIn(drawList));
+        result.drawListTriangles.push_back(drawLists.primitivesIn(drawList));
     }
     result.occluded = drawLists.cameraOccluded();
     for (uint32_t b = 0; b < DrawLists::bucketCount; b++) {
@@ -918,15 +918,15 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
     {
         PROFILE_ZONE("ParseReadback", Render);
         drawLists.parseReadback(currentFrame, contextFrame[currentFrame]);
-        // Commands dropped past their region's end mean the CPU's bucket counts disagree with the cull shader's rule: draws are missing.
-        if (auto overflow = drawLists.regionOverflow(); overflow != reportedRegionOverflow) {
-            // While the draw records wait for a growth, the regions are cut to the capacity on purpose (GrowthBehind said so).
+        // Commands dropped past their draw list's end mean the CPU's bucket counts disagree with the cull shader's rule: draws are missing.
+        if (auto overflow = drawLists.drawListOverflow(); overflow != reportedDrawListOverflow) {
+            // While the draw records wait for a growth, the draw lists are cut to the capacity on purpose (GrowthBehind said so).
             if (overflow > 0 && !drawLists.commandsWaiting()) {
-                TRACE_WARNING("Render", "CullRegionOverflow", "DrawLists")
-                    .text(std::format("{} draw commands dropped past their region's end: the CPU's bucket counts are short of the cull shader's buckets, so those draws are missing", overflow))
+                TRACE_WARNING("Render", "CullDrawListOverflow", "DrawLists")
+                    .text(std::format("{} draw commands dropped past their draw list's end: the CPU's bucket counts are short of the cull shader's buckets, so those draws are missing", overflow))
                     .field("dropped", (int64_t) overflow);
             }
-            reportedRegionOverflow = overflow;
+            reportedDrawListOverflow = overflow;
         }
         lodGroups.parseReadback(currentFrame, contextFrame[currentFrame]);
         // Meshlets that didn't fit the work items weren't drawn: grow past them before the next frame builds.

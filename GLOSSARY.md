@@ -279,14 +279,16 @@ sense of a map; that is a scene.
 - **Deferred shading** — the geometry pass writes the G-buffer; a fullscreen lighting pass shades it.
 - **Deletion queue** — the renderer's deferred destroys, each held until the frame that last used the resource has passed its fence.
 - **Depth pyramid / HZB** — occlusion's hierarchical depth: each level the farthest depth of the 2×2 below.
+- **Draw list** — the instances one (view, bucket) pair draws: 6 views × 4 buckets = 24 draw lists, each drawn with one
+  `drawMeshTasksIndirect`.
 - **Draw log** — per-draw records read back while the render debugger asks; lags a frame-context cycle.
-- **Draw record** (`DrawRecord`) — one per drawn instance per region: instance, meshlets, first work item.
+- **Draw record** (`DrawRecord`) — one per drawn instance per draw list: instance, meshlets, first work item.
 - **Frame context** — the per-frame resources (command buffer, fence, UBO, staging, culling and readback buffers), one per swapchain image;
   everything the CPU shows about the GPU arrives one cycle of frame contexts late.
 - **Frame graph** — a frame's passes and resources: orders passes, culls unused ones, pools transient textures and records every barrier.
 - **G-buffer** — albedo, normals, instance id and depth, written by the geometry pass.
 - **Geometry pool** — one vertex buffer, one position buffer and the meshlet buffers for every mesh; ranges per mesh, grows by doubling.
-- **GPU-driven** — the only path: persistent GPU tables, visibility and draw lists made on the GPU, one indirect call per region.
+- **GPU-driven** — the only path: persistent GPU tables, visibility and draw lists made on the GPU, one indirect call per draw list.
 - **GPU scene** (`GpuScene`) — the scene's GPU tables: geometry pool, mesh table, material table, texture array, instance buffer, LOD groups.
 - **Imported / transient resource** — a frame-graph resource from outside the graph (backbuffer, persistent buffers; all buffers are imported),
   or a texture the graph allocates and pools for the frame.
@@ -304,7 +306,6 @@ sense of a map; that is a scene.
 - **Pipeline registry** — creates every pipeline from shader ids; nothing waits for a shader, a pass stays out until its pipelines are
   ready, and shaders hot-reload on change notices.
 - **Readback** — GPU data copied into a host-visible buffer and read after the slot's fence.
-- **Region** — one (view, bucket) pair: 6 views × 4 buckets = 24 regions, each drawn with one `drawMeshTasksIndirect`.
 - **Render extension** (`RenderExtension`) — how what isn't the renderer's core joins its frame at fixed hooks: `RenderTools`, `GizmoRender`,
   `UiRender`. Their per-frame data rides in `RenderSnapshot::extensions`.
 - **Render thread** — owns the GPU: takes one snapshot a frame, applies scene changes within the upload budget, builds, records, submits,
@@ -320,7 +321,7 @@ sense of a map; that is a scene.
 - **View** (culling) — 0 the camera, 1–4 the shadow cascades, 5 the camera's second occlusion phase.
 - **View mode** — what the lighting pass shows (`view` verb, `--view`): lit, albedo, normals, depth, shadow views, worldpos,
   mip level, cascades, LOD level, hzb.
-- **Work item** — one `{instance, meshlet}` pair in a region; a task workgroup takes 32 consecutive ones.
+- **Work item** — one `{instance, meshlet}` pair in a draw list; a task workgroup takes 32 consecutive ones.
 
 ## RHI
 
@@ -396,7 +397,7 @@ sense of a map; that is a scene.
 |---|---|
 | batch | an upload batch (`UploadBatch`); a batch of events on the trace stream. The scene thread's round is a *scene update* |
 | bucket | a culling bucket (single/double-sided × opaque/cutout); nothing else |
-| cell, region, tile | test-world streaming areas; *region* is also a culling (view, bucket) pair, *tile* a shadow-atlas cascade tile |
+| cell, region, tile | test-world streaming areas; *region* is also a copy region of the RHI (a range of a buffer or a texture), *tile* a shadow-atlas cascade tile |
 | component | a World component (lights, LOD roots, instancers, payloads); a future gameplay component; a UI or software component in prose |
 | content | a World content (stage, prototype, level); "content developers" means the people authoring worlds |
 | frame | the main thread's `ViewFrame`; a render frame on a frame context; an RPC frame (length-prefixed message); a script's frame number |
