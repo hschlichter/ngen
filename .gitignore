@@ -58,6 +58,7 @@ _out/
 compile_commands.json
 *.spv
 imgui.ini
+notes.md
 
 # Large downloaded test assets (NewSponza, 6.3 GB; Caldera, 10 GB, a git checkout of its own)
 assets/main_sponza/
