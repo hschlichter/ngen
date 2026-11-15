@@ -1,6 +1,6 @@
 # Terminology: closer to the game engine industry's words
 
-**Status. Draft.**
+**Status. Landed.** Recorded as [ADR 87](adr/0087_industry_terms_for_engine_concepts.md).
 
 The glossary was reviewed against the words game engine programmers use. Where the industry has a common word and ngen used another, or where
 ngen's word means something else in the industry, the engine takes the industry's word. This plan lists the accepted renames, the names each
@@ -197,6 +197,39 @@ Locked in review:
    already reads as `RenderWorld`'s LOD group.
 8. **Layer, mesh and material pack stay**, with *pack*.
 
+## As landed
+
+Where the code differs from the steps above:
+
+- **Step 1.** "LOD level" is written in full where a reader could take *level* for a map: the glossary says so at the top of "LOD and
+  streaming" and under **LOD level**. The READMEs' running text still says "level" inside LOD sections.
+- **Step 5.** The cvar `render.view.buffer` became `render.view.mode`. The `view` console command still set the old name until step 11's
+  commit fixed it: between the two commits `view <mode>` fails.
+- **Step 7.** Identifiers say `locationId`, `sourceLocationOf`, `registerSourceLocation`; prose says source location.
+- **Step 8.** `frameSlot` identifiers and the `RenderFrame` and `RendererState` fields are `frameContext`; local variables and nested structs
+  that hold one frame context's buffers are still named `slot` and `Slot`.
+- **Step 9.** `DrawLists::drawRegion` is `DrawLists::draw`; the log event `CullRegionOverflow` is `CullDrawListOverflow`.
+- **Step 10.** A draw slot is an *instance slot* (`instanceSlots`), not an instance index: the code's word for the index is slot
+  (`slotCount`). The view's own names for instances by the old word are left: `SceneDraws`, `drawsOf`, `drawCount(assetId)`, `ResolvedDraw`,
+  `groundDraws`, the Draws columns of the Assets, LOD and Render Debug windows, and the records' `draws` counts.
+- **Step 11.** Two commits: cvars, then console commands. The window name for `window` is `cvars`.
+- **Step 12.** The namespace is `logging`: `log` is the C library's function and can't name a namespace. The asset server's helpers are
+  `logLine` and `logWarning` in `assetlog.h`.
+- **Step 13.** In `src/view`, where `prim` already names the view's prim index, a World prim's local variable is `worldPrim`.
+  `EntityTransform` is `ContentPrimTransform`, as `ViewScene::PrimTransform` exists.
+- **Step 14.** `secondaryOutputFile` is `subAssetPath`. The asset cache file keeps its `secondary` tag, so caches written before still read.
+- **Step 15.** "Render-LOD" before another noun became "LOD-group" (LOD-group root, LOD-group fade). `LodToolState::RenderLod` is
+  `LodGroupCounts groupCounts`; the LOD tool's `kind` value `render` is `group`.
+- **Step 16.** The struct is `SceneReadiness` (`ViewFrame::readiness`, `updateReadiness`). `residentWhy`, `residentReason` and
+  `residentText` are a LOD level's and keep their names; `g_resident` is the process's resident memory.
+
+Verification as run: the set variant (`linux-vulkan/release`) after every step, headless on `assets/three_cubes.usda` and
+`assets/layered/root.usda`: screenshots and `ngen-worldcheck` fingerprints byte-identical to the ones taken before step 1, the records' key
+paths equal once the renamed keys are mapped back, and from step 11 a script of 35 console commands with no error in the log. The layered
+scene logs two `CompositionMessage` warnings its files author, before and after, and at times `GrowthBehind`, which depends on timing. The RHI
+examples were run with `--check --validation` after step 8 and at the end. Not run: the streaming test world, Sponza, Caldera, the windows by
+eye, and the hero screenshots (`screenshots/log_hero.png` and `cvar_hero.png` still show the old titles).
+
 ## Deferred / follow-ups
 
 - **The test world's level names.** Region `proxy` shares its name with USD's `proxy` purpose, which the engine also draws
@@ -204,3 +237,10 @@ Locked in review:
   repository, not in ngen: the engine reads no level name. Trigger: the next time the world is generated again.
 - **The glossary's Cell entry against the test world.** The entry lists two levels per cell (`full` and `proxy`, `full` and `simplified`); the
   test world's design lists three, with `medium`. Check against the generated world when step 1 touches the entry.
+- **The view's names for instances.** `SceneDraws`, `drawsOf`, `ResolvedDraw`, the Draws columns and the records' `draws` counts still say
+  draw for an instance. Trigger: a decision on whether a count of things drawn is "draws" or "instances".
+- **A frame context's locals.** `slot` and nested `Slot` structs in `src/renderer`. Trigger: the next change to frame pacing.
+- **Diagrams and hero screenshots.** The diagrams' texts were renamed without being looked at; the two hero screenshots were not retaken.
+  Trigger: the next run of `screenshots/heroes/make.sh`.
+- **ADRs' Verification sections** name files and symbols by the old words. This plan left `docs/` as history; the `adr` skill would update
+  them. Trigger: a decision on which rule holds.

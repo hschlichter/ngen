@@ -28,7 +28,7 @@ PROFILE_GPU_ZONE_DETAIL(cmd, "HzbLevel0", Culling);  // only while profile.gpu.d
 
 Every marker is a **source location**: its name, file, line and function (`std::source_location`), a **group** and a **level**. Two markers with the same
 name are two source locations, each pointing at its own line. Code that opens and closes a zone in different places calls `profile::beginZone(id)` and
-`profile::endZone()` with an id from `profile::registerSite(name, group, level)`; a function that registers for its caller (`FrameGraph::addPass`,
+`profile::endZone()` with an id from `profile::registerSourceLocation(name, group, level)`; a function that registers for its caller (`FrameGraph::addPass`,
 `JobSystem::submit`, `RpcRegistry::add`) takes a `std::source_location` default argument, so the zone points at the caller's line. Names are
 copied when registered. Zones nest up to 32 deep per thread.
 
