@@ -4,8 +4,10 @@
 
 #include <cstdint>
 #include <expected>
+#include <functional>
 #include <memory>
 #include <string>
+#include <string_view>
 
 // The WebRTC side: one peer connection to one watcher, with one H.264 track that the encoded frames are sent on. The only file that
 // includes libdatachannel is videosender.cpp, and none of that library's exceptions leave it. Any thread may call any of this.
@@ -20,8 +22,9 @@ public:
     VideoSender(const VideoSender&) = delete;
     auto operator=(const VideoSender&) -> VideoSender& = delete;
 
-    // `bindAddress`: the one address the connection's sockets use; empty or 0.0.0.0 for every interface.
-    auto offer(const std::string& bindAddress) -> std::expected<std::string, std::string>;
+    // `bindAddress`: the one address the connection's sockets use; empty or 0.0.0.0 for every interface. With `control`, the offer
+    // carries a data channel named "control" beside the video: the watcher's messages on it go to the control handler.
+    auto offer(const std::string& bindAddress, bool control) -> std::expected<std::string, std::string>;
     auto accept(const std::string& answerSdp) -> std::expected<void, std::string>;
     // False when there is no watcher to send to.
     auto send(const VideoPacket& packet) -> bool;
@@ -39,6 +42,20 @@ public:
     auto connects() const -> uint64_t;
     auto disconnects() const -> uint64_t;
     auto close() -> void;
+
+    // The control channel (remotecontrol.h): text messages to and from the watcher, on the video's connection.
+    // The handler gets each message with the session it came on. It runs on one of libdatachannel's threads and must not block; an
+    // empty handler takes none. Setting it waits for a call that is running.
+    using ControlHandler = std::function<void(uint64_t session, std::string message)>;
+    auto setControlHandler(ControlHandler handler) -> void;
+    // Sends to the watcher of `session`. False when that watcher is gone, the channel isn't open, or the message is over the limit.
+    auto sendControl(uint64_t session, std::string_view message) -> bool;
+    // Whether the current watcher's control channel is open.
+    auto controlOpen() const -> bool;
+    // The largest message the watcher takes, in bytes; 0 with no open channel.
+    auto controlMessageLimit() const -> size_t;
+    // Bytes handed to the channel and not yet sent.
+    auto controlBuffered() const -> size_t;
 
 private:
     struct Session;

@@ -115,6 +115,7 @@ auto RemoteViewCapture::afterExecute(Renderer& renderer, RhiCommandBuffer* cmd, 
     cmd->pipelineBarrier(toCopy);
     cmd->copyTextureToBuffer(slot.target, slot.readback, {.width = width, .height = height});
     slot.pending = true;
+    slot.source = frame.extent;
     slot.captureNs = profile::now();
     lastCaptureNs = slot.captureNs;
 }
@@ -154,6 +155,8 @@ auto RemoteViewCapture::read(Slot& slot) -> void {
     image.width = slot.width;
     image.height = slot.height;
     image.captureNs = slot.captureNs;
+    image.sourceWidth = slot.source.width;
+    image.sourceHeight = slot.source.height;
     image.rgba.resize((size_t) slot.width * slot.height * 4);
     std::memcpy(image.rgba.data(), pixels, image.rgba.size());
     device->unmapBuffer(slot.readback);

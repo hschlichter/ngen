@@ -56,7 +56,9 @@ from `./ngen-cli introspect list`).
   `view.frameLimit`, 60 frames a second, and its frame times include that wait (the `FrameLimit` zone): to time frames in such a run, set
   `cvar view.frameLimit 0` first, or start with `--cvar view.frameLimit=0`.
 - `--cvar <name>=<value>` sets any cvar from the start (repeatable). `--remote-view` turns the remote view on, so a person can watch the
-  run in a browser (`src/remoteview/README.md`); the log's `RemoteViewListening` event has the address.
+  run in a browser (`src/remoteview/README.md`); the log's `RemoteViewListening` event has the address. `--remote-control` also lets the
+  watch page drive the view. The page tests itself when opened at `<address>/#test` (headless Firefox will do): the `remoteview` record's
+  `page.test` then holds each check's result.
 - Write the log to `/tmp` or the session scratchpad, not into the repo.
 - The view's first frame comes at once; the scene arrives while it runs. `--frames`, `--screenshot` and script frame numbers count from when
   the scene is first ready (everything it wants loaded, uploaded and drawn; the log's `SceneReady`), so a script sees the loaded

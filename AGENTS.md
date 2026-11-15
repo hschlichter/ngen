@@ -123,7 +123,8 @@ says "Supersedes N" under its status, in place of the skill's "Replaces ADR N �
 - `src/rendertools/` — the renderer's instrumentation as a render extension (debug snapshots, frame debugger, counters, texture inspector and
   dumps, screenshots). Rules in `src/rendertools/README.md`.
 - `src/remoteview/` — the remote view: ngen-view's image as live H.264 video for a browser on another device (WebRTC through libdatachannel,
-  OpenH264): capture as a render extension, the encode thread, the listener and the watch page. Tooling, not in `gamerelease`. Rules in
+  OpenH264): capture as a render extension, the encode thread, the listener, the watch page (`page/`) and remote control, the page's calls
+  run through the view's method registry. Tooling, not in `gamerelease`. Rules in
   `src/remoteview/README.md`.
 - `src/scene/` — the plain types the renderer and ngen-view share for what is drawn (`MeshDesc`, `MaterialDesc`, `Transform`, handles). No USD;
   `src/scene/README.md`.

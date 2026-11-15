@@ -29,4 +29,15 @@ cvar::Int fps{"remoteview.fps", 30, "Frames sent a second, at most: the view's f
 
 cvar::Int bitrateKbps{"remoteview.bitrateKbps", 4000, "The video's bitrate in kilobits a second. Fixed: it does not follow the network.", {.min = 250, .max = 50000}};
 
+cvar::Bool control{"remoteview.control",
+                   false,
+                   "Let the watch page drive the view: its connection carries a control channel, and the page's calls run as the RPC endpoint's "
+                   "do, every method. No authentication: whoever reaches the watch page can set cvars, write files and quit the view. Takes "
+                   "effect when a watch page next connects."};
+
+cvar::String pageDir{"remoteview.pageDir",
+                     "",
+                     "A directory to serve the watch page's files from (index.html, page.css, page.js), for changing the page without a "
+                     "rebuild: src/remoteview/page. Empty: the files built into the program."};
+
 } // namespace remoteviewcvars

@@ -68,7 +68,7 @@ endpoint's calls; an answer that needs a readback or the scene to be ready waits
 
 | File | Methods | Console commands | Records |
 |---|---|---|---|
-| `cameracommands.cpp` | `view.camera.set/get/orbit/list/use/fly/fly.stop/frame` | `camera`, `camera-frame`, `camera-use`, `camera-orbit`, `camera-follow`, `fly`, `fly-stop` | |
+| `cameracommands.cpp` | `view.camera.set/get/move/orbit/list/use/fly/fly.stop/frame` | `camera`, `camera-move`, `camera-frame`, `camera-use`, `camera-orbit`, `camera-follow`, `fly`, `fly-stop` | |
 | `scenecommands.cpp` | `view.select/transform/translate/pick/purposes/waitReady/repack/gotoAsset/assetsOf/quit` | `select`, `translate`, `pick`, `purposes`, `repack`, `goto-asset`, `assets-of`, `wait-ready`, `quit` | `status`, `scene`, `scenethread`, `gpuscene`, `instancers`, `variants`, `payloads`, `assets` |
 | `lodcommands.cpp` | `view.lod.set/reset/heuristic/override/override.reset/tuning`, `view.lodgroups`, `view.streaming.reset` | `lod`, `lod-*`, `streaming-reset` | `lod`, `streaming`, `lodgroups` |
 | `cvarcommands.cpp` | `cvar.get/set/reset` | `cvar`, `cvar-reset` and the short forms (`view`, `debugview`, `overlay`, `cull`, `sampler`, `shadow`, `prepass`, `aa`, `ambient`, `gpuscene`) | `config` |

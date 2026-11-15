@@ -13,6 +13,8 @@ extern cvar::Int port;        // remoteview.port
 extern cvar::Int height;      // remoteview.height
 extern cvar::Int fps;         // remoteview.fps
 extern cvar::Int bitrateKbps; // remoteview.bitrateKbps
+extern cvar::Bool control;    // remoteview.control
+extern cvar::String pageDir;  // remoteview.pageDir
 
 constexpr size_t sourceFrame = 0;
 constexpr size_t sourcePattern = 1;

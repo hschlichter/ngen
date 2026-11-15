@@ -45,6 +45,7 @@ private:
         uint32_t height = 0;
         RhiFormat format = RhiFormat::Undefined;
         bool pending = false;
+        RhiExtent2D source = {}; // the frame's size when it was captured
         uint64_t captureNs = 0;
     };
     auto release(Slot& slot) -> void;

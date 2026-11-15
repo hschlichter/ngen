@@ -1,7 +1,7 @@
 # Remote control: the watch page drives the view
 
-**Status. Draft.** Written 2026-11-15 after the remote view worked on Henrik's phone. Nothing is built. Revised the same day: no pairing
-code, and the page targets a desktop browser as much as a phone.
+**Status. In progress.** Built on 2026-11-15 and checked headless against Firefox at three window sizes, with the page's self-test, and
+used by Henrik from Safari on his iPhone ("works well", 2026-11-15). Open: a desktop browser by hand. Results are under "Built" and "Results".
 
 Extends [plan_remote_view.md](plan_remote_view.md) ([ADR 88](adr/0088_remote_view_over_webrtc.md)), whose deferred item "Input from the watch
 page" this is. Claims about the code are marked **observed** (read in the source, with the place) or **assumed**.
@@ -215,6 +215,51 @@ Out:
 - The Remote View window, the READMEs, `REFERENCE.md`, `GLOSSARY.md`, the `run-headless` skill.
 - ADR 89, "Builds on 88": the listener now carries control, with no authentication, behind a switch of its own.
 
+## Built
+
+Steps 1 to 6, on 2026-11-15. What differs from the steps above:
+
+- **`RemoteControl` takes the `RemoteView`, not the sender** (`remotecontrol.h`), and is made in `src/apps/view.cpp` after the registry.
+  The sender got `setControlHandler`, `sendControl`, `controlOpen`, `controlMessageLimit` and `controlBuffered`.
+- **`remoteview.screenshot`** is new and not in the steps: `view.screenshot` into the temporary directory, the PNG then served at
+  `GET /file/<name>`. It replaces "the page calls `view.screenshot`", whose default path is the working directory.
+- **The log's reader was there to use**: `LogRing::read` takes a cursor (`src/log/logring.h`), and `logging::eventJson` was made public so
+  the page gets the events in the loopback stream's shape.
+- **`#embed` works and is tracked**: the compiler is Clang 23, which takes it in C++23 as an extension (the warning is silenced in
+  `videopage.cpp`) and lists the embedded files in its dependency file, so a changed page file rebuilds.
+- **Double click frames the selection**, as a double tap does; the plan had it for full screen in one place and F for framing in
+  another. Full screen is the strip's button.
+- **A watcher's session number starts at the clock.** Found by the first test: a page left open from an earlier run held the same small
+  number as the new run's watcher, was taken for it, and its reports replaced the watcher's. Only the watcher's report is kept now.
+- **The hint over the video goes after ten seconds.**
+- **Profiling the strip**: the view's frame and GPU time come from the `profile` record once a second, in the wide layout only (it is
+  38 KB).
+- **`RemoteControlPaired` and the rest of the pairing went** with decision 1.
+
+## Results
+
+Debug unless it says release; headless; Firefox 160 headless on this machine; three cubes unless it says Sponza.
+
+| Check | Result |
+|---|---|
+| Off is free | **Passed.** `--remote-view` alone: the offer has no `m=application` section and `control` false; with `remoteview.control` set, one, and true. |
+| On | **Passed.** `RemoteControlOpened` once, `control.open` true, the self-test done with 18 of 18 passed. |
+| Both sizes | **Passed.** 18 of 18 at 1920 × 1080 (wide), at 500 × 758 (narrow) and at 844 × 390 (landscape), none overflowing. Firefox would not make a window narrower than 500 px, so the phone's own width is Henrik's check. |
+| Both inputs | **Passed** in each: touch drag 20° for 100 px, mouse drag 15°, pinch 4.00 m, wheel 2.00 m, right drag 2.50 m, a held W 1.5 m in 0.3 s, a key in a field nothing. |
+| Calls are the same calls | **Passed.** `remoteview.bitrateKbps` set from the page logs the encoder's restart at 3210 kbit/s; `console.run`, `view.camera.move` and `remoteview.screenshot` answer over loopback as on the channel. |
+| Picking | **Passed.** A tap and a click at the centre pick `/World/Cube_1`, and the Scene panel shows it. |
+| Log | **Passed.** The failing call's `RpcCallFailed` reaches the page; 85 to 177 lines arrived. |
+| Too large | **Passed.** `view.screenshot {inline}` answers "the result is 449260 bytes, over the control channel's 262144", `control.tooLarge` 1, and the next call works. |
+| Cost | **Passed.** Release, Sponza, Cvars panel open in the wide layout: `RemoteControlDrain` 0.055 ms a frame on average (median 0.002); with no watcher 0.0004 ms. Frame time is held at the 60 a second limit either way. |
+| `gamerelease` | **Passed.** Builds; `--remote-control` is refused; no TLS library is loaded. The one `remoteview.control` string in it is the Remote View window's cvar name. |
+| The log | **Passed.** No warnings or errors but the self-test's own failing call, with `--fail-on-validation`. |
+| `remoteview.pageDir` | **Passed.** The page's files come from the directory, and a missing one is a 404 that says so. |
+| The picture | Looked at: screenshots of the page in the wide and narrow layouts, taken through Firefox's remote protocol. |
+| The phone | **Passed (Henrik, 2026-11-15).** Safari on an iPhone, narrow layout, coarse pointer, as its report says; the control channel open, calls made, none failed. "Works well." |
+| A desktop browser by hand | **Open (Henrik).** |
+| Another browser than Firefox | Safari on iOS: see the phone. Chrome has not opened the page. |
+| The capture delay with a moving camera | **Not judged.** 20 to 23 ms from capture to send; how a drag feels is Henrik's check. |
+
 ## Visibility
 
 - **Record** `remoteview`: `control` (enabled, whether the channel is open, calls run and failed, the last method, whether the log is
@@ -255,12 +300,13 @@ picks what was tapped; in a desktop browser, the wide layout, flying with mouse 
 
 ## Open questions
 
-1. **Is `remoteview.control` as a second switch wanted, or should `--remote-view` carry control too?** I recommend the second switch:
-   the picture is harmless to show and control is not, and the flag `--remote-control` makes it one word either way.
+1. **Is `remoteview.control` as a second switch wanted, or should `--remote-view` carry control too?** Built with the second switch:
+   the picture is harmless to show and control is not, and the flag `--remote-control` makes it one word either way. Still Henrik's to
+   overrule.
 2. **Does the control channel reach the phone's browser as the video does?** Same connection, same addresses, so probably. SCTP over
-   DTLS is a second protocol on it, and only the phone answers this. Firefox answers it for the desktop in step 1.
-3. **The largest message each browser announces.** Read from the answer's SDP in step 1. If a record the page needs is over it
-   (`introspect.gpuscene` may be), splitting messages moves from "not until needed" to step 4.
+   DTLS is a second protocol on it, and only the phone answers this. Firefox on this machine: yes. Safari on the iPhone: yes.
+3. **The largest message each browser announces.** With Firefox the channel's limit is 262144 bytes (libdatachannel's own). The largest
+   record here is `zones` at 83 KB, so nothing the page reads is over it on these scenes; a large world's records may be.
 4. **Does the camera feel right at 21 ms from capture to send?** Encode, network and decode come on top. Measured end to end with the
    pattern in step 5; if a drag trails the finger, the next cut is waking the render thread when the GPU finishes a frame.
 

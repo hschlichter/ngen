@@ -377,7 +377,11 @@ sense of a map; that is a scene.
 - **Source location** — a profiler marker: its name, file, line, function, group and level. Tracy's word.
 - **Track** — one thread's zones in the profiler (Main, Render, Scene, Worker N, RPC I/O, …), plus the GPU track.
 - **Tracy** — the external profiler, a second sink inside the collector for whole sessions; nothing in the engine reads back from it.
-- **Watch page** — the HTML page the remote view serves; it plays the video and reports what the browser decoded.
+- **Remote control** — the watch page driving the view (`remoteview.control`): its calls travel on the control channel and run through the
+  view's method registry on the main thread, as the loopback endpoint's do. No authentication.
+- **Control channel** — the WebRTC data channel named `control` on the watcher's connection, carrying JSON-RPC messages both ways.
+- **Watch page** — the HTML page the remote view serves, for a phone and a desktop browser; it plays the video, reports what the browser
+  decoded, and with remote control on shows panels made from what the engine describes and takes touch, mouse and keys for the camera.
 - **Watcher** — the one browser connected to the remote view.
 - **Zone** — a timed CPU or GPU range from a marker (`PROFILE_ZONE`, `PROFILE_GPU_ZONE`); frame-graph passes, RPC calls, jobs and render
   extension hooks get one by themselves.

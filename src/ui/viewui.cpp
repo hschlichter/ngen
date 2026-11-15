@@ -261,7 +261,7 @@ auto ViewUI::draw(const PrimPathOf& primPath,
     }
     if (introspectionFlags.remoteView) {
         PROFILE_ZONE("RemoteViewWindow", Ui);
-        drawRemoteViewWindow(introspectionFlags.remoteView, remoteViewStatus);
+        drawRemoteViewWindow(introspectionFlags.remoteView, remoteViewStatus, remoteControlStatus);
     }
     if (introspectionFlags.counters) {
         PROFILE_ZONE("CountersWindow", Ui);

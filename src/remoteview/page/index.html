@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#101214">
+<title>ngen remote view</title>
+<link rel="stylesheet" href="page.css">
+</head>
+<body data-layout="narrow" class="nocontrol">
+<header id="strip">
+  <span id="dot" class="dot"></span>
+  <span id="state" class="chip grow">starting</span>
+  <span id="statFps" class="chip num" title="Frames decoded a second"></span>
+  <span id="statCpu" class="chip num wideonly" title="The view's frame time, mean"></span>
+  <span id="statGpu" class="chip num wideonly" title="GPU time a frame, mean"></span>
+  <span id="statSize" class="chip num" title="The video's size"></span>
+  <span id="statLatency" class="chip num" title="Capture to display, with the pattern as the source"></span>
+  <select id="heightSelect" class="control" title="The video's height">
+    <option value="360">360p</option>
+    <option value="720">720p</option>
+    <option value="1080">1080p</option>
+    <option value="view">view</option>
+  </select>
+  <button id="shotButton" class="control" title="Screenshot, downloaded as a PNG">Shot</button>
+  <button id="fullButton" title="Full screen">Full</button>
+  <button id="sheetButton" class="control" title="Panels">Panels</button>
+</header>
+<main id="stage">
+  <video id="video" muted playsinline autoplay></video>
+  <div id="pad" tabindex="0" aria-label="The view: drag to look, tap to pick"></div>
+  <div id="hint"></div>
+</main>
+<div id="splitter" title="Drag to resize"></div>
+<aside id="sheet">
+  <nav id="tabs"></nav>
+  <div id="panels">
+    <section class="panel" id="panel-scene" data-title="Scene"></section>
+    <section class="panel" id="panel-render" data-title="Render"></section>
+    <section class="panel" id="panel-cvars" data-title="Cvars"></section>
+    <section class="panel" id="panel-console" data-title="Console"></section>
+    <section class="panel" id="panel-methods" data-title="Methods"></section>
+    <section class="panel" id="panel-records" data-title="Records"></section>
+  </div>
+</aside>
+<script src="page.js"></script>
+</body>
+</html>

@@ -1,0 +1,198 @@
+/* The watch page's look. One page for a phone and a desktop: page.js picks the layout from the window's size and writes it to
+   body[data-layout] (narrow, landscape, wide); the pointer's kind decides the size of what is pressed. */
+
+:root {
+  --bg: #101214;
+  --panel: #181b1f;
+  --raised: #22262c;
+  --line: #2e333a;
+  --text: #d7dce2;
+  --dim: #8a929c;
+  --accent: #4cc2ff;
+  --warn: #ffb454;
+  --bad: #ff6b6b;
+  --good: #6bd68a;
+  --hit: 28px;
+  --sheet-width: 460px;
+  color-scheme: dark;
+}
+
+@media (pointer: coarse) {
+  :root { --hit: 44px; }
+}
+
+* { box-sizing: border-box; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.35 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-text-size-adjust: 100%;
+  overscroll-behavior: none;
+}
+
+body {
+  display: grid;
+  height: 100dvh;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+button, select, input, textarea {
+  font: inherit;
+  color: var(--text);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  min-height: var(--hit);
+  padding: 0 10px;
+  min-width: 0;
+}
+
+button { cursor: pointer; white-space: nowrap; }
+button:active { background: var(--line); }
+@media (hover: hover) {
+  button:hover { border-color: var(--accent); }
+}
+input:focus, select:focus, textarea:focus, button:focus-visible, #pad:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
+input[type="checkbox"] { min-height: 0; width: 18px; height: 18px; padding: 0; accent-color: var(--accent); }
+input[type="range"] { padding: 0; accent-color: var(--accent); }
+textarea { padding: 6px 10px; min-height: 60px; resize: vertical; font-family: ui-monospace, Menlo, Consolas, monospace; }
+
+.num { font-variant-numeric: tabular-nums; }
+.mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
+.dim { color: var(--dim); }
+.bad { color: var(--bad); }
+.grow { flex: 1 1 auto; min-width: 0; }
+
+/* The strip */
+
+#strip {
+  grid-area: strip;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  min-width: 0;
+  overflow: hidden;
+}
+#strip .chip { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--dim); }
+#strip .chip:empty { display: none; }
+#state { color: var(--text); }
+.dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--warn); }
+.dot.connected { background: var(--good); }
+.dot.failed { background: var(--bad); }
+body.nocontrol .control, body.nocontrol #sheet, body.nocontrol #splitter { display: none; }
+body:not([data-layout="wide"]) .wideonly { display: none; }
+
+/* The stage: the video, and the pad over it that takes the pointer */
+
+#stage { grid-area: stage; position: relative; background: #000; min-width: 0; min-height: 0; overflow: hidden; }
+#video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+#pad { position: absolute; inset: 0; touch-action: none; user-select: none; -webkit-user-select: none; cursor: crosshair; }
+body.nocontrol #pad { cursor: default; }
+#hint {
+  position: absolute; left: 8px; bottom: 8px; right: 8px;
+  color: var(--dim); font-size: 12px; pointer-events: none; text-shadow: 0 1px 2px #000;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* The sheet: tabs and panels */
+
+#sheet { grid-area: sheet; display: flex; flex-direction: column; background: var(--panel); min-width: 0; min-height: 0; }
+#splitter { grid-area: splitter; display: none; }
+#tabs { display: flex; gap: 2px; padding: 4px 6px 0; border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; flex: none; }
+#tabs button { border: 0; border-radius: 6px 6px 0 0; background: transparent; color: var(--dim); border-bottom: 2px solid transparent; }
+#tabs button.active { color: var(--text); border-bottom-color: var(--accent); }
+#panels { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); }
+#sheet[data-columns="2"] #panels { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.panel { display: none; min-height: 0; min-width: 0; overflow: auto; padding: 8px; overscroll-behavior: contain; }
+.panel.active { display: block; grid-column: 1; grid-row: 1; }
+#sheet[data-columns="2"] .panel.second { display: block; grid-column: 2; grid-row: 1; border-left: 1px solid var(--line); }
+#panel-console.active, #sheet[data-columns="2"] #panel-console.second { display: flex; flex-direction: column; }
+
+h3 { margin: 12px 0 6px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--dim); }
+h3:first-child { margin-top: 0; }
+.row { display: flex; align-items: center; gap: 8px; min-height: var(--hit); padding: 2px 0; }
+.row > label, .row > .name { flex: 1 1 40%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row > .edit { flex: 1 1 60%; min-width: 0; display: flex; align-items: center; gap: 6px; justify-content: flex-end; }
+.row > .edit > input:not([type="checkbox"]), .row > .edit > select { flex: 1 1 auto; width: 100%; }
+.row .value { flex: none; min-width: 3.5em; text-align: right; color: var(--dim); }
+.row.changed > .name { color: var(--accent); }
+.row button.reset { flex: none; padding: 0 8px; color: var(--dim); }
+.buttons { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.note { color: var(--dim); margin: 4px 0; overflow-wrap: anywhere; }
+.search { width: 100%; margin-bottom: 8px; }
+.kv { display: flex; gap: 8px; padding: 1px 0; overflow-wrap: anywhere; }
+.kv > .k { color: var(--dim); flex: none; }
+.kv > .v { min-width: 0; }
+.v.string { color: #c3e88d; }
+.v.number { color: #f78c6c; }
+.v.boolean, .v.null { color: #c792ea; }
+
+details { border-top: 1px solid var(--line); }
+details > summary { cursor: pointer; min-height: var(--hit); display: flex; align-items: center; gap: 6px; list-style: none; }
+details > summary::-webkit-details-marker { display: none; }
+details > summary::before { content: "▸"; color: var(--dim); width: 1em; flex: none; }
+details[open] > summary::before { content: "▾"; }
+details > .body { padding: 0 0 8px 14px; }
+details.tree { border: 0; }
+details.tree > summary { min-height: 22px; }
+details.tree > .body { padding-bottom: 0; }
+summary .count { color: var(--dim); }
+summary .summary { color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+
+/* The console */
+
+#log { flex: 1 1 auto; min-height: 80px; overflow: auto; overscroll-behavior: contain; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); padding: 4px 6px; }
+#log .line { white-space: pre-wrap; overflow-wrap: anywhere; }
+#log .line.warning { color: var(--warn); }
+#log .line.error { color: var(--bad); }
+#log .line.echo { color: var(--accent); }
+#log .line.answer { color: var(--good); }
+#log .category { color: var(--dim); }
+.consoleLine { display: flex; gap: 6px; margin-top: 6px; flex: none; }
+.consoleLine input { flex: 1 1 auto; }
+.consoleFilter { display: flex; gap: 6px; margin-bottom: 6px; flex: none; }
+.consoleFilter input { flex: 1 1 auto; }
+
+/* Narrow: a phone upright. The video on top, the sheet under it; the sheet can go up over the video. */
+
+body[data-layout="narrow"] {
+  grid-template: "strip" auto "stage" auto "sheet" minmax(0, 1fr) / minmax(0, 1fr);
+}
+body[data-layout="narrow"] #stage { aspect-ratio: var(--video-aspect, 16 / 9); max-height: 55dvh; width: 100%; }
+body[data-layout="narrow"].nocontrol { grid-template: "strip" auto "stage" minmax(0, 1fr) / minmax(0, 1fr); }
+body[data-layout="narrow"].nocontrol #stage { aspect-ratio: auto; max-height: none; }
+body[data-layout="narrow"].sheetup #stage { display: none; }
+body[data-layout="narrow"] #fullButton { display: none; }
+
+/* Landscape: a phone on its side. The video fills the screen, the strip lies on it, the sheet is a drawer. */
+
+body[data-layout="landscape"] { grid-template: "stage" minmax(0, 1fr) / minmax(0, 1fr); }
+body[data-layout="landscape"] #strip {
+  position: absolute; z-index: 2; top: env(safe-area-inset-top); left: env(safe-area-inset-left); right: env(safe-area-inset-right);
+  background: #101214cc; border-bottom: 0;
+}
+body[data-layout="landscape"] #sheet {
+  position: absolute; z-index: 3; top: 0; bottom: 0; right: 0; width: min(70vw, 480px);
+  border-left: 1px solid var(--line); display: none;
+  padding-right: env(safe-area-inset-right);
+}
+body[data-layout="landscape"].sheetup #sheet { display: flex; }
+
+/* Wide: a desktop or a tablet. The video left, the panels right, two side by side when there is room. */
+
+body[data-layout="wide"] {
+  grid-template: "strip strip strip" auto "stage splitter sheet" minmax(0, 1fr) / minmax(0, 1fr) 6px var(--sheet-width);
+}
+body[data-layout="wide"].nocontrol { grid-template: "strip" auto "stage" minmax(0, 1fr) / minmax(0, 1fr); }
+body[data-layout="wide"] #splitter { display: block; cursor: col-resize; background: var(--line); touch-action: none; }
+body[data-layout="wide"] #splitter:hover { background: var(--accent); }
+body[data-layout="wide"] #sheetButton { display: none; }
+body.fullvideo[data-layout="wide"] { grid-template: "stage" minmax(0, 1fr) / minmax(0, 1fr); }
+body.fullvideo[data-layout="wide"] #strip, body.fullvideo[data-layout="wide"] #sheet, body.fullvideo[data-layout="wide"] #splitter { display: none; }

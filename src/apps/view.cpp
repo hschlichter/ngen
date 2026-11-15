@@ -7,6 +7,7 @@
 #include "jobsystem.h"
 #include "log.h"
 #include "profile.h"
+#include "remotecontrol.h"
 #include "remoteview.h"
 #include "remoteviewcapture.h"
 #include "remoteviewcommands.h"
@@ -249,21 +250,26 @@ auto main(int argc, char* argv[]) -> int {
                 std::println(stderr, "--cvar: {}", set.error());
                 return 1;
             }
-        } else if (arg == "--remote-view" || arg.starts_with("--remote-view=")) {
+        } else if (arg == "--remote-view" || arg.starts_with("--remote-view=") || arg == "--remote-control" || arg.starts_with("--remote-control=")) {
             // --remote-view[=<address>[:<port>]]: the remote view on from the start (src/remoteview/README.md), on every interface
-            // unless an address is given.
-            std::string where = arg == "--remote-view" ? std::string() : flagValue(arg, "--remote-view=");
+            // unless an address is given. --remote-control is the same with the watch page allowed to drive the view.
+            bool control = arg.starts_with("--remote-control");
+            std::string flag = control ? "--remote-control" : "--remote-view";
+            std::string where = arg == flag ? std::string() : flagValue(arg, (flag + "=").c_str());
             auto colon = where.find(':');
             std::string address = where.substr(0, colon);
             std::expected<void, std::string> set = setCvarAtStart("remoteview.address", address.empty() ? "0.0.0.0" : address);
             if (set && colon != std::string::npos) {
                 set = setCvarAtStart("remoteview.port", where.substr(colon + 1));
             }
+            if (set && control) {
+                set = setCvarAtStart("remoteview.control", "on");
+            }
             if (set) {
                 set = setCvarAtStart("remoteview.enabled", "on");
             }
             if (!set) {
-                std::println(stderr, "--remote-view: {}", set.error());
+                std::println(stderr, "{}: {}", flag, set.error());
                 return 1;
             }
         } else if (arg.starts_with("--frames=")) {
@@ -559,7 +565,10 @@ auto main(int argc, char* argv[]) -> int {
     registerToolCommands(registry, console, records, viewContext, tools);
     registerUiCommands(registry, console, records, viewUI);
 #ifdef NGEN_INTROSPECTION
-    registerRemoteViewCommands(registry, console, records, remoteView);
+    // Remote control (src/remoteview/README.md): the watch page's calls, run through the same registry. Off until remoteview.control is set.
+    RemoteControl remoteControl(remoteView, registry);
+    registerRemoteViewCommands(registry, console, records, remoteView, remoteControl);
+    viewUI.setRemoteControlStatus(&remoteControl.status());
 #endif
     registerRpcRecords(registry, records);
     // The endpoint is tooling: debug and release only (NGEN_INTROSPECTION), off with --no-rpc.
@@ -609,6 +618,9 @@ auto main(int argc, char* argv[]) -> int {
             hooks.afterScene(frame);
         }
         runFrameCommands(viewContext, session, registry, console, endpoint);
+#ifdef NGEN_INTROSPECTION
+        remoteControl.drain();
+#endif
         frame.advanceTime(SDL_GetTicksNS());
         frame.resetCameras();
         {

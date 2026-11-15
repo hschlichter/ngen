@@ -81,6 +81,7 @@ public:
     auto setCullResult(const CullResult& cull) -> void { cullResult = &cull; }
     // The remote view's status, for the Remote View window; the caller keeps it alive. None: a program without a remote view.
     auto setRemoteViewStatus(const RemoteViewStatus* status) -> void { remoteViewStatus = status; }
+    auto setRemoteControlStatus(const RemoteControlStatus* status) -> void { remoteControlStatus = status; }
 
     // The windows view.window opens and closes, by name.
     static constexpr std::array windowNames = {"memory", "capture", "framedebugger", "gpuscene", "counters", "shaders", "remoteview", "culling", "assets", "lod", "streaming", "camera", "renderdebug", "framegraph", "performance", "cvars"};
@@ -191,6 +192,7 @@ private:
     GpuSceneWindowState gpuSceneState;
     CountersWindowState countersState;
     const RemoteViewStatus* remoteViewStatus = nullptr;
+    const RemoteControlStatus* remoteControlStatus = nullptr;
     DebugViewWindowState debugViewState;
     RenderDebugDrawState renderDebugDraws;
 };

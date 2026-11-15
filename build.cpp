@@ -290,6 +290,7 @@ auto main(int argc, char** argv) -> int {
             })
             .define("RTC_STATIC")
             .link(renderer)
+            .link(rpc)
             .link(logLib)
             .link(profile)
             .link(cvar);

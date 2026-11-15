@@ -12,6 +12,9 @@ struct VideoImage {
     uint32_t width = 0;
     uint32_t height = 0;
     uint64_t captureNs = 0; // profile::now() when the frame that made it was recorded
+    // The size of the frame it was scaled from, in pixels: what view.pick's coordinates are in. Zero for the test pattern.
+    uint32_t sourceWidth = 0;
+    uint32_t sourceHeight = 0;
 };
 
 // Planar Y'CbCr 4:2:0, BT.709, limited range. Width and height are even.

@@ -45,6 +45,11 @@ public:
     // file is written, or with why not (no watcher's page answered within five seconds).
     auto requestGrab(std::string path, std::function<void(std::expected<void, std::string>)> done) -> void;
 
+    // The connection, for the remote control that shares it.
+    auto videoSender() -> VideoSender& { return sender; }
+    // A file for the watch page to fetch at /file/<name>: a screenshot it asked for. One at a time; the next replaces it.
+    auto shareFile(std::string name, std::string contentType, std::string bytes) -> void;
+
     auto shutdown() -> void;
 
 private:
@@ -65,6 +70,13 @@ private:
         VideoSettings settings; // width is unused: it follows the image
         bool pattern = false;
         std::string bindAddress;
+        bool control = false;
+        std::string pageDir;
+        uint32_t frameWidth = 0;
+        uint32_t frameHeight = 0;
+        std::string fileName; // the shared file
+        std::string fileType;
+        std::string fileBytes;
         std::optional<VideoImage> pending;
         bool stop = false;
         bool restartEncoder = false;

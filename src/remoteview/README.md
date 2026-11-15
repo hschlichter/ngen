@@ -2,7 +2,10 @@
 
 The `remoteview` library: ngen-view's image as live video in a browser on another device, a phone first. It is for watching a session that runs
 somewhere else, an agent's headless run included, without remote desktop software and without capturing a desktop or a window: the image is taken
-from the GPU inside the engine, encoded as H.264 and sent over WebRTC. One watcher at a time, video only, one way.
+from the GPU inside the engine, encoded as H.264 and sent over WebRTC. One watcher at a time, video only.
+
+With **remote control** on, the watch page also drives the view: the camera by touch or by mouse and keys, picking, cvars, console
+commands, every method and record, on a phone and in a desktop browser alike.
 
 It is tooling, as the RPC endpoint is: only ngen-view's `NGEN_INTROSPECTION` code uses it, so `gamerelease` links none of it and none of its
 libraries. It is off until `remoteview.enabled` is set.
@@ -19,6 +22,9 @@ on this machine. `--remote-view` listens on every interface; `--remote-view=<add
 this machine's addresses (its Tailscale address) and so to that network. A browser can't connect its video to a loopback address, so
 `127.0.0.1` serves the page and nothing more.
 
+`--remote-control` in place of `--remote-view` also lets the page drive the view (`remoteview.control`). There is no authentication:
+use it on a network that is yours.
+
 The flag sets cvars, and a running view is turned on the same way: `cvar remoteview.enabled on` in the console,
 `./ngen-cli introspect call view cvar.set '{"values": {"remoteview.enabled": true}}'`, or the Enabled box in the Remote View window
 (Windows > Introspection), which shows the addresses and everything below.
@@ -34,7 +40,8 @@ The flag sets cvars, and a running view is turned on the same way: `cvar remotev
 | Encoder | `videoencoder.h`, `videoencoderopenh264.cpp` | the `VideoEncoder` interface and its one implementation, OpenH264 in software |
 | Sender | `videosender.h/.cpp` (`VideoSender`) | WebRTC through libdatachannel: one peer connection, one H.264 track. The only file that includes libdatachannel |
 | Listener | `videohttp.h/.cpp` (`VideoHttp`) | a small HTTP/1.1 server for the watch page and its requests |
-| Watch page | `videopage.h/.cpp` | the one HTML page, as a string in the program |
+| Remote control | `remotecontrol.h/.cpp` (`RemoteControl`) | the watch page's calls, queued from the control channel and run through the view's method registry on the main thread |
+| Watch page | `page/index.html`, `page.css`, `page.js`; `videopage.h/.cpp` | the page's files, and their place in the program (`#embed`) |
 | Test pattern | `videopattern.h/.cpp` | the second source: colour bars, a moving bar, and the time it was drawn |
 | Cvars | `remoteviewcvars.h/.cpp` | `remoteview.*` |
 
@@ -58,6 +65,11 @@ Its commands and record are registered by `src/view/remoteviewcommands.cpp` (the
 
 The watch page's requests are served on the listener's thread ("Remote View Http").
 
+Remote control is in the frame once: **`RemoteControl::drain` on the main thread, right after the RPC endpoint's calls run**
+(`runFrameCommands`). libdatachannel's thread only queues the page's messages; `drain` runs them through the same `RpcRegistry` for at
+most 2 ms a frame, at least one, and then sends the log events the page is waiting for (64 KiB a frame at most). A method that answers
+frames later (a pick, a screenshot) answers on the channel when it does.
+
 ## Rules
 
 - **Free when off.** `remoteview.enabled` off: no listener, no thread, no request in the snapshot. On with no watcher: a listener and an
@@ -74,8 +86,19 @@ The watch page's requests are served on the listener's thread ("Remote View Http
   UI for that frame, and the video shows that frame without it.
 - **libdatachannel stays in `videosender.cpp`.** Its interface throws; every call into it is there, caught there and returned as
   `std::expected`. Nothing else in the engine sees its types.
-- **No authentication.** Whoever reaches the address sees the picture and nothing more: nothing is taken from the watcher but its report.
-  That is why it is off until asked for, why it can be kept to one address, and why this is not the RPC endpoint, which stays on loopback.
+- **No authentication.** Whoever reaches the address sees the picture. That is why it is off until asked for, why it can be kept to one
+  address, and why this is not the RPC endpoint, which stays on loopback.
+- **Control has its own switch.** With `remoteview.control` off (the default) nothing is taken from the watcher but its report, and the
+  offer carries no control channel. With it on, whoever reaches the address can call every method the view has: set cvars, write files
+  to paths the methods take, quit the view. The defence is the network the listener is bound to.
+- **A call from the page is the same call.** `RemoteControl` has no methods of its own but the log's subscription: it hands the page's
+  JSON-RPC to the registry the loopback endpoint uses, so nothing is registered twice and the page can do exactly what an agent can.
+- **An answer larger than a control message fails**, with its size in the error (256 KiB with the browsers tried). Pictures go over
+  HTTP instead (`remoteview.screenshot`, `GET /file/…`).
+- **The page is made from what the engine describes**: its Cvars, Methods and Records panels from `cvar.get`, `rpc.describe` and
+  `introspect.list`. A new cvar, method or record needs no change to the page.
+- **One page for a phone and a desktop.** It lays itself out by the window's size and takes input through Pointer Events; nothing asks
+  what device it is.
 
 ## The watch page and the listener
 
@@ -83,15 +106,63 @@ The engine offers, the page answers:
 
 | Request | Does |
 |---|---|
-| `GET /` | the watch page |
-| `POST /offer` | a new connection for this page, replacing the watcher there was: `{session, sdp}` with the engine's addresses in the SDP |
+| `GET /`, `/page.css`, `/page.js` | the watch page's files: built into the program, or from `remoteview.pageDir` when that is set |
+| `POST /offer` | a new connection for this page, replacing the watcher there was: `{session, sdp, control}` with the engine's addresses in the SDP, and the control channel in it when remote control is on |
 | `POST /answer` | the page's answer SDP; the connection comes up once the browser's checks reach the engine |
-| `POST /report` | once a second: the browser's user agent, its connection state, frames decoded and dropped, the size shown, and with the pattern as the source the latency and the colour bars it reads. Answered with the source, whether this page is still the watcher, and whether a frame is wanted |
+| `POST /report` | once a second: the browser's user agent, its connection state, frames decoded and dropped, the size shown, the layout and pointer kind the page chose, its self-test's results, and with the pattern as the source the latency and the colour bars it reads. Answered with the source, whether this page is still the watcher, whether a frame is wanted, and whether control is on. Only the watcher's report is kept |
+| `GET /file/<name>` | the file last shared with the page: the screenshot `remoteview.screenshot` took |
 | `POST /frame` | the frame the page shows, as a PNG, when `remoteview.grab` asked for one |
 | `GET /time` | the engine's clock, for the page's latency |
 
 No STUN or TURN server is involved: the engine gives its own address and the browser reaches it, so both must be on one network (a LAN, a
-Tailscale network). The page reconnects by itself two seconds after its connection goes, or after the engine drops it.
+Tailscale network). The page reconnects by itself two seconds after its connection goes, or after the engine drops it, and when remote
+control is turned on or off, since the channel comes with a connection. A watcher's session number starts at the clock, so a page left
+open from an earlier run is never taken for this run's watcher.
+
+## The watch page
+
+`page/index.html`, `page.css` and `page.js`: plain HTML, CSS and JavaScript, no framework, nothing fetched from elsewhere. To change it
+without a rebuild, set `remoteview.pageDir` to `src/remoteview/page` and reload the page.
+
+It picks one of three layouts from the window's size:
+
+| Layout | When | Looks like |
+|---|---|---|
+| narrow | taller than wide (a phone upright) | the video on top, the panels under it; Panels puts them over the video |
+| landscape | wider than tall, and smaller than wide needs (a phone on its side) | the video fills the screen, the strip lies on it, the panels are a drawer |
+| wide | at least 900 × 500 (a desktop, a tablet) | the video left, the panels right, their width dragged; two panels side by side from 760 px |
+
+The strip on top shows the connection, frames a second, the view's frame and GPU time (wide), the video's size, and has the video's
+height, a screenshot to download and full screen. The panels, with remote control on:
+
+| Panel | From | Does |
+|---|---|---|
+| Scene | the `status` record, `view.assetsOf`, `view.camera.list` | the selection and its assets, frame it or the scene, the camera's pose, the scene's cameras |
+| Render | `cvar.get`, a short list of names | view mode, shadows, culling, overlays, the video's settings |
+| Cvars | `cvar.get` | every cvar by group with an editor for its type, searched, changed ones marked with a reset |
+| Console | `console.run`, `log.subscribe` | a line that runs a console command, with its history, and the live log under it |
+| Methods | `rpc.describe` | every method with a form made from its parameters, and its answer as a tree |
+| Records | `introspect.list`, `introspect.get` | every record as a tree, refreshed while open |
+
+On the video:
+
+| | Touch | Mouse and keys |
+|---|---|---|
+| Look | one finger drags | the left button drags |
+| Move sideways and up | two fingers drag | the middle or right button drags |
+| Forward and back | pinch | the wheel; W and S |
+| Fly | | W A S D, Q and E, Shift for five times the speed, while the video has the focus |
+| Pick | tap | click |
+| Frame the selection | double tap | double click, F |
+| Console | | a backtick |
+
+All of it becomes `view.camera.move` (what the gesture or the held keys added up to, once an animation frame, one call in flight at a
+time), `view.pick` at the frame's pixel under the pointer, and `view.camera.frame`.
+
+**The page tests itself** when opened at `<address>/#test`: it runs calls, a cvar set and read back, a failing call, the
+log, synthesized touch and mouse input against the camera, picking by both, a screenshot and a result over the message limit, and puts
+each check's result in its report. The `remoteview` record shows it as `page.test`, so an agent verifies the page with a headless
+browser and no way to touch it.
 
 ## The video
 
@@ -113,18 +184,26 @@ the bars' colours back, which shows whether the browser honoured the stream's co
 ## At runtime
 
 - **Record** `remoteview`: whether it listens and the watch page's URL at each address it is reached at; the watcher (state, address, how many connected and went); the video as encoded;
+  `frame`, the size it is scaled from and `view.pick`'s pixels are in; `control` (on, the channel open, calls run and failed, answers too
+  large, messages dropped, the message limit, the last method, the log subscribed and events sent);
   frames captured, replaced, encoded and sent since it was turned on; the last second's times (the render thread's copy, conversion,
-  encode, capture to send); what the watch page last reported; the last error.
-- **Cvars** `remoteview.enabled`, `.source`, `.address`, `.port`, `.height`, `.fps`, `.bitrateKbps`.
+  encode, capture to send); what the watch page last reported, with its layout, pointer and self-test; the last error.
+- **Cvars** `remoteview.enabled`, `.source`, `.address`, `.port`, `.height`, `.fps`, `.bitrateKbps`, `.control`, `.pageDir`.
 - **Start-up flags**: `--remote-view[=<address>[:<port>]]` sets the address (every interface without one), the port and `remoteview.enabled`;
-  `--cvar <name>=<value>` sets any of the others. In a configuration without the remote view (`gamerelease`) the flag is an error.
+  `--remote-control[=<address>[:<port>]]` the same and `remoteview.control`; `--cvar <name>=<value>` sets any of the others. In a
+  configuration without the remote view (`gamerelease`) the flags are errors.
 - **Methods and console commands**: `remoteview.keyframe` / `remoteview-keyframe`, `remoteview.disconnect` / `remoteview-disconnect`,
-  `remoteview.grab {path}` / `remoteview-grab <path>` (what the watcher sees, after decoding, as a PNG).
-- **Window**: Remote View, under Windows > Introspection, or `window remoteview on`.
+  `remoteview.grab {path}` / `remoteview-grab <path>` (what the watcher sees, after decoding, as a PNG), `remoteview.screenshot` /
+  `remoteview-screenshot` (a screenshot the watch page downloads). Made for the page and useful to anyone: `console.run {line}`,
+  `view.camera.move` / `camera-move`.
+- **Window**: Remote View, under Windows > Introspection, or `window remoteview on`; its Control section has the switch, the channel,
+  the calls and the last method.
 - **Log**, category `RemoteView`: `RemoteViewListening`, `RemoteViewStopped`, `RemoteViewEncoderStarted`, `RemoteViewWatcherConnected`,
-  `RemoteViewWatcherDisconnected`, `RemoteViewWatcherSilent`, and the warning `RemoteViewFailed` (the listener can't bind, an offer or an answer
-  failed, the encoder failed).
+  `RemoteViewWatcherDisconnected`, `RemoteViewWatcherSilent`, `RemoteControlOpened`, `RemoteControlClosed`, and the warning
+  `RemoteViewFailed` (the listener can't bind, an offer or an answer failed, the encoder failed). A call from the page that fails is an
+  `RpcCallFailed` warning with `from: remote control`, as a failing loopback call is.
 - **Profiler**: the "Remote View Encode" and "Remote View Http" tracks; zones `RemoteViewConvert`, `RemoteViewEncode`, `RemoteViewSend`;
+  `RemoteControlDrain` on the main thread, each call's zone inside it;
   the extension's hooks as every extension's (`RemoteViewCapture.afterExecute`, `.afterFence`), with `RemoteViewCopy` inside; the GPU zone
   `RemoteViewCapture`.
 
@@ -140,3 +219,7 @@ the system's OpenSSL.
   from capture to send (debug, three cubes, headless). Asking sooner needs something to wake the render thread between frames.
 - **Conversion and encoding are on the CPU.** This machine's GPU reports H.264 encode through Vulkan Video; nothing uses it.
 - **The bitrate doesn't follow the network**, and there is one watcher.
+- **Remote control has no authentication**, and the page and the offer travel as plain HTTP, so someone on the path could put
+  themselves in the middle. A Tailscale network encrypts the path; a shared LAN does not.
+- **Records are polled** by the page, twice a second for the open panel; nothing is subscribed to but the log.
+- **The engine's own windows can't be used from the page**: they show in the video, and a tap picks through them.

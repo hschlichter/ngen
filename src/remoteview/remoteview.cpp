@@ -18,6 +18,7 @@
 #include <chrono>
 #include <format>
 #include <fstream>
+#include <iterator>
 
 namespace {
 
@@ -124,7 +125,10 @@ auto RemoteView::update() -> void {
                     all += (all.empty() ? "" : ", ") + url;
                 }
                 LOG_EVENT("RemoteView", "RemoteViewListening", "remoteview")
-                    .text(std::format("remote view: watch page at {}", all.empty() ? std::format("port {} (this machine has no address but loopback)", wanted.port) : all))
+                    .text(std::format("remote view: watch page at {}{}",
+                                      all.empty() ? std::format("port {} (this machine has no address but loopback)", wanted.port) : all,
+                                      remoteviewcvars::control.get() ? ", with control of the view" : ""))
+                    .field("control", remoteviewcvars::control.get())
                     .field("address", wanted.address)
                     .field("port", (int64_t) wanted.port)
                     .field("url", watchPageUrls.empty() ? std::string() : watchPageUrls.front());
@@ -160,6 +164,8 @@ auto RemoteView::update() -> void {
         live.settings = settings;
         live.pattern = pattern;
         live.bindAddress = wanted.address;
+        live.control = remoteviewcvars::control.get();
+        live.pageDir = remoteviewcvars::pageDir.get();
         events.swap(live.events);
 
         if (live.grab && live.grabResult) {
@@ -185,6 +191,8 @@ auto RemoteView::update() -> void {
         current.framesPerSecond = settings.framesPerSecond;
         current.bitrate = settings.bitrate;
         current.encoder = live.encoder;
+        current.frameWidth = live.frameWidth;
+        current.frameHeight = live.frameHeight;
         current.captured = live.captured;
         current.replaced = live.replaced;
         current.encoded = live.encoded;
@@ -257,6 +265,8 @@ auto RemoteView::submit(VideoImage&& image, double copyMs) -> void {
         if (live.pending) {
             live.replaced++;
         }
+        live.frameWidth = image.sourceWidth;
+        live.frameHeight = image.sourceHeight;
         live.pending = std::move(image);
         live.captured++;
         live.copySum += copyMs;
@@ -284,6 +294,13 @@ auto RemoteView::requestGrab(std::string path, std::function<void(std::expected<
     if (replaced && replaced->done) {
         replaced->done(std::unexpected(std::string("replaced by a newer request")));
     }
+}
+
+auto RemoteView::shareFile(std::string name, std::string contentType, std::string bytes) -> void {
+    std::lock_guard lock(mutex);
+    live.fileName = std::move(name);
+    live.fileType = std::move(contentType);
+    live.fileBytes = std::move(bytes);
 }
 
 auto RemoteView::shutdown() -> void {
@@ -487,24 +504,49 @@ auto RemoteView::encodeLoop() -> void {
 // The listener's thread. What the watch page asks: the page itself, an offer and the place for its answer, the engine's clock, the place
 // for its once-a-second report, and the place for a frame the engine asked it for.
 auto RemoteView::serve(const VideoHttpRequest& request) -> VideoHttpResponse {
-    if (request.method == "GET" && (request.path == "/" || request.path == "/index.html")) {
-        return {.status = 200, .contentType = "text/html; charset=utf-8", .body = std::string(videoWatchPage())};
+    if (request.method == "GET") {
+        if (const auto* file = watchPageFile(request.path)) {
+            std::string pageDir;
+            {
+                std::lock_guard lock(mutex);
+                pageDir = live.pageDir;
+            }
+            if (pageDir.empty()) {
+                return {.status = 200, .contentType = std::string(file->contentType), .body = std::string(file->body)};
+            }
+            // The page's files from a directory, so the page is changed without a rebuild.
+            std::ifstream in(pageDir + "/" + std::string(file->name), std::ios::binary);
+            if (!in) {
+                return {.status = 404, .body = std::format("no {} in {} (remoteview.pageDir)\n", file->name, pageDir)};
+            }
+            std::string body((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+            return {.status = 200, .contentType = std::string(file->contentType), .body = std::move(body)};
+        }
+    }
+    if (request.method == "GET" && request.path.starts_with("/file/")) {
+        std::lock_guard lock(mutex);
+        if (live.fileName.empty() || request.path.substr(6) != live.fileName) {
+            return {.status = 404, .body = "no such file\n"};
+        }
+        return {.status = 200, .contentType = live.fileType, .body = live.fileBytes};
     }
     if (request.method == "GET" && request.path == "/time") {
         return {.status = 200, .body = std::to_string(unixMs())};
     }
     if (request.method == "POST" && request.path == "/offer") {
         std::string bindAddress;
+        bool control = false;
         {
             std::lock_guard lock(mutex);
             bindAddress = live.bindAddress;
+            control = live.control;
         }
-        auto offer = sender.offer(bindAddress);
+        auto offer = sender.offer(bindAddress, control);
         if (!offer) {
             fail(offer.error());
             return {.status = 503, .body = offer.error() + "\n"};
         }
-        Json answer = {{"session", sender.session()}, {"sdp", *offer}};
+        Json answer = {{"session", sender.session()}, {"sdp", *offer}, {"control", control}};
         return {.status = 200, .contentType = "application/json", .body = answer.dump()};
     }
     if (request.method == "POST" && request.path == "/answer") {
@@ -530,6 +572,11 @@ auto RemoteView::serve(const VideoHttpRequest& request) -> VideoHttpResponse {
         report.framesPerSecond = json.value("framesPerSecond", 0.0);
         report.width = json.value("width", 0u);
         report.height = json.value("height", 0u);
+        report.layout = json.value("layout", std::string());
+        report.pointer = json.value("pointer", std::string());
+        if (json.contains("test") && !json["test"].is_null()) {
+            report.test = json["test"].dump();
+        }
         if (json.contains("latencyMs") && json["latencyMs"].is_number()) {
             report.latencyMs = json["latencyMs"].get<double>();
         }
@@ -540,20 +587,24 @@ auto RemoteView::serve(const VideoHttpRequest& request) -> VideoHttpResponse {
                 }
             }
         }
-        Json answer;
-        {
-            std::lock_guard lock(mutex);
-            live.report = std::move(report);
-            answer["source"] = live.pattern ? "pattern" : "frame";
-            answer["grab"] = live.grab.has_value() && !live.grabResult.has_value();
-        }
         // Whether the page that reports is the watcher, or was dropped (it connects again), or another page took its place (it stops).
         uint64_t session = sender.session();
         uint64_t reporting = json.value("session", (uint64_t) 0);
+        Json answer;
         answer["watcher"] = session == 0 ? "none" : (session == reporting ? "you" : "another");
-        if (session != 0 && session == reporting) {
+        {
             std::lock_guard lock(mutex);
-            live.watcherReportNs = profile::now();
+            // A page that another replaced goes on reporting that it stopped: what the record shows is the watcher's report, so only
+            // the watcher's is kept, or anyone's while there is no watcher.
+            if (session == 0 || session == reporting) {
+                live.report = std::move(report);
+            }
+            if (session != 0 && session == reporting) {
+                live.watcherReportNs = profile::now();
+            }
+            answer["source"] = live.pattern ? "pattern" : "frame";
+            answer["grab"] = live.grab.has_value() && !live.grabResult.has_value() && (session == 0 || session == reporting);
+            answer["control"] = live.control;
         }
         return {.status = 200, .contentType = "application/json", .body = answer.dump()};
     }

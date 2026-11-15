@@ -20,7 +20,7 @@ auto row(const char* label, const char* format, ...) -> void {
 
 } // namespace
 
-auto drawRemoteViewWindow(bool& show, const RemoteViewStatus* status) -> void {
+auto drawRemoteViewWindow(bool& show, const RemoteViewStatus* status, const RemoteControlStatus* control) -> void {
     if (!show) {
         return;
     }
@@ -88,9 +88,28 @@ auto drawRemoteViewWindow(bool& show, const RemoteViewStatus* status) -> void {
         ImGui::EndTable();
     }
 
+    if (ImGui::CollapsingHeader("Control", ImGuiTreeNodeFlags_DefaultOpen)) {
+        cvarEditor("Control", "remoteview.control");
+        ImGui::TextWrapped("The watch page may call every method the RPC endpoint has, with no authentication. Takes effect when a watch page next connects.");
+        if (control != nullptr && ImGui::BeginTable("control", 2, ImGuiTableFlags_SizingFixedFit)) {
+            row("Channel", "%s", control->open ? "open" : (control->enabled ? "waiting for a watch page" : "off"));
+            row("Calls", "%llu, %llu failed", (unsigned long long) control->calls, (unsigned long long) control->failed);
+            row("Last method", "%s", control->lastMethod.empty() ? "-" : control->lastMethod.c_str());
+            row("Largest message", "%llu bytes; %llu answers were larger", (unsigned long long) control->messageLimit, (unsigned long long) control->tooLarge);
+            row("Dropped", "%llu messages (too many waiting)", (unsigned long long) control->dropped);
+            row("Log", "%s, %llu events sent", control->logSubscribed ? "subscribed" : "not subscribed", (unsigned long long) control->logEvents);
+            row("Runs", "on the main thread, after the RPC endpoint's calls");
+            ImGui::EndTable();
+        }
+        const auto& report = status->report;
+        if (report.received && !report.layout.empty()) {
+            ImGui::TextDisabled("Watch page: %s layout, %s pointer", report.layout.c_str(), report.pointer.c_str());
+        }
+    }
+
     if (ImGui::CollapsingHeader("Video", ImGuiTreeNodeFlags_DefaultOpen) && ImGui::BeginTable("video", 2, ImGuiTableFlags_SizingFixedFit)) {
         row("Encoder", "%s", status->encoder.empty() ? "-" : status->encoder.c_str());
-        row("Size", "%u x %u", status->width, status->height);
+        row("Size", "%u x %u, from a frame of %u x %u", status->width, status->height, status->frameWidth, status->frameHeight);
         row("Rate", "%u frames a second, %u kbit/s", status->framesPerSecond, status->bitrate / 1000);
         row("Captured", "%llu", (unsigned long long) status->captured);
         row("Replaced", "%llu (a newer frame came before the encoder took it)", (unsigned long long) status->replaced);
@@ -102,7 +121,7 @@ auto drawRemoteViewWindow(bool& show, const RemoteViewStatus* status) -> void {
 
     if (ImGui::CollapsingHeader("Where it sits, and what it costs", ImGuiTreeNodeFlags_DefaultOpen) && ImGui::BeginTable("flow", 2, ImGuiTableFlags_SizingFixedFit)) {
         row("1. Render thread", "after the UI is drawn: the frame scaled and copied out on the GPU");
-        row("2. Render thread", "when that frame context comes round: copied to memory, %.2f ms", status->copyMs);
+        row("2. Render thread", "once the GPU has finished that frame: copied to memory, %.2f ms", status->copyMs);
         row("3. Encode thread", "RGBA to Y'CbCr, %.2f ms", status->convertMs);
         row("4. Encode thread", "H.264, %.2f ms", status->encodeMs);
         row("5. Network", "sent %.1f ms after the frame was recorded", status->captureToSendMs);

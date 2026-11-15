@@ -79,6 +79,34 @@ auto registerViewCommands(RpcRegistry& registry, ConsoleCommands& console, RpcRe
             records.get(name, write);
         });
     console.add("record", "introspect.record", parseRecord);
+
+    // A console line as a method, for a caller that has a line of text and not a method's parameters: the watch page's console.
+    registry.add(
+        {
+            .name = "console.run",
+            .summary = "Run a console command as a script line does: its name, then its text.",
+            .params = {requiredField("line", RpcType::String, "the console command and its arguments, such as 'camera-frame scene' or 'cvar render.shadow off'")},
+            .result = "what the console command's method answers",
+        },
+        [&registry, &console](const Json& p, RpcResponder responder) {
+            auto line = p["line"].get<std::string>();
+            auto start = line.find_first_not_of(" \t");
+            if (start == std::string::npos) {
+                responder.fail(rpc::invalidParams, "an empty line");
+                return;
+            }
+            auto nameEnd = line.find(' ', start);
+            auto name = line.substr(start, nameEnd == std::string::npos ? std::string::npos : nameEnd - start);
+            std::string args;
+            if (nameEnd != std::string::npos) {
+                auto argsStart = line.find_first_not_of(" \t", nameEnd);
+                if (argsStart != std::string::npos) {
+                    args = line.substr(argsStart);
+                    args.erase(args.find_last_not_of(" \t") + 1);
+                }
+            }
+            console.run(registry, name, args, std::move(responder));
+        });
 }
 
 auto runFrameCommands(ViewContext& view, SessionScript& session, const RpcRegistry& registry, const ConsoleCommands& console, RpcEndpoint& endpoint) -> void {

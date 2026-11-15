@@ -78,6 +78,44 @@ auto parseCameraOrbit(const std::string& args) -> std::expected<Json, std::strin
     return out;
 }
 
+// "forward right up [yaw pitch] [main|debug]": metres, then degrees.
+auto parseCameraMove(const std::string& args) -> std::expected<Json, std::string> {
+    std::istringstream in(args);
+    float forward = 0.0f;
+    float right = 0.0f;
+    float up = 0.0f;
+    in >> forward >> right >> up;
+    if (in.fail()) {
+        return std::unexpected(std::format("expected 'forward right up [yaw pitch] [main|debug]', got '{}'", args));
+    }
+    Json out = {{"forward", forward}, {"right", right}, {"up", up}};
+    std::string next;
+    if (in >> next) {
+        if (next == "main" || next == "debug") {
+            out["camera"] = next;
+            return out;
+        }
+        float yaw = 0.0f;
+        float pitch = 0.0f;
+        std::istringstream angles(next);
+        angles >> yaw;
+        in >> pitch;
+        if (angles.fail() || in.fail()) {
+            return std::unexpected(std::format("expected 'forward right up [yaw pitch] [main|debug]', got '{}'", args));
+        }
+        out["yaw"] = yaw;
+        out["pitch"] = pitch;
+        std::string camera;
+        if (in >> camera) {
+            if (camera != "main" && camera != "debug") {
+                return std::unexpected(std::format("expected main or debug, got '{}'", camera));
+            }
+            out["camera"] = camera;
+        }
+    }
+    return out;
+}
+
 auto parseCameraFollow(const std::string& args) -> std::expected<Json, std::string> {
     std::istringstream in(args);
     std::string first;
@@ -244,7 +282,50 @@ auto registerCameraCommands(RpcRegistry& registry, ConsoleCommands& console, Vie
             responder.respond(Json::object());
         });
 
+    registry.add(
+        {
+            .name = "view.camera.move",
+            .summary = "Move and turn a camera from where it is, as the keys and the mouse do: metres along its forward, its right and the "
+                       "world's up, degrees of yaw and pitch. Stops a flight. Following the ground, forward is the heading across it and up "
+                       "changes the height above it.",
+            .params =
+                {
+                    optionalField("forward", RpcType::Float, "metres along the view direction"),
+                    optionalField("right", RpcType::Float, "metres to the right"),
+                    optionalField("up", RpcType::Float, "metres along the world's up"),
+                    optionalField("yaw", RpcType::Float, "degrees, clockwise seen from above"),
+                    optionalField("pitch", RpcType::Float, "degrees upward, clamped at 89 either way"),
+                    {.name = "camera", .type = RpcType::Enum, .required = false, .description = "which camera, main by default", .enumValues = cameraNames},
+                },
+            .result = "{x, y, z, yaw, pitch}: where the camera is now",
+        },
+        [&view](const Json& p, RpcResponder responder) {
+            auto* camera = namedCamera(view, p);
+            if (camera == nullptr) {
+                responder.fail(rpc::appError, "the debug camera is off (view.camera.debug {on: true})");
+                return;
+            }
+            if (camera == &view.cam && view.flight.flying()) {
+                stopFlight(view.flight);
+            }
+            camera->yaw += p.value("yaw", 0.0f);
+            camera->pitch = std::clamp(camera->pitch + p.value("pitch", 0.0f), -89.0f, 89.0f);
+            auto right = camera->right();
+            auto forward = camera->forward();
+            float up = p.value("up", 0.0f);
+            if (camera->followHeight) {
+                forward = glm::cross(camera->worldUp, right);
+                *camera->followHeight = std::max(0.0f, *camera->followHeight + up);
+                up = 0.0f;
+            }
+            camera->position += forward * p.value("forward", 0.0f);
+            camera->position += right * p.value("right", 0.0f);
+            camera->position += camera->worldUp * up;
+            responder.respond({{"x", camera->position.x}, {"y", camera->position.y}, {"z", camera->position.z}, {"yaw", camera->yaw}, {"pitch", camera->pitch}});
+        });
+
     console.add("camera", "view.camera.set", parseCamera);
+    console.add("camera-move", "view.camera.move", parseCameraMove);
     console.add("camera-frame", "view.camera.frame", parseTarget);
     console.add("camera-use", "view.camera.use", parseCameraPath);
     console.add("camera-orbit", "view.camera.orbit", parseCameraOrbit);

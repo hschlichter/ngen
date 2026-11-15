@@ -14,6 +14,11 @@
 
 namespace logging {
 
+struct Event;
+
+// An event as it travels in a log.events notification: the JSONL line's fields, plus seq.
+auto eventJson(const Event& event) -> rpc::Json;
+
 // Streams the process's ring to RPC subscribers. A client calls log.subscribe and then receives log.events
 // notifications: batches of events in seq order, sent every batchInterval or once batchEvents are waiting.
 //

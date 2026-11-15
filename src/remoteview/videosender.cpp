@@ -8,6 +8,7 @@
 #include <format>
 #include <future>
 #include <mutex>
+#include <variant>
 
 namespace {
 
@@ -22,28 +23,35 @@ constexpr std::chrono::seconds gatherTimeout{3};
 struct VideoSender::Session {
     std::shared_ptr<rtc::PeerConnection> connection;
     std::shared_ptr<rtc::Track> track;
-    uint64_t startNs = 0; // the first frame's capture time: the track's time zero
+    std::shared_ptr<rtc::DataChannel> control; // none when the offer carried no control channel
+    uint64_t startNs = 0;                      // the first frame's capture time: the track's time zero
 };
 
 struct VideoSender::Shared {
     mutable std::mutex mutex;
     std::shared_ptr<Session> session;
-    uint64_t generation = 0; // which session the callbacks may speak for
+    uint64_t generation = 0; // which session the callbacks may speak for; it only grows
     std::atomic<VideoWatcherState> state{VideoWatcherState::None};
     std::atomic<bool> keyframeWanted{false};
     std::atomic<uint64_t> keyframeRequests{0};
     std::atomic<uint64_t> connects{0};
     std::atomic<uint64_t> disconnects{0};
+    std::atomic<bool> controlOpen{false};
+    std::mutex handlerMutex; // held while the control handler runs, so replacing it waits
+    ControlHandler controlHandler;
 };
 
 VideoSender::VideoSender() : shared(std::make_shared<Shared>()) {
+    // Session numbers start at the time, so a watch page left open from an earlier run of the program never holds the number of a
+    // watcher of this one. Milliseconds since 1970 fit a JavaScript number exactly.
+    shared->generation = (uint64_t) std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 }
 
 VideoSender::~VideoSender() {
     close();
 }
 
-auto VideoSender::offer(const std::string& bindAddress) -> std::expected<std::string, std::string> {
+auto VideoSender::offer(const std::string& bindAddress, bool control) -> std::expected<std::string, std::string> {
     close();
     try {
         rtc::Configuration configuration;
@@ -127,6 +135,40 @@ auto VideoSender::offer(const std::string& bindAddress) -> std::expected<std::st
             strong->state = VideoWatcherState::Connected;
             strong->connects++;
         });
+
+        if (control) {
+            session->control = session->connection->createDataChannel("control");
+            session->control->onOpen([weak, generation]() {
+                auto strong = weak.lock();
+                if (strong == nullptr) {
+                    return;
+                }
+                std::lock_guard lock(strong->mutex);
+                if (strong->generation == generation) {
+                    strong->controlOpen = true;
+                }
+            });
+            session->control->onClosed([weak, generation]() {
+                auto strong = weak.lock();
+                if (strong == nullptr) {
+                    return;
+                }
+                std::lock_guard lock(strong->mutex);
+                if (strong->generation == generation) {
+                    strong->controlOpen = false;
+                }
+            });
+            session->control->onMessage([weak, generation](rtc::message_variant data) {
+                auto strong = weak.lock();
+                if (strong == nullptr || !std::holds_alternative<std::string>(data)) {
+                    return;
+                }
+                std::lock_guard lock(strong->handlerMutex);
+                if (strong->controlHandler) {
+                    strong->controlHandler(generation, std::move(std::get<std::string>(data)));
+                }
+            });
+        }
 
         session->connection->setLocalDescription(rtc::Description::Type::Offer);
         // Only this machine's own addresses are gathered (no STUN server), so this is quick; the wait is for a machine where it isn't.
@@ -238,6 +280,7 @@ auto VideoSender::close() -> void {
         session = std::move(shared->session);
         shared->session = nullptr;
         shared->generation++;
+        shared->controlOpen = false;
         if (shared->state.exchange(VideoWatcherState::None) == VideoWatcherState::Connected) {
             shared->disconnects++;
         }
@@ -248,5 +291,70 @@ auto VideoSender::close() -> void {
     try {
         session->connection->close();
     } catch (const std::exception&) {
+    }
+}
+
+auto VideoSender::setControlHandler(ControlHandler handler) -> void {
+    std::lock_guard lock(shared->handlerMutex);
+    shared->controlHandler = std::move(handler);
+}
+
+auto VideoSender::sendControl(uint64_t sessionNumber, std::string_view message) -> bool {
+    std::shared_ptr<Session> session;
+    {
+        std::lock_guard lock(shared->mutex);
+        if (shared->generation != sessionNumber) {
+            return false;
+        }
+        session = shared->session;
+    }
+    if (session == nullptr || session->control == nullptr) {
+        return false;
+    }
+    try {
+        if (!session->control->isOpen() || message.size() > session->control->maxMessageSize()) {
+            return false;
+        }
+        // False from send means buffered, not lost.
+        session->control->send(std::string(message));
+    } catch (const std::exception&) {
+        return false;
+    }
+    return true;
+}
+
+auto VideoSender::controlOpen() const -> bool {
+    return shared->controlOpen;
+}
+
+auto VideoSender::controlMessageLimit() const -> size_t {
+    std::shared_ptr<Session> session;
+    {
+        std::lock_guard lock(shared->mutex);
+        session = shared->session;
+    }
+    if (session == nullptr || session->control == nullptr || !shared->controlOpen) {
+        return 0;
+    }
+    try {
+        return session->control->maxMessageSize();
+    } catch (const std::exception&) {
+        return 0;
+    }
+}
+
+auto VideoSender::controlBuffered() const -> size_t {
+    std::shared_ptr<Session> session;
+    {
+        std::lock_guard lock(shared->mutex);
+        session = shared->session;
+    }
+    if (session == nullptr || session->control == nullptr) {
+        return 0;
+    }
+    try {
+        return session->control->bufferedAmount();
+    } catch (const std::exception&) {
+        return 0;
     }
 }

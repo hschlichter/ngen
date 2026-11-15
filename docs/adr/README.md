@@ -103,6 +103,7 @@ locked; **Superseded by N** — replaced, kept as a record.
 | [86](0086_allocations_off_the_render_thread.md) | 2026-11-12 | Large allocations off the render thread: tables grow ahead on background jobs, and what doesn't fit waits | Accepted |
 | [87](0087_industry_terms_for_engine_concepts.md) | 2026-11-15 | The engine takes the game engine industry's word where one exists | Accepted |
 | [88](0088_remote_view_over_webrtc.md) | 2026-11-15 | The remote view: the view's image as H.264 over WebRTC, from inside the engine | Accepted |
+| [89](0089_remote_control_from_the_watch_page.md) | 2026-11-15 | Remote control: the watch page drives the view through the method registry | Accepted |
 
 ## By area
 

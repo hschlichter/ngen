@@ -302,6 +302,7 @@ Forwarded tools replace the cli process, so their output, signals and exit code 
 | `--show-ui` | Keep the UI in screenshots |
 | `--no-wait-ready` | Count script frames from start-up instead of from the scene being ready |
 | `--remote-view[=<address>[:<port>]]` | The view's image as live video in a browser on another device ([`src/remoteview/README.md`](src/remoteview/README.md)); the log says where to open it |
+| `--remote-control[=<address>[:<port>]]` | The same, with the watch page allowed to drive the view: camera, picking, cvars, console, every method. No authentication |
 | `--cvar <name>=<value>` | Set a cvar from the start; repeatable |
 | `--renderdoc`, `--no-rpc`, `--render-debug`, `--geometry-limit=<MiB>`, `--select=<path>`, `--camera-frame=<path>` | RenderDoc capture, no endpoint, the render debug snapshot always on, the geometry pool's limit, a selection, framing a prim |
 
