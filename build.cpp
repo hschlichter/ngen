@@ -102,7 +102,7 @@ auto main(int argc, char** argv) -> int {
     p.config(gamerelease);
 
     // Cvars (src/cvar/README.md): the engine's settings, typed values declared in code by the system they configure. Standard
-    // library only, beside profile and trace.
+    // library only, beside profile and log.
     auto cvar =
         cxx::static_library("cvar")
             .sources(glob({.include = "src/cvar/*.cpp"}))
@@ -137,12 +137,12 @@ auto main(int argc, char** argv) -> int {
             })
             .link(profile);
 
-    // Trace (src/trace/README.md): structured events in an always-on ring per process, streamed to subscribers over
+    // Log (src/log/README.md): structured events in an always-on ring per process, streamed to subscribers over
     // RPC. Every process that emits events links it, the asset server included.
-    auto traceLib =
-        cxx::static_library("trace")
-            .sources(glob({.include = "src/trace/*.cpp"}))
-            .public_include({"src/trace"})
+    auto logLib =
+        cxx::static_library("log")
+            .sources(glob({.include = "src/log/*.cpp"}))
+            .public_include({"src/log"})
             .link(rpccore)
             .link(profile);
 
@@ -160,7 +160,7 @@ auto main(int argc, char** argv) -> int {
             .sources(glob({.include = "src/profile/rpc/*.cpp"}))
             .public_include({"src/profile/rpc"})
             .link(rpccore)
-            .link(traceLib)
+            .link(logLib)
             .link(profile);
 
     // RPC engine layer: method registry with parameter schemas, responders, the endpoint that
@@ -170,7 +170,7 @@ auto main(int argc, char** argv) -> int {
             .sources(glob({.include = "src/rpc/*.cpp"}))
             .public_include({"src/rpc"})
             .link(rpccore)
-            .link(traceLib);
+            .link(logLib);
 
     // The engine side of the asset server's stream (src/asset/README.md).
     auto assetClient =
@@ -242,12 +242,12 @@ auto main(int argc, char** argv) -> int {
                 "src/rhi",
                 "src/rhi/vulkan",
                 "src/scene",
-                "src/trace",
+                "src/log",
                 "src/profile",
                 "external/stb",
                 "external/glm",
             })
-            .link(traceLib)
+            .link(logLib)
             .link(profile)
             .link(jobs)
             .link(cvar)
@@ -262,14 +262,14 @@ auto main(int argc, char** argv) -> int {
             .sources(glob({.include = "src/rendertools/*.cpp"}))
             .public_include({"src/rendertools"})
             .include({
-                "src/trace",
+                "src/log",
                 "src/profile",
                 "src/rhi",
                 "src/rhi/vulkan",
                 "external/stb",
             })
             .link(renderer)
-            .link(traceLib)
+            .link(logLib)
             .link(profile);
 
     // The view's runtime (src/view/README.md): the scene composed from the packs and placed for the renderer, picking, the camera modes, and
@@ -288,7 +288,7 @@ auto main(int argc, char** argv) -> int {
             })
             .public_include({"src/view"})
             .include({
-                "src/trace",
+                "src/log",
                 "src/profile",
                 "src/rhi",
                 "src/rhi/vulkan",
@@ -299,7 +299,7 @@ auto main(int argc, char** argv) -> int {
             .link(assetClient)
             .link(packer)
             .link(cvar)
-            .link(traceLib)
+            .link(logLib)
             .link(jobs)
             .link(profile);
 
@@ -319,7 +319,7 @@ auto main(int argc, char** argv) -> int {
             })
             .include({
                 "src",
-                "src/trace",
+                "src/log",
                 "src/profile",
                 "src/rhi",
                 "src/rhi/vulkan",
@@ -333,7 +333,7 @@ auto main(int argc, char** argv) -> int {
             .link(session)
             .link(assetClient)
             .link(cvar)
-            .link(traceLib)
+            .link(logLib)
             .link(profileRpc)
             .link(jobs)
             .link(profile);
@@ -344,7 +344,7 @@ auto main(int argc, char** argv) -> int {
             .sources(glob({.include = "src/tools/*.cpp"}))
             .public_include({"src/tools"})
             .include({
-                "src/trace",
+                "src/log",
                 "src/profile",
                 "src/rhi",
                 "src/rhi/vulkan",
@@ -380,7 +380,7 @@ auto main(int argc, char** argv) -> int {
             .include({
                 "src",
                 "src/asset",
-                "src/trace",
+                "src/log",
                 "src/rhi",
                 "src/rhi/vulkan",
                 "src/renderer",
@@ -510,7 +510,7 @@ auto main(int argc, char** argv) -> int {
                 "src/asset/pack",
                 "src/asset/server",
             })
-            .link(traceLib)
+            .link(logLib)
             .link(profileRpc)
             .link(rpccore)
             .link(packer)
@@ -534,7 +534,7 @@ auto main(int argc, char** argv) -> int {
                 "src",
                 "src/view",
                 "src/tools",
-                "src/trace",
+                "src/log",
                 "src/rhi",
                 "src/rhi/vulkan",
                 "src/renderer",
@@ -551,7 +551,7 @@ auto main(int argc, char** argv) -> int {
                 "external/imgui/backends",
                 "external/renderdoc", // renderdoc_app.h only; the library is dlopen'd at runtime
             })
-            .link(traceLib)
+            .link(logLib)
             .link(profileRpc)
             .link(profile)
             .link(jobs)

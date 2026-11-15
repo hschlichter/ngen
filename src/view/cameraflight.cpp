@@ -1,7 +1,7 @@
 #include "cameraflight.h"
 
 #include "camera.h"
-#include "trace.h"
+#include "log.h"
 #include "viewscene.h"
 
 #include <algorithm>
@@ -34,7 +34,7 @@ auto startFlight(CameraFlight& flight, Camera& camera, const ViewScene& scene, c
     camera.position = flight.eyes.front();
     camera.yaw = flight.yaws.front();
     camera.pitch = flight.pitches.front();
-    TRACE_EVENT("Engine", "FlightStarted", prefix).text(std::format("flying {} cameras from {} at {:g} m/s", found.size(), found.front().first, speed));
+    LOG_EVENT("Engine", "FlightStarted", prefix).text(std::format("flying {} cameras from {} at {:g} m/s", found.size(), found.front().first, speed));
     return std::nullopt;
 }
 
@@ -78,7 +78,7 @@ auto advanceFlight(CameraFlight& flight, Camera& camera, float dt) -> void {
     camera.position = flight.eyes.back();
     camera.yaw = flight.yaws.back();
     camera.pitch = flight.pitches.back();
-    TRACE_EVENT("Engine", "FlightDone", flight.cameras.back())
+    LOG_EVENT("Engine", "FlightDone", flight.cameras.back())
         .text(std::format("flew {} cameras, {:.0f} m in {:.1f} s", flight.cameras.size(), flight.metres, flight.seconds))
         .field("metres", flight.metres)
         .field("seconds", flight.seconds);

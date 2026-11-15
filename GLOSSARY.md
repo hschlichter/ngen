@@ -16,7 +16,7 @@ Several common words mean different things in different parts of the engine (*le
 - [Cameras, selection and tools](#cameras-selection-and-tools)
 - [Renderer](#renderer)
 - [RHI](#rhi)
-- [Runtime access: RPC, records, trace, profile, cvars](#runtime-access-rpc-records-trace-profile-cvars)
+- [Runtime access: RPC, records, log, profile, cvars](#runtime-access-rpc-records-log-profile-cvars)
 - [Project and process](#project-and-process)
 - [Words with more than one meaning](#words-with-more-than-one-meaning)
 
@@ -28,7 +28,7 @@ Every program's `main` is in `src/apps/` (the build system's and the RHI example
   just "the view".
 - **ngen-asset-server** — packs source files on request and streams the packed bytes over RPC. Rooted at its working directory. The view exits
   at start-up without one. Often "the asset server" or "the server".
-- **ngen-introspect** — lists, reads and calls every running ngen process, and merges their traces; a window and a command line.
+- **ngen-introspect** — lists, reads and calls every running ngen process, and merges their logs; a window and a command line.
 - **ngen-cli** — the front door: build, run the view and asset server, pack, introspect, for the *set variant*. `./ngen-cli` in the repository
   root is a symlink to the set variant's cli.
 - **ngen-build** — the self-hosted build system's orchestrator (`_out/ngen-build`). It builds and runs `ngen-build-graph` (the project graph,
@@ -80,7 +80,7 @@ Every program's `main` is in `src/apps/` (the build system's and the RHI example
   sends the hashes it holds (`have`) and gets `sent: false` when current.
 - **Depfile** — the Make-format list of every file a packer read; with the job key, what the up-to-date check compares.
 - **Discovery** — `.ngen-discovery/<kind>-<pid>.json` files an endpoint writes in its working directory, so processes in the same directory find
-  each other. See [RPC](#runtime-access-rpc-records-trace-profile-cvars).
+  each other. See [RPC](#runtime-access-rpc-records-log-profile-cvars).
 - **Fragment / secondary output** — an asset a file's job writes besides the file itself, with the id `<file>#<fragment>`: a USD file's meshes
   and materials are `<file>#<prim path>`.
 - **Job** — one run of a packer for one source file; one job per file at a time, shared by every request for any of its ids.
@@ -339,36 +339,37 @@ sense of a map; that is a scene.
 - **RHI** — render hardware interface: a thin, header-only abstraction that executes and never schedules, waits or caches.
 - **`RhiWindow`** — the window layer's contract with the RHI (instance extensions, `createSurface`); no window system code under `src/rhi/`.
 
-## Runtime access: RPC, records, trace, profile, cvars
+## Runtime access: RPC, records, log, profile, cvars
 
-`src/rpc/README.md`, `src/introspect/README.md`, `src/trace/README.md`, `src/profile/README.md`, `src/cvar/README.md`.
+`src/rpc/README.md`, `src/introspect/README.md`, `src/log/README.md`, `src/profile/README.md`, `src/cvar/README.md`.
 
 - **Console command** — a script line's and the command line's word (`camera`, `lod`, `record`) that maps to a method; script lines and live
   calls run the same code. The engine has no console window: a script and `ngen-cli introspect call` are the console.
 - **Cvar** — a console variable: a typed setting (`cvar::Bool`, `Int`, `Float`, `Enum`, `Vec3`) declared in code by its owner with a dotted
   name (`render.shadow.cascades`), a default and a description. Read and set through the `cvars` record, the `cvar.*` methods, the `cvar`
   console command and the Cvars window. Its *group* is the name's first two parts.
-- **Endpoint** (`RpcEndpoint`) — one per long-running process: an RPC server, a discovery file, main-thread dispatch and the trace stream.
-- **Event** (trace) — `TRACE_EVENT` / `TRACE_WARNING` / `TRACE_ERROR` with a category (`Scene`, `Render`, `Engine`, `Asset`), a CamelCase
+- **Endpoint** (`RpcEndpoint`) — one per long-running process: an RPC server, a discovery file, main-thread dispatch and the log stream.
+- **Event** (log) — `LOG_EVENT` / `LOG_WARNING` / `LOG_ERROR` with a category (`Scene`, `Render`, `Engine`, `Asset`), a CamelCase
   type, a stable name, a text and fields.
 - **Frame budget** — the frame time content is measured against (`profile.budget.frameMs`, 16.7 ms); the frame budget overlay (Ctrl+B) shows
   the GPU's passes by group as bars against it.
 - **Group** (profile) — a zone's colour and category: Frame, Scene, Assets, Jobs, Ui, Tools, Render, Culling, Geometry, Shadow, Lighting, Post,
   Upload, Io, Wait.
-- **Introspection** — reading and driving a running process from outside: records, methods and the trace through `ngen-introspect`.
+- **Introspection** — reading and driving a running process from outside: records, methods and the log through `ngen-introspect`.
 - **Level** (profile) — *guide* zones (the overview, shown by default) or *detail* zones (everything finer); both always recorded.
+- **Log** — a process's flow and messages (not data) as structured events, always on, printed to its console and streamed over RPC to
+  subscribers. The console is the log. (Until November 2026 the engine called it the trace; a *trace* elsewhere is a timing capture, which
+  here is the profile.)
 - **Method** — a JSON-RPC method named `area.verb` (`view.camera.set`) with typed parameters; `rpc.describe` lists them.
 - **Plot** — a value over time sampled where produced (frame times, uploads, GPU busy), kept with the zones and sent to Tracy.
 - **Record** — one named piece of a process's data as JSON (`status`, `culling`, `streaming`, …), read with `introspect.get`. Data is a
-  record, never a trace event. `record <name> <file>` writes one at an exact frame.
+  record, never a log event. `record <name> <file>` writes one at an exact frame.
 - **Responder** (`RpcResponder`) — how a handler answers, at once or frames later (a screenshot, a readback).
-- **Ring** — a process's always-on buffer of its last 65,536 trace events.
+- **Ring** — a process's always-on buffer of its last 65,536 log events.
 - **RPC** — JSON-RPC 2.0 over loopback TCP, frames with optional binary attachments; how processes and agents talk.
-- **Severity** — how much a trace event matters: `info` (flow), `warning` (worked around), `error` (failed). A clean run has no warnings or
+- **Severity** — how much a log event matters: `info` (flow), `warning` (worked around), `error` (failed). A clean run has no warnings or
   errors.
 - **Source location** — a profiler marker: its name, file, line, function, group and level. Tracy's word.
-- **Trace** — a process's flow and messages (not data), always on, printed to its console and streamed over RPC to subscribers. The console is
-  the trace.
 - **Track** — one thread's zones in the profiler (Main, Render, Scene, Worker N, RPC I/O, …), plus the GPU track.
 - **Tracy** — the external profiler, a second sink inside the collector for whole sessions; nothing in the engine reads back from it.
 - **Zone** — a timed CPU or GPU range from a marker (`PROFILE_ZONE`, `PROFILE_GPU_ZONE`); frame-graph passes, RPC calls, jobs and render
@@ -395,7 +396,7 @@ sense of a map; that is a scene.
 
 | Word | Meanings |
 |---|---|
-| batch | an upload batch (`UploadBatch`); a batch of events on the trace stream. The scene thread's round is a *scene update* |
+| batch | an upload batch (`UploadBatch`); a batch of events on the log stream. The scene thread's round is a *scene update* |
 | bucket | a culling bucket (single/double-sided × opaque/cutout); nothing else |
 | cell, region, tile | test-world streaming areas; *region* is also a copy region of the RHI (a range of a buffer or a texture), *tile* a shadow-atlas cascade tile |
 | component | a World component (lights, LOD roots, instancers, payloads); a future gameplay component; a UI or software component in prose |
@@ -406,6 +407,7 @@ sense of a map; that is a scene.
 | hooks | `ViewHooks` (main-thread frame steps); `RenderExtension` hooks (render-thread frame points) |
 | instance | a USD instance (shares a prototype); an instance the renderer draws (one prim's submesh, `RenderMeshInstance`) and its GPU record; a point of a PointInstancer is neither |
 | level | a LOD level; a mip level; a profile level (guide/detail); a depth pyramid level |
+| log | the log (a process's events, `LOG_EVENT`); the build log (`.ngen-buildlog`); the draw log (per-draw records); `AssetClient::log` (what a client asked for and received) |
 | pack | to pack (the process); a pack (a packed scene file: layer, mesh, material pack); a meshlet pack (task shader output) |
 | pass | a frame-graph pass (GPU work); a placement pass (scene thread) |
 | phase | occlusion culling's first and second phase |

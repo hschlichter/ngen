@@ -7,9 +7,9 @@
 #include <string>
 #include <vector>
 
-// ngen-introspect trace: every connected process's trace events as JSON lines, merged by time.
+// ngen-introspect log: every connected process's log events as JSON lines, merged by time.
 //
-//   trace [--output=FILE] [--until-exit=TARGET] [--process=TARGET,…] [--category=A,…] [--type=A,…] [--severity=S] [--history]
+//   log [--output=FILE] [--until-exit=TARGET] [--process=TARGET,…] [--category=A,…] [--type=A,…] [--severity=S] [--history]
 //
 // Events are taken from the time the command starts (--history: everything each process's ring still holds), from
 // processes already running and from ones that start later. On stdout lines go out about a quarter of a second
@@ -18,7 +18,7 @@
 // --severity=warning keeps warnings and errors, --severity=error errors only.
 // --until-exit stops once the first process matching TARGET has connected and gone (its last events included);
 // otherwise the command runs until SIGINT or SIGTERM. Returns the exit code.
-auto runTraceCommand(std::span<const std::string> args) -> int;
+auto runLogCommand(std::span<const std::string> args) -> int;
 
 // One event as a JSONL line (no newline): ts_ns, process, thread, severity, category, type, name, text, fields.
-auto traceEventLine(const IntrospectSession::TraceEvent& event) -> std::string;
+auto logEventLine(const IntrospectSession::LogEvent& event) -> std::string;

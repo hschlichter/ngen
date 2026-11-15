@@ -17,10 +17,10 @@ mkdir -p _out && c++ -std=c++23 -O0 -g -pthread -o _out/ngen-build src/build/boo
 ./ngen-cli view assets/three_cubes.usda
 
 # Headless verification run
-./ngen-cli introspect trace --until-exit=view --output=/tmp/trace.jsonl & trace=$!
+./ngen-cli introspect log --until-exit=view --output=/tmp/log.jsonl & log=$!
 SDL_VIDEODRIVER=offscreen ./ngen-cli view assets/three_cubes.usda --frames=200 --script=/tmp/script.txt
-wait $trace
-jq -c 'select(.severity != "info") | {process, severity, type, text}' /tmp/trace.jsonl   # empty on a clean run
+wait $log
+jq -c 'select(.severity != "info") | {process, severity, type, text}' /tmp/log.jsonl   # empty on a clean run
 ```
 
 A script file holds `<frame> <command> [args]` per line, for example `120 record render /tmp/records.jsonl`. Frames count from when the scene is
@@ -40,7 +40,7 @@ The entry point for humans and agents. Runs the set variant's binaries.
 | `ngen-cli build [args]` | Run `ngen-build`; `-p`/`-c` default to the set variant, other arguments pass through. |
 | `ngen-cli view [args]` | Run `ngen-view` (replaces the process, so signals and exit codes are the view's). |
 | `ngen-cli asset-server [args]` | Run `ngen-asset-server` in the foreground. |
-| `ngen-cli introspect [args]` | Run `ngen-introspect`: no arguments opens the window; `list`, `get`, `describe`, `call`, `trace` for the command line. |
+| `ngen-cli introspect [args]` | Run `ngen-introspect`: no arguments opens the window; `list`, `get`, `describe`, `call`, `log` for the command line. |
 | `ngen-cli pack <scene>...` | Run `ngen-pack`: pack everything a scene can reach, so the view opens it from the cache. |
 | `ngen-cli help` | Usage, the set variant and which tools are built. |
 
@@ -235,7 +235,7 @@ The asset server serves only its own methods (next section), and no `rpc.*`.
 | `view.lod.inspect` | One LOD root as the LOD window's inspector shows it. |
 | `view.streaming.inspect` | One streaming root as the Streaming window shows it. |
 | `view.renderlod` | Render-LOD groups under a path, with what the GPU wants and draws (answers frames later). |
-| `trace.subscribe`, `trace.unsubscribe` | Trace stream (answered by the endpoint itself; not in `rpc.describe`). |
+| `log.subscribe`, `log.unsubscribe` | Log stream (answered by the endpoint itself; not in `rpc.describe`). |
 
 Errors: `-32601` unknown method, `-32602` invalid params (names the field), `-32603` internal, `-32000` engine failure with a message.
 
@@ -272,11 +272,11 @@ Finds processes through `.ngen-discovery/` in the working directory. A target is
 | `get <target> <record>` | One record as JSON. |
 | `describe <target>` | Every method and its parameters. |
 | `call <target> <method> [params-json]` | Call a method. |
-| `trace [options]` | Record the trace of every process, merged by time. |
+| `log [options]` | Record the log of every process, merged by time. |
 
-| Trace option | Does |
+| Log option | Does |
 |---|---|
-| `--output=FILE` | Write the trace to a file (sorted, when done). |
+| `--output=FILE` | Write the log to a file (sorted, when done). |
 | `--until-exit=TARGET` | Stop once that process has exited. Without it, run until Ctrl-C. |
 | `--process=A,...` | Only these processes. |
 | `--category=A,...` | Only these categories. |
@@ -287,7 +287,7 @@ Finds processes through `.ngen-discovery/` in the working directory. A target is
 | Window option | Does |
 |---|---|
 | `--select=<target>/<record>` | Show a record once its process is there. |
-| `--trace` | Open the Trace tab. |
+| `--log` | Open the Log tab. |
 | `--frames=N` | Quit after N frames. |
 | `--screenshot=PATH` | Write the last frame as PNG. |
 
@@ -370,7 +370,7 @@ done
 ## Where to read more
 
 [`src/rpc/README.md`](src/rpc/README.md) (protocol, adding a method), [`src/introspect/README.md`](src/introspect/README.md) (records, the
-tool), [`src/trace/README.md`](src/trace/README.md) (events), [`src/view/README.md`](src/view/README.md) (commands, camera, frame),
+tool), [`src/log/README.md`](src/log/README.md) (events), [`src/view/README.md`](src/view/README.md) (commands, camera, frame),
 [`src/cvar/README.md`](src/cvar/README.md) (cvars), [`src/asset/README.md`](src/asset/README.md) (asset server, packers),
 [`src/build/README.md`](src/build/README.md) (build system), [`src/rhi/README.md`](src/rhi/README.md) (RHI examples), and the `run-headless`
 skill (`.claude/skills/run-headless/SKILL.md`).

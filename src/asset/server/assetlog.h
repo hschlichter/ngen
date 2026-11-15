@@ -1,25 +1,25 @@
 #pragma once
 
-#include "trace.h"
+#include "log.h"
 
 #include <chrono>
 #include <cstdint>
 #include <format>
 #include <string>
 
-// The asset server's log: one trace event per line (category Asset, type Message, the line as its text), which the
-// trace prints on the console with the local time and streams like any process's trace, so ngen-introspect shows it
-// next to the view's events. traceWarning marks a request that failed: the asset could not be given, the server
+// The asset server's log: one log event per line (category Asset, type Message, the line as its text), which the
+// log prints on the console with the local time and streams like any process's log, so ngen-introspect shows it
+// next to the view's events. logWarning marks a request that failed: the asset could not be given, the server
 // itself goes on.
 
 template <typename... Args>
-auto traceLine(std::format_string<Args...> format, Args&&... args) -> void {
-    TRACE_EVENT("Asset", "Message", "asset-server").text(std::format(format, std::forward<Args>(args)...));
+auto logLine(std::format_string<Args...> format, Args&&... args) -> void {
+    LOG_EVENT("Asset", "Message", "asset-server").text(std::format(format, std::forward<Args>(args)...));
 }
 
 template <typename... Args>
-auto traceWarning(std::format_string<Args...> format, Args&&... args) -> void {
-    TRACE_WARNING("Asset", "Message", "asset-server").text(std::format(format, std::forward<Args>(args)...));
+auto logWarning(std::format_string<Args...> format, Args&&... args) -> void {
+    LOG_WARNING("Asset", "Message", "asset-server").text(std::format(format, std::forward<Args>(args)...));
 }
 
 // A byte count for people: "812 B", "10.2 KiB", "3.4 MiB".

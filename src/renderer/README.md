@@ -58,7 +58,7 @@ pipelines by the pipeline registry ("Pipelines", below).
     the lit path is ready (culling, shadow, geometry, the prepass when on, lighting, AA), the frame is the backbuffer cleared to the background
     colour (`ClearBackbuffer`), the overlays whose pipelines are ready, and the UI. The scene uploads go on meanwhile.
   - **A failed pipeline doesn't stop the view.** When a shader fails to pack, its pipeline is failed and its pass stays out. The reason is in the
-    trace and the pipeline's info, `--fail-on-validation` makes the run exit with 2, and a fixed source retries it (hot reload, below).
+    log and the pipeline's info, `--fail-on-validation` makes the run exit with 2, and a fixed source retries it (hot reload, below).
 - **One point in the frame.** `update()` runs on the render thread before the frame graph is built: it creates pending pipelines whose shaders
   have arrived (polling `AssetClient::find`, so the render thread never waits on the network), at most four per frame. Nothing changes a
   pipeline during a frame's recording; debug builds assert it.
@@ -70,7 +70,7 @@ pipelines by the pipeline registry ("Pipelines", below).
 - **Hot reload.** `reload(ids)` (the renderer's `reloadShaders`, with the ids the asset server said changed) requests the shaders it has
   modules for again. When the request is answered, `update()` creates the new module and recreates every ready pipeline using it; the handle
   keeps its index, and the old pipeline and module go to the deletion queue, since frames in flight may use them. A failed pipeline using the
-  shader, including one whose shader never made a module, is tried again. A shader that fails to pack or to become a module keeps the old module and pipelines, with the error in the trace
+  shader, including one whose shader never made a module, is tried again. A shader that fails to pack or to become a module keeps the old module and pipelines, with the error in the log
   (`ShaderReloadFailed`) and the pipelines' info until a later version loads or the source goes back. Events `ShadersReloadRequested`,
   `ShaderReloaded` (version, pipelines recreated), `PipelineRecreateFailed`.
 - **Not yet**: shader reflection, creation off the render thread, a disk pipeline cache.
@@ -183,7 +183,7 @@ Tables:
   - **Limit.** No pool buffer grows past the device's largest buffer (`RhiDeviceLimits::maxBufferBytes`, whole MiBs), or a smaller limit
     (`setGeometryLimit`, ngen-view's `--geometry-limit=<MiB>`). The vertex stream reaches it before the position stream and sets the vertex capacity
     of both. A mesh that doesn't fit waits, with an empty mesh table entry, so its instances draw nothing while the rest of the scene draws; the
-    first one traces `GeometryPoolFull` (a warning). Once a frame after removals freed ranges, the waiting meshes that fit are placed, in
+    first one logs `GeometryPoolFull` (a warning). Once a frame after removals freed ranges, the waiting meshes that fit are placed, in
     arrival order (`GeometryPoolFits` when none is left). The `memory` record's `geometryPool` has the limit, capacities, use and what waits.
   - **Addressing.** A meshlet's vertex indices stay mesh-local and the shader adds the mesh's `vertexOffset` (the vertex and position pools share
     it); a meshlet's own offsets are made pool positions when it is uploaded.
@@ -222,7 +222,7 @@ Tables:
   - **Growth** ("Growth" below). The buffer grows by recreation, ahead of need. Slots past its capacity wait, dirty and undrawn (the culling
     passes' instance count is the capacity), until the growth is taken. What the old one holds is copied into the new one on the GPU by the
     `InstanceMove` pass before the next upload (the culling records move to the new culling offset), and only the slots changed since are
-    packed: `InstanceBufferGrown` in the trace, with the slots copied. Only a buffer with nothing to keep yet (its first contents) has every
+    packed: `InstanceBufferGrown` in the log, with the slots copied. Only a buffer with nothing to keep yet (its first contents) has every
     live slot uploaded.
 
 **Uploads** (`GpuScene::addUploadPass`, the `SceneUpload` pass, before the culling passes):
@@ -259,7 +259,7 @@ A table that outgrows its buffer gets a larger one, which takes hundreds of mill
 
 - **Ahead, on a background job.** Each frame (`Renderer::growTables`, and `GpuScene::beginFrame` for the pool), a table passing
   `render.growth.ahead` of its capacity (0.75) starts its growth: a `JobKind::Background` job (`src/jobs/README.md`) makes and maps the new
-  buffers while frames go on, and the render thread swaps them in the frame it finds them ready (`BufferGrown` in the trace, with what was
+  buffers while frames go on, and the render thread swaps them in the frame it finds them ready (`BufferGrown` in the log, with what was
   needed when it started and how long it took). The old buffers go through the deletion queue.
 - **Half as much again.** A growth makes at least 1.5 times the capacity, or room for the need with the ahead share's headroom. Doubling would
   hold twice what a table needs; the tables kept per frame context pay that three times.
@@ -304,7 +304,7 @@ scan, layout and scatter for every view, occlusion for the camera's second phase
   renderer keeps the live instances per bucket as slots change (`DrawLists::countInstance`, the shader's bucket rule on the CPU), and each frame
   `writeParams` packs the draw lists one after another, each as large as its bucket's count (`CullParams::drawListOffsets`): the draw record buffer
   holds the live instances once per view, not every instance in every draw list. The scatters never write past a draw list's end; a record they
-  drop there is counted (`counterDrawListOverflow`, the `culling` record's `drawListOverflow`) and traced (`CullDrawListOverflow`, a warning, once
+  drop there is counted (`counterDrawListOverflow`, the `culling` record's `drawListOverflow`) and logged (`CullDrawListOverflow`, a warning, once
   per change): the CPU's bucket rule and the shader's disagree, and those draws are missing from the tools. It is 0 otherwise.
 - **Visibility.** Each instance's world bounds are tested against six normalized planes per view (`Frustum::fromViewProj`, computed on the CPU into the
   slot's parameter buffer) with the positive-corner test. Instances without valid bounds are always visible, and with culling off every instance is. A
@@ -664,7 +664,7 @@ points of `Renderer::render`, in the order added; each hook does nothing unless 
   (`cullPlanes`, 4 bits per view: plane 0–5, `D` a render-LOD level its group doesn't draw, `E` visible, `F` not tested). The readback keeps every view's visibility bit (`CullResult::viewBits`) when it reads them.
 - **The scene's triangles** (`CullResult::sceneTriangles`, the status bar and the `culling` record) are kept as instance slots change, never summed
   over the slots each frame (14 ms at 2.4 million).
-- **Trace events** (Render category, conventions in `src/trace/README.md`). The renderer traces flow and problems, never per-frame data:
+- **Log events** (Render category, conventions in `src/log/README.md`). The renderer logs flow and problems, never per-frame data:
   `ShaderLoaded` per startup shader, `FirstFramePresented` once (ms since the process started), `SceneUploaded` when an upload changes geometry (instances, meshes, textures, ms; a transform edit is silent), `SwapchainRecreate` and
   `SwapchainRecreateFailed`, `ShaderLoadFailed`,
   warnings for fallbacks (`FormatFallback`, `DebugViewsOff`, `TextureSlotsFull`), and the RHI's messages (`RhiMessage`: validation and native

@@ -82,7 +82,7 @@ auto main(int argc, char** argv) -> int {
         finish(1);
     }
 
-    // Warnings on stdout: the asset server shows them in its trace; the pack keeps them too.
+    // Warnings on stdout: the asset server shows them in its log; the pack keeps them too.
     for (const auto& warning : result.layer.warnings) {
         if (warning.path.empty()) {
             std::println("{}", warning.text);

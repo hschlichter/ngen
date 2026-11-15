@@ -143,7 +143,7 @@
   <line x1="884" y1="234" x2="884" y2="249" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
   <rect x="804" y="344" width="160" height="75" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
   <text x="814" y="364" class="m">SceneResident</text>
-  <text x="814" y="381" class="s">traced when both hold:</text>
+  <text x="814" y="381" class="s">logged when both hold:</text>
   <text x="814" y="396" class="s">time since start, longest</text>
   <text x="814" y="411" class="s">frame while loading</text>
   <line x1="884" y1="327" x2="884" y2="342" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>

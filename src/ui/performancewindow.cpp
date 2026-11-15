@@ -1,6 +1,6 @@
 #include "performancewindow.h"
 
-#include "trace.h"
+#include "log.h"
 
 #include <imgui.h>
 
@@ -158,7 +158,7 @@ auto drawOverBudget() -> void {
     ImGui::SameLine(0.0f, 16.0f);
     if (ImGui::SmallButton("Reset##overbudget")) {
         profile::resetOverBudget();
-        TRACE_EVENT("Engine", "ProfileReset", "view").text("frames over budget counted from now");
+        LOG_EVENT("Engine", "ProfileReset", "view").text("frames over budget counted from now");
     }
 }
 

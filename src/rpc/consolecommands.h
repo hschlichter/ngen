@@ -20,7 +20,7 @@ public:
 
     auto add(std::string name, std::string method, Parser parse) -> void;
     // Parses a console command's text and calls its method. Failures (an unknown console command, text that doesn't parse, the method's error) are
-    // ScriptCommandFailed trace errors, `<command>: <message>`.
+    // ScriptCommandFailed log errors, `<command>: <message>`.
     auto run(const RpcRegistry& registry, const std::string& name, const std::string& args) const -> void;
 
     // `key=value,key=value` items, as several console commands take their arguments.

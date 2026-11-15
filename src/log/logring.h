@@ -1,6 +1,6 @@
 #pragma once
 
-#include "traceevent.h"
+#include "logevent.h"
 
 #include <chrono>
 #include <condition_variable>
@@ -9,17 +9,17 @@
 #include <mutex>
 #include <vector>
 
-namespace trace {
+namespace logging {
 
-// The process's trace: the most recent `capacity` events, always on. Producers push from any thread; readers copy
+// The process's log: the most recent `capacity` events, always on. Producers push from any thread; readers copy
 // events out by sequence number, so each reader keeps its own cursor and the ring never waits for one.
-class TraceRing {
+class LogRing {
 public:
     static constexpr size_t capacity = 65536;
 
-    TraceRing();
-    TraceRing(const TraceRing&) = delete;
-    auto operator=(const TraceRing&) -> TraceRing& = delete;
+    LogRing();
+    LogRing(const LogRing&) = delete;
+    auto operator=(const LogRing&) -> LogRing& = delete;
 
     // Assigns the event its seq, and its time and thread if empty, and stores it over the oldest.
     auto push(Event event) -> void;
@@ -47,6 +47,6 @@ private:
 };
 
 // The process's ring.
-auto ring() -> TraceRing&;
+auto ring() -> LogRing&;
 
-} // namespace trace
+} // namespace logging

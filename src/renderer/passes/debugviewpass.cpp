@@ -1,10 +1,10 @@
 #include "debugviewpass.h"
 
+#include "log.h"
 #include "profilegpu.h"
 #include "rendercvars.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
-#include "trace.h"
 
 #include <algorithm>
 #include <array>
@@ -39,7 +39,7 @@ auto DebugViewPass::init(RhiDevice* dev, PipelineRegistry& pipelineRegistry, uin
     depthTargetFormat = depthFormat;
     if (!device->supportsTextureFormat(valueFormat, RhiTextureUsage::ColorAttachment | RhiTextureUsage::Sampled | RhiTextureUsage::TransferSrc) ||
         !device->supportsTextureFormat(colorFormat, RhiTextureUsage::Storage | RhiTextureUsage::TransferSrc)) {
-        TRACE_WARNING("Render", "DebugViewsOff", "DebugViewPass").text("value or colour format unsupported; debug views are off");
+        LOG_WARNING("Render", "DebugViewsOff", "DebugViewPass").text("value or colour format unsupported; debug views are off");
         return true;
     }
 

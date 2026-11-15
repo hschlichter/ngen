@@ -2,12 +2,12 @@
 
 #include "assetclient.h"
 #include "buffergrowth.h"
+#include "log.h"
 #include "profile.h"
 #include "profilecvars.h"
 #include "projection.h"
 #include "rendercvars.h"
 #include "renderthread.h"
-#include "trace.h"
 #include "viewscene.h"
 
 #include <algorithm>
@@ -166,7 +166,7 @@ auto ViewFrame::updateResidency() -> void {
         if (!residency.everResident) {
             residency.everResident = true;
             if (!startCamera.empty()) {
-                TRACE_WARNING("Scene", "StartCameraNotFound", startCamera)
+                LOG_WARNING("Scene", "StartCameraNotFound", startCamera)
                     .text(std::format("the scene authors no camera at {}; the view starts framing the scene", startCamera));
                 startCamera.clear();
             }
@@ -176,10 +176,10 @@ auto ViewFrame::updateResidency() -> void {
             autoFrame = false;
         }
         auto stats = assets.stats();
-        TRACE_EVENT("Scene", "SceneResident", scene.sceneId().empty() ? "(empty scene)" : scene.sceneId())
+        LOG_EVENT("Scene", "SceneResident", scene.sceneId().empty() ? "(empty scene)" : scene.sceneId())
             .text(std::format("scene resident at frame {}, {:.0f} ms after start: {} draws, {} assets received; longest of the {} frames before, {:.1f} ms",
                               frameCounter,
-                              trace::msSinceStart(),
+                              logging::msSinceStart(),
                               std::ranges::count_if(scene.renderWorld().meshInstances,
                                                     [](const RenderMeshInstance& instance) {
                                                         return instance.alive;
@@ -188,11 +188,11 @@ auto ViewFrame::updateResidency() -> void {
                               residency.loadingFrames,
                               residency.longestLoadingFrameMs))
             .field("frame", (int64_t) frameCounter)
-            .field("since_start_ms", trace::msSinceStart())
+            .field("since_start_ms", logging::msSinceStart())
             .field("assets", (int64_t) stats.received)
             .field("longest_frame_ms", residency.longestLoadingFrameMs);
         residency.lastResidentFrame = frameCounter;
-        residency.lastResidentMs = trace::msSinceStart();
+        residency.lastResidentMs = logging::msSinceStart();
         residency.lastLoadFrames = residency.loadingFrames;
         residency.lastLoadLongestMs = residency.longestLoadingFrameMs;
         residency.longestLoadingFrameMs = 0.0;
@@ -297,7 +297,7 @@ auto ViewFrame::placeStartCamera() -> void {
         return;
     }
     if (!autoFrame) {
-        TRACE_EVENT("Scene", "StartCameraDropped", startCamera).text(std::format("start camera {} dropped: the camera was moved first", startCamera));
+        LOG_EVENT("Scene", "StartCameraDropped", startCamera).text(std::format("start camera {} dropped: the camera was moved first", startCamera));
         startCamera.clear();
         return;
     }
@@ -305,10 +305,10 @@ auto ViewFrame::placeStartCamera() -> void {
         if (camera.path == startCamera) {
             cam.place(camera.worldTransform);
             autoFrame = false;
-            TRACE_EVENT("Scene", "StartCameraPlaced", startCamera)
-                .text(std::format("start camera {} placed at frame {}, {:.0f} ms after start", startCamera, frameCounter, trace::msSinceStart()))
+            LOG_EVENT("Scene", "StartCameraPlaced", startCamera)
+                .text(std::format("start camera {} placed at frame {}, {:.0f} ms after start", startCamera, frameCounter, logging::msSinceStart()))
                 .field("frame", (int64_t) frameCounter)
-                .field("since_start_ms", trace::msSinceStart());
+                .field("since_start_ms", logging::msSinceStart());
             startCamera.clear();
             return;
         }

@@ -5,6 +5,7 @@
 #include "ground.h"
 #include "imguibackendvulkan.h"
 #include "jobsystem.h"
+#include "log.h"
 #include "profile.h"
 #include "rendercvars.h"
 #include "renderdoccapture.h"
@@ -18,7 +19,6 @@
 #include "stallwatch.h"
 #include "toolcommands.h"
 #include "toolshooks.h"
-#include "trace.h"
 #include "uicommands.h"
 #include "uihooks.h"
 #include "uirender.h"
@@ -62,7 +62,7 @@ static auto makeRhiWindowSdl(SDL_Window* window) -> RhiWindow {
         auto instance = (VkInstance) nativeInstance;
         auto* surface = (VkSurfaceKHR*) nativeSurface;
         if (!SDL_Vulkan_CreateSurface(window, instance, nullptr, surface)) {
-            TRACE_ERROR("Engine", "SurfaceCreateFailed", "window").text(std::format("SDL_Vulkan_CreateSurface failed: {}", SDL_GetError()));
+            LOG_ERROR("Engine", "SurfaceCreateFailed", "window").text(std::format("SDL_Vulkan_CreateSurface failed: {}", SDL_GetError()));
             return false;
         }
         return true;
@@ -74,10 +74,10 @@ static auto makeRhiWindowSdl(SDL_Window* window) -> RhiWindow {
 namespace {
 
 // The window layer's input, as the view's controls take it: the right button held for mouse look, the keys as a camera move, Left Alt held
-// for orbiting, and the window's size as the trace last reported it.
+// for orbiting, and the window's size as the log last reported it.
 struct WindowInput {
-    int tracedWidth = 0;
-    int tracedHeight = 0;
+    int loggedWidth = 0;
+    int loggedHeight = 0;
     bool mouseLook = false;
     CameraMove move;
     bool orbitHeld = false;
@@ -102,15 +102,15 @@ auto pollInput(SDL_Window* window, ViewFrame& frame, ViewHooks& hooks, WindowInp
     while (SDL_PollEvent(&ev)) {
         polledEvents++;
         if (ev.type == SDL_EVENT_QUIT) {
-            TRACE_EVENT("Engine", "QuitRequested", "view").text("quitting");
+            LOG_EVENT("Engine", "QuitRequested", "view").text("quitting");
             frame.quit = true;
         }
         if (ev.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED) {
-            bool sizeChanged = ev.window.data1 != input.tracedWidth || ev.window.data2 != input.tracedHeight;
+            bool sizeChanged = ev.window.data1 != input.loggedWidth || ev.window.data2 != input.loggedHeight;
             if (sizeChanged) {
-                input.tracedWidth = ev.window.data1;
-                input.tracedHeight = ev.window.data2;
-                TRACE_EVENT("Engine", "WindowResized", "window")
+                input.loggedWidth = ev.window.data1;
+                input.loggedHeight = ev.window.data2;
+                LOG_EVENT("Engine", "WindowResized", "window")
                     .text(std::format("window resized to {}x{} pixels", ev.window.data1, ev.window.data2))
                     .field("width", ev.window.data1)
                     .field("height", ev.window.data2);
@@ -266,12 +266,12 @@ auto main(int argc, char* argv[]) -> int {
             session.add(c.frame, c.name, c.args);
         }
     }
-    TRACE_EVENT("Engine", "ProcessStarted", "view")
+    LOG_EVENT("Engine", "ProcessStarted", "view")
         .text(std::format("ngen-view started, pid {}", getpid()))
         .field("pid", (int64_t) getpid())
         .field("scene", positional.size() >= 2 ? positional[1] : "");
     if (!session.empty()) {
-        TRACE_EVENT("Engine", "ScriptLoaded", "view")
+        LOG_EVENT("Engine", "ScriptLoaded", "view")
             .text(std::format("session script: {} commands, the last at frame {}", session.size(), session.lastFrame()))
             .field("commands", (int64_t) session.size())
             .field("last_frame", (int64_t) session.lastFrame());
@@ -292,7 +292,7 @@ auto main(int argc, char* argv[]) -> int {
             std::println(stderr, "ngen-view: {}", connected.error());
             return 1;
         }
-        TRACE_EVENT("Engine", "AssetServerConnected", connected->label)
+        LOG_EVENT("Engine", "AssetServerConnected", connected->label)
             .text(std::format("asset server {} connected: pid {}, port {}", connected->label, connected->pid, connected->port))
             .field("pid", (int64_t) connected->pid)
             .field("port", (int64_t) connected->port);
@@ -308,7 +308,7 @@ auto main(int argc, char* argv[]) -> int {
 
     // SDL init and window
     if (!SDL_Init(SDL_INIT_VIDEO)) {
-        TRACE_ERROR("Engine", "SdlInitFailed", "window").text(std::format("SDL_Init failed: {}", SDL_GetError()));
+        LOG_ERROR("Engine", "SdlInitFailed", "window").text(std::format("SDL_Init failed: {}", SDL_GetError()));
         return 1;
     }
 
@@ -320,28 +320,28 @@ auto main(int argc, char* argv[]) -> int {
     SDL_SetNumberProperty(windowProps, SDL_PROP_WINDOW_CREATE_RESIZABLE_BOOLEAN, 1);
     auto* window = SDL_CreateWindowWithProperties(windowProps);
     if (window == nullptr) {
-        TRACE_ERROR("Engine", "WindowCreateFailed", "window").text(std::format("SDL_CreateWindowWithProperties failed: {}", SDL_GetError()));
+        LOG_ERROR("Engine", "WindowCreateFailed", "window").text(std::format("SDL_CreateWindowWithProperties failed: {}", SDL_GetError()));
         return 1;
     }
     SDL_DestroyProperties(windowProps);
-    // The size the trace last reported; SDL also sends a size event for the size the window starts with.
-    int tracedWindowWidth = 0;
-    int tracedWindowHeight = 0;
+    // The size the log last reported; SDL also sends a size event for the size the window starts with.
+    int loggedWindowWidth = 0;
+    int loggedWindowHeight = 0;
     {
-        SDL_GetWindowSizeInPixels(window, &tracedWindowWidth, &tracedWindowHeight);
+        SDL_GetWindowSizeInPixels(window, &loggedWindowWidth, &loggedWindowHeight);
         const char* driver = SDL_GetCurrentVideoDriver();
-        TRACE_EVENT("Engine", "WindowCreated", "window")
-            .text(std::format("window created: {}x{} pixels, SDL video driver {}", tracedWindowWidth, tracedWindowHeight, driver != nullptr ? driver : "none"))
-            .field("width", tracedWindowWidth)
-            .field("height", tracedWindowHeight)
+        LOG_EVENT("Engine", "WindowCreated", "window")
+            .text(std::format("window created: {}x{} pixels, SDL video driver {}", loggedWindowWidth, loggedWindowHeight, driver != nullptr ? driver : "none"))
+            .field("width", loggedWindowWidth)
+            .field("height", loggedWindowHeight)
             .field("driver", driver != nullptr ? driver : "");
     }
 
     // Job system
     JobSystem::init();
-    TRACE_EVENT("Engine", "JobSystemStarted", "jobs").text(std::format("job system: {} workers", JobSystem::workerCount())).field("workers", (int64_t) JobSystem::workerCount());
+    LOG_EVENT("Engine", "JobSystemStarted", "jobs").text(std::format("job system: {} workers", JobSystem::workerCount())).field("workers", (int64_t) JobSystem::workerCount());
 
-    // A thread that stays in one profiler zone longer than profile.stall.seconds is reported in the trace with the zones it has open.
+    // A thread that stays in one profiler zone longer than profile.stall.seconds is reported in the log with the zones it has open.
     profile::startStallWatch();
 
     // RHI device. The window layer (SDL) hands the backend what it needs through
@@ -362,20 +362,20 @@ auto main(int argc, char* argv[]) -> int {
     renderDoc.load(loadRenderDoc);
 
     RhiDeviceVulkan rhiDevice;
-    // The device's diagnostics, validation messages among them, go into the trace.
+    // The device's diagnostics, validation messages among them, go into the log.
     RhiDeviceOptions deviceOptions = {
         .enableValidation = enableValidation,
         .onMessage =
             [](RhiMessageSeverity severity, std::string_view message) {
                 switch (severity) {
                     case RhiMessageSeverity::Info:
-                        TRACE_EVENT("Render", "RhiMessage", "rhi").text(message);
+                        LOG_EVENT("Render", "RhiMessage", "rhi").text(message);
                         break;
                     case RhiMessageSeverity::Warning:
-                        TRACE_WARNING("Render", "RhiMessage", "rhi").text(message);
+                        LOG_WARNING("Render", "RhiMessage", "rhi").text(message);
                         break;
                     case RhiMessageSeverity::Error:
-                        TRACE_ERROR("Render", "RhiMessage", "rhi").text(message);
+                        LOG_ERROR("Render", "RhiMessage", "rhi").text(message);
                         break;
                 }
             },
@@ -408,7 +408,7 @@ auto main(int argc, char* argv[]) -> int {
     StatusBarGatherer statusBar;
     auto rendererInitStart = std::chrono::steady_clock::now();
     if (!renderer.init(&rhiDevice, &assetClient, initialExtent)) {
-        TRACE_ERROR("Render", "RendererInitFailed", "renderer").text("renderer init failed");
+        LOG_ERROR("Render", "RendererInitFailed", "renderer").text("renderer init failed");
         rhiDevice.waitIdle();
         return failAfterInit();
     }
@@ -416,7 +416,7 @@ auto main(int argc, char* argv[]) -> int {
     profile::setGpuDevice(rhiDevice.limits().vendorId, rhiDevice.limits().deviceId);
     {
         auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - rendererInitStart).count();
-        TRACE_EVENT("Render", "RendererInitialized", "renderer").text(std::format("renderer initialized in {:.0f} ms", ms)).field("ms", ms);
+        LOG_EVENT("Render", "RendererInitialized", "renderer").text(std::format("renderer initialized in {:.0f} ms", ms)).field("ms", ms);
     }
     renderer.setGeometryLimit((uint64_t) rendercvars::geometryLimitMiB.get() * 1024 * 1024);
 
@@ -529,8 +529,8 @@ auto main(int argc, char* argv[]) -> int {
 
     // Main loop: the engine's steps in order, the commands after the scene update, the hooks between the steps.
     profile::registerThread("Main");
-    WindowInput input = {.tracedWidth = tracedWindowWidth, .tracedHeight = tracedWindowHeight};
-    TRACE_EVENT("Engine", "MainLoopStarted", "view").text(std::format("main loop started, {:.0f} ms after start", trace::msSinceStart())).field("since_start_ms", trace::msSinceStart());
+    WindowInput input = {.loggedWidth = loggedWindowWidth, .loggedHeight = loggedWindowHeight};
+    LOG_EVENT("Engine", "MainLoopStarted", "view").text(std::format("main loop started, {:.0f} ms after start", logging::msSinceStart())).field("since_start_ms", logging::msSinceStart());
     while (!frame.quit) {
         PROFILE_FRAME_MARK();
         PROFILE_ZONE("MainFrame", Frame);
@@ -618,20 +618,20 @@ auto main(int argc, char* argv[]) -> int {
     SDL_DestroyWindow(window);
     SDL_Quit();
 
-    // The endpoint goes last, so subscribers get the trace up to here: the last events are sent before the
+    // The endpoint goes last, so subscribers get the log up to here: the last events are sent before the
     // connections close, waiting up to a second for a subscriber to take them.
     bool failed = failOnValidation && (validationErrors > 0 || pipelinesFailed);
     if (failOnValidation && validationErrors > 0) {
-        TRACE_ERROR("Engine", "ValidationFailed", "view").text(std::format("validation errors: {}", validationErrors)).field("count", (int64_t) validationErrors);
+        LOG_ERROR("Engine", "ValidationFailed", "view").text(std::format("validation errors: {}", validationErrors)).field("count", (int64_t) validationErrors);
     }
     if (failOnValidation && pipelinesFailed) {
-        TRACE_ERROR("Engine", "PipelinesFailed", "view").text("a pipeline failed: its shader didn't pack or the device couldn't create it (the reason is above)");
+        LOG_ERROR("Engine", "PipelinesFailed", "view").text("a pipeline failed: its shader didn't pack or the device couldn't create it (the reason is above)");
     }
-    TRACE_EVENT("Engine", "ProcessExiting", "view")
+    LOG_EVENT("Engine", "ProcessExiting", "view")
         .text(std::format("exiting after {} frames", frame.frameCounter))
         .field("frames", (int64_t) frame.frameCounter)
         .field("validation_errors", (int64_t) validationErrors);
-    endpoint.finishTrace(std::chrono::seconds(1));
+    endpoint.finishLog(std::chrono::seconds(1));
     endpoint.stop();
 
     if (failed) {

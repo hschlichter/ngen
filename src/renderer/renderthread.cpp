@@ -1,15 +1,15 @@
 #include "renderthread.h"
 #include "framegraph.h"
+#include "log.h"
 #include "profile.h"
 #include "renderer.h"
-#include "trace.h"
 
 #include <utility>
 
 auto RenderThread::start(Renderer* r) -> void {
     renderer = r;
     thread = std::jthread([this] { threadLoop(); });
-    TRACE_EVENT("Render", "RenderThreadStart", "RenderThread").text("render thread started");
+    LOG_EVENT("Render", "RenderThreadStart", "RenderThread").text("render thread started");
 }
 
 auto RenderThread::stop() -> void {
@@ -21,7 +21,7 @@ auto RenderThread::stop() -> void {
     if (thread.joinable()) {
         thread.join();
     }
-    TRACE_EVENT("Render", "RenderThreadStop", "RenderThread").text("render thread stopped");
+    LOG_EVENT("Render", "RenderThreadStop", "RenderThread").text("render thread stopped");
 }
 
 auto RenderThread::submitSnapshot(RenderSnapshot snapshot) -> void {

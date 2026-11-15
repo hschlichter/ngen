@@ -1,8 +1,8 @@
 #include "viewcommands.h"
 
 #include "jobsystem.h"
+#include "log.h"
 #include "profilecommands.h"
-#include "trace.h"
 
 #include <nlohmann/json.hpp>
 
@@ -65,7 +65,7 @@ auto registerProfileCommands(RpcRegistry& registry, ConsoleCommands& console, Rp
                 return;
             }
             auto path = (*result)["path"].get<std::string>();
-            TRACE_EVENT("Engine", "ProfileWritten", path).text(std::format("profile trace written: {}", path));
+            LOG_EVENT("Engine", "ProfileWritten", path).text(std::format("profile trace written: {}", path));
             responder.respond(*result);
         });
 
@@ -99,7 +99,7 @@ auto registerProfileCommands(RpcRegistry& registry, ConsoleCommands& console, Rp
         },
         [](const Json&, RpcResponder responder) {
             profile::resetOverBudget();
-            TRACE_EVENT("Engine", "ProfileReset", "view").text("frames over budget counted from now");
+            LOG_EVENT("Engine", "ProfileReset", "view").text("frames over budget counted from now");
             responder.respond(Json::object());
         });
 

@@ -1,9 +1,9 @@
 #include "geometrypass.h"
+#include "log.h"
 #include "profilegpu.h"
 #include "renderertypes.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
-#include "trace.h"
 
 #include <array>
 #include <format>
@@ -21,7 +21,7 @@ auto GeometryPass::init(RhiDevice* device, PipelineRegistry& pipelineRegistry, R
     // enough precision for a unit vector. Keep R32 where the device cannot render to it.
     auto neededUsage = RhiTextureUsage::ColorAttachment | RhiTextureUsage::Sampled;
     if (!device->supportsTextureFormat(R16G16B16A16_SFLOAT, neededUsage)) {
-        TRACE_WARNING("Render", "FormatFallback", "GeometryPass").text("R16G16B16A16_SFLOAT not renderable, normal target stays R32G32B32A32_SFLOAT");
+        LOG_WARNING("Render", "FormatFallback", "GeometryPass").text("R16G16B16A16_SFLOAT not renderable, normal target stays R32G32B32A32_SFLOAT");
         normalTargetFormat = R32G32B32A32_SFLOAT;
     }
     // Task and mesh shaders pull the vertices (meshlet.task, gbuffer.mesh): no vertex input.

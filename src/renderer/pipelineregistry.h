@@ -22,11 +22,11 @@ class RhiDevice;
 // Nothing waits for a shader. At-start pipelines are requested at start-up, in one request; first-use pipelines the first time they are asked
 // for. Either is created at `update`, a few per frame, when its shaders have arrived; until then `get` returns null and the pass that wants
 // it is skipped (the frame shows the clear colour and the UI until the lit path is ready). A shader that fails leaves its pipeline failed,
-// with the reason in the trace and the pipeline's info; the view goes on. Shaders come from the asset server through AssetClient.
+// with the reason in the log and the pipeline's info; the view goes on. Shaders come from the asset server through AssetClient.
 //
 // Hot reload: `reload` requests changed shaders again; `update` takes new content when it arrives and recreates every pipeline using it.
 // Handles keep their index; the old pipelines and modules go through the deletion queue. A shader that fails keeps the old module and
-// pipelines, with the error in the trace and the pipeline's info.
+// pipelines, with the error in the log and the pipeline's info.
 
 struct PipelineHandle {
     uint32_t index = 0; // 0 = none

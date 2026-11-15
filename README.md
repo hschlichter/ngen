@@ -43,7 +43,7 @@ out and changes level around the camera as it moves.*
 - **Introspection**: the frame graph with live previews, a frame debugger (barriers, commands, descriptor sets), resource captures, GPU
   counters, a GPU scene inspector, the memory of every allocation, a CPU and GPU profiler, and RenderDoc.
 - **For agents**: every window's data is also a record, every action an RPC method and a console command. `ngen-view` runs headless with a script
-  (`--script`, `--screenshot`), and `ngen-introspect` lists, reads and calls any running process, and streams its trace.
+  (`--script`, `--screenshot`), and `ngen-introspect` lists, reads and calls any running process, and streams its log.
 
 **Tooling**
 - **A self-hosted build system**, `ngen-build`: the project is a C++ program (`build.cpp`) against a reusable framework; no CMake, no Ninja.
@@ -87,7 +87,7 @@ next ones prefetched ahead of it; behind, the debug camera watches the main came
 
 `ngen-asset-server` packs the authored files on request into engine-ready packs and streams them to `ngen-view` by asset id. The view composes
 them on its scene thread, steps its frame on the main thread and renders on its own thread. `ngen-introspect`, scripts and agents read every
-running process's records and trace and call its methods.
+running process's records and log and call its methods.
 
 ![The code's layers: Foundation, Engine, Instrumentation, Tools, UI and the program, each linking only the layers below it](screenshots/architecture_layers.svg)
 
@@ -100,10 +100,10 @@ Each library documents its design and rules in a README next to the code:
 
 - [`src/rhi/README.md`](src/rhi/README.md) — RHI principles, the integrator contract, the example programs, known gaps.
 - [`src/renderer/README.md`](src/renderer/README.md) — how a frame is built: GPU scene tables, meshlets drawn by task and mesh shaders, GPU culling per
-  instance and per meshlet, occlusion culling, descriptor sets, frame graph rules, shadows, trace events.
+  instance and per meshlet, occlusion culling, descriptor sets, frame graph rules, shadows, log events.
 - [`src/rendertools/README.md`](src/rendertools/README.md) — the renderer's instrumentation, a render extension: debug snapshots, the frame
   debugger, GPU counters, the texture inspector and dumps, screenshots.
-- [`src/trace/README.md`](src/trace/README.md) — the trace: `TRACE_EVENT`, the always-on ring per process, streaming events over RPC, conventions.
+- [`src/log/README.md`](src/log/README.md) — the log: `LOG_EVENT`, the always-on ring per process, streaming events over RPC, conventions.
 - [`src/profile/README.md`](src/profile/README.md) — profiling: the markers, the built-in collector and GPU track behind the Performance window, and
   Tracy as a second sink.
 - [`src/jobs/README.md`](src/jobs/README.md) — the job system: the workers, frame jobs (waited for, parallel loops) and background jobs

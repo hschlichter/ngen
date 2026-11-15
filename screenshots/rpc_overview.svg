@@ -35,7 +35,7 @@
   <rect x="40" y="210" width="212" height="44" rx="7" fill="#ffffff" stroke="#db2777" stroke-opacity="0.6"/>
   <text x="52" y="228" class="b">Window</text>
   <text x="104" y="228" class="s">humans</text>
-  <text x="52" y="245" class="s">records, traces by time, calls</text>
+  <text x="52" y="245" class="s">records, logs by time, calls</text>
 
   <rect x="28" y="352" width="236" height="68" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-opacity="0.45"/>
   <text x="40" y="376" class="lib">AssetClient</text>
@@ -49,7 +49,7 @@
   <line x1="268" y1="174" x2="612" y2="174" stroke="#475569" stroke-width="1.6" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
   <line x1="268" y1="232" x2="612" y2="356" stroke="#475569" stroke-width="1.6" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
   <line x1="268" y1="392" x2="612" y2="392" stroke="#475569" stroke-width="1.6" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
-  <text x="440" y="164" class="s" text-anchor="middle">describe, call, read records, subscribe to the trace</text>
+  <text x="440" y="164" class="s" text-anchor="middle">describe, call, read records, subscribe to the log</text>
   <text x="440" y="382" class="s" text-anchor="middle"><tspan class="m">asset.request</tspan>; packed bytes and change notices back</text>
 
   <!-- ngen-view endpoint -->
@@ -70,14 +70,14 @@
   <text x="640" y="252" class="s">a <tspan class="m">--script</tspan> line runs the same method, in process</text>
 
   <rect x="628" y="266" width="332" height="40" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
-  <text x="640" y="283" class="b">Trace</text>
-  <text x="640" y="298" class="s"><tspan class="m">trace.subscribe</tspan>, then <tspan class="m">trace.events</tspan> as they happen</text>
+  <text x="640" y="283" class="b">Log</text>
+  <text x="640" y="298" class="s"><tspan class="m">log.subscribe</tspan>, then <tspan class="m">log.events</tspan> as they happen</text>
 
   <!-- asset server endpoint -->
   <rect x="616" y="334" width="356" height="86" rx="10" fill="#fdf2f8" stroke="#db2777" stroke-opacity="0.45"/>
   <text x="628" y="358" class="lib">ngen-asset-server</text>
   <text x="784" y="358" class="s">the core's <tspan class="m">RpcServer</tspan></text>
-  <text x="628" y="380" class="s"><tspan class="m">asset.request</tspan>, <tspan class="m">asset.delay.set</tspan>, records, trace;</text>
+  <text x="628" y="380" class="s"><tspan class="m">asset.request</tspan>, <tspan class="m">asset.delay.set</tspan>, records, log;</text>
   <text x="628" y="396" class="s">its own dispatch, no <tspan class="m">rpc.describe</tspan></text>
 
   <!-- Discovery -->
@@ -108,8 +108,8 @@
   <rect x="524" y="546" width="448" height="94" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-opacity="0.45"/>
   <text x="536" y="570" class="b">Engine layer</text>
   <text x="626" y="570" class="m">src/rpc</text>
-  <text x="696" y="570" class="s">built on the core and the trace</text>
+  <text x="696" y="570" class="s">built on the core and the log</text>
   <text x="536" y="592" class="s"><tspan class="m">RpcRegistry</tspan>: methods, parameter schemas, <tspan class="m">rpc.*</tspan> builtins</text>
-  <text x="536" y="608" class="s"><tspan class="m">ConsoleCommands</tspan>: script lines to parameters; <tspan class="m">RpcEndpoint</tspan>: dispatch, trace</text>
+  <text x="536" y="608" class="s"><tspan class="m">ConsoleCommands</tspan>: script lines to parameters; <tspan class="m">RpcEndpoint</tspan>: dispatch, log</text>
   <text x="536" y="628" class="s">used by ngen-view</text>
 </svg>

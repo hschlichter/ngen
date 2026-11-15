@@ -14,7 +14,7 @@
     </marker>
   </defs>
   <rect x="0" y="0" width="1000" height="560" rx="14" fill="#f8fafc" stroke="#e2e8f0"/>
-  <text x="28" y="40" class="title">Trace: from TRACE_EVENT to ngen-introspect</text>
+  <text x="28" y="40" class="title">Log: from LOG_EVENT to ngen-introspect</text>
   <text x="28" y="62" class="s" style="font-size:12px">Every event is printed and kept in the process's ring; a stream sends each subscriber what its cursor hasn't read yet.</text>
 
   <!-- The process -->
@@ -24,7 +24,7 @@
 
   <!-- Producer -->
   <rect x="44" y="124" width="190" height="96" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
-  <text x="58" y="146" class="lib">TRACE_EVENT</text>
+  <text x="58" y="146" class="lib">LOG_EVENT</text>
   <text x="58" y="166" class="t">on any thread</text>
   <text x="58" y="186" class="code">(category, type, name)</text>
   <text x="58" y="204" class="s">pushed at the end of the statement</text>
@@ -47,8 +47,8 @@
 
   <!-- Ring -->
   <rect x="258" y="124" width="250" height="160" rx="8" fill="#f1f5f9" stroke="#64748b" stroke-opacity="0.6"/>
-  <text x="272" y="146" class="lib">TraceRing</text>
-  <text x="358" y="146" class="s">tracering.*</text>
+  <text x="272" y="146" class="lib">LogRing</text>
+  <text x="358" y="146" class="s">logring.*</text>
   <text x="272" y="166" class="t">the last 65,536 events</text>
   <rect x="272" y="178" width="26" height="22" fill="#ffffff" stroke="#94a3b8"/>
   <rect x="298" y="178" width="26" height="22" fill="#ffffff" stroke="#94a3b8"/>
@@ -69,7 +69,7 @@
 
   <!-- Stream -->
   <rect x="258" y="316" width="250" height="138" rx="8" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
-  <text x="272" y="338" class="lib">TraceStream</text>
+  <text x="272" y="338" class="lib">LogStream</text>
   <text x="372" y="338" class="s">its own thread</text>
   <text x="272" y="358" class="t">every 50 ms, or once 1,024 wait</text>
   <text x="272" y="378" class="s">per subscriber, from its cursor: batches</text>
@@ -84,7 +84,7 @@
   <rect x="532" y="124" width="130" height="330" rx="8" fill="#ffffff" stroke="#db2777" stroke-opacity="0.6"/>
   <text x="546" y="146" class="lib">I/O thread</text>
   <text x="546" y="164" class="s">RpcServer</text>
-  <text x="546" y="198" class="code">trace.subscribe</text>
+  <text x="546" y="198" class="code">log.subscribe</text>
   <text x="546" y="214" class="code">{since_ns?}</text>
   <text x="546" y="232" class="s">answered here:</text>
   <text x="546" y="248" class="code">{process,</text>
@@ -93,7 +93,7 @@
   <text x="546" y="297" class="s">oldest event, or the</text>
   <text x="546" y="312" class="s">first at since_ns</text>
   <text x="546" y="374" class="s">writes each batch:</text>
-  <text x="546" y="392" class="code">trace.events</text>
+  <text x="546" y="392" class="code">log.events</text>
   <text x="546" y="408" class="code">{process,</text>
   <text x="546" y="423" class="code"> dropped, events}</text>
   <line x1="508" y1="382" x2="530" y2="382" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
@@ -110,8 +110,8 @@
   <text x="728" y="141" class="s">its working directory</text>
 
   <rect x="728" y="160" width="228" height="62" rx="8" fill="#ffffff" stroke="#db2777" stroke-opacity="0.6"/>
-  <text x="742" y="182" class="t" font-weight="700">the Trace tab</text>
-  <text x="742" y="200" class="code">ngen-introspect trace</text>
+  <text x="742" y="182" class="t" font-weight="700">the Log tab</text>
+  <text x="742" y="200" class="code">ngen-introspect log</text>
   <text x="742" y="215" class="s">JSON lines, process added, no seq</text>
 
   <rect x="728" y="256" width="228" height="62" rx="8" fill="#ffffff" stroke="#db2777" stroke-opacity="0.6"/>

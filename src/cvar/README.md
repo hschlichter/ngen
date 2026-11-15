@@ -1,12 +1,12 @@
 # Cvars
 
 The engine's settings, in one system: each setting is a cvar (a console variable, as other engines say), a typed value declared in code by the part of the engine it configures, with a
-dotted name, a default and a description. The library (`cvar`) is standard library only and sits beside `profile` and `trace`: any
+dotted name, a default and a description. The library (`cvar`) is standard library only and sits beside `profile` and `log`: any
 library may declare values, and nothing in it knows the engine.
 
-![The Cvars window: every value by group with an editor for its type](../../screenshots/config_hero.png)
+![The Cvars window: every value by group with an editor for its type](../../screenshots/cvar_hero.png)
 
-![A value declared in code registers by name; the cvars record, the cvar RPC methods and console commands and the windows read and set it on the main thread, and ViewFrame hands what the render thread needs to it on a change or in the RenderSnapshot](../../screenshots/config_value_flow.svg)
+![A value declared in code registers by name; the cvars record, the cvar RPC methods and console commands and the windows read and set it on the main thread, and ViewFrame hands what the render thread needs to it on a change or in the RenderSnapshot](../../screenshots/cvar_value_flow.svg)
 
 ## Declaring a value
 

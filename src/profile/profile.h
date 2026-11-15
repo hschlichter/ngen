@@ -47,7 +47,7 @@ enum class Group : uint8_t {
     Lighting, // lighting, sky
     Post,     // anti-aliasing, overlays, present passes
     Upload,   // uploads and copies, CPU and GPU
-    Io,       // RPC, trace stream, asset client I/O
+    Io,       // RPC, log stream, asset client I/O
     Wait,     // blocking: fences, snapshots, condition variables, idle
 };
 constexpr uint32_t groupCount = 15;
@@ -144,7 +144,7 @@ struct ExportOptions {
     bool detail = true;
 };
 
-// CLOCK_MONOTONIC nanoseconds, the same clock as trace events (shared by every process on the machine).
+// CLOCK_MONOTONIC nanoseconds, the same clock as log events (shared by every process on the machine).
 auto now() -> uint64_t;
 
 // A source location per (file, line, name): the same arguments return the same id. The name is copied; `location` is the caller's line unless given

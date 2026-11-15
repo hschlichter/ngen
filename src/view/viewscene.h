@@ -321,7 +321,7 @@ public:
     // clamped.
     auto setLodTuning(std::optional<float> bias, std::optional<float> hysteresis, std::optional<bool> blending) -> void;
     // Sets one heuristic's thresholds for the authored root of the LOD root at a path (every placement of it), the heuristic the
-    // preference uses when none is named; the lists not given keep what they had. A path with no LOD root placed is reported in the trace.
+    // preference uses when none is named; the lists not given keep what they had. A path with no LOD root placed is reported in the log.
     auto overrideLodThresholds(const std::string& rootPath, std::optional<uint32_t> heuristic, LodOverride thresholds) -> void;
     // Drops every override of the authored root of the LOD root at a path; an empty path drops them all.
     auto resetLodOverrides(const std::string& rootPath) -> void;
@@ -492,7 +492,7 @@ private:
     auto collectChanges(const std::set<uint32_t>& meshesNow, const std::set<uint32_t>& materialsNow, const std::set<uint32_t>& texturesNow, SceneChanges& changes) -> void;
     auto addChanges(SceneChanges changes) -> void;
     // ContentComposed per content the last compose or relink completed.
-    auto traceCompleted() -> void;
+    auto logCompleted() -> void;
 
     AssetClient& assets;
 
@@ -561,8 +561,8 @@ private:
     // One LevelsUnloaded per scene update that let something go.
     auto reportReleases() -> void;
     std::shared_ptr<const SceneLodChoices> choices = std::make_shared<SceneLodChoices>();
-    bool composeReported = false; // PacksComposed traced since the scene opened or a pack last arrived
-    bool assetsReported = false;  // SceneAssetsReceived traced since the last asset was requested
+    bool composeReported = false; // PacksComposed logged since the scene opened or a pack last arrived
+    bool assetsReported = false;  // SceneAssetsReceived logged since the last asset was requested
     size_t assetsSinceReport = 0;
     std::chrono::steady_clock::time_point openedAt;
 
@@ -598,7 +598,7 @@ private:
         glm::mat4 worldTransform = glm::mat4(1.0f); // world metres
     };
     std::map<uint32_t, PlacedDome> domesByPrim;
-    std::set<uint32_t> domesWarned; // the domes DomeLightIgnored was traced for, so a pass doesn't trace it again
+    std::set<uint32_t> domesWarned; // the domes DomeLightIgnored was logged for, so a pass doesn't log it again
     bool lightsChanged = false;
     std::vector<uint32_t> meshUses; // by handle index: slots drawing it and undrawn placements holding it
     std::vector<uint32_t> materialUses;

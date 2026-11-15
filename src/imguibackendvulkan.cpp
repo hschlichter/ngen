@@ -1,9 +1,9 @@
 #include "imguibackendvulkan.h"
+#include "log.h"
 #include "profile.h"
 #include "rhicommandbuffervulkan.h"
 #include "rhidevicevulkan.h"
 #include "rhiresourcesvulkan.h"
-#include "trace.h"
 
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
@@ -57,7 +57,7 @@ auto ImGuiBackendVulkan::init(const ImGuiBackendInitInfo& info) -> void {
 
     ImGui_ImplVulkan_Init(&initInfo);
 
-    TRACE_EVENT("Engine", "ImGuiInitialized", "imgui").text("Dear ImGui initialized");
+    LOG_EVENT("Engine", "ImGuiInitialized", "imgui").text("Dear ImGui initialized");
 }
 
 auto ImGuiBackendVulkan::processEvent(const SDL_Event* event) -> bool {

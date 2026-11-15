@@ -185,7 +185,7 @@ IntrospectWindow::IntrospectWindow(IntrospectSession& session) : session(session
 
 auto IntrospectWindow::draw() -> void {
     session.poll();
-    takeTrace();
+    takeLog();
     auto processes = session.processes();
 
     if (!pendingTarget.empty()) {
@@ -232,11 +232,11 @@ auto IntrospectWindow::draw() -> void {
             }
             ImGui::EndTabItem();
         }
-        // Trace: every process merged by time, the full width.
-        auto traceFlags = openTraceTab ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None;
-        openTraceTab = false;
-        if (ImGui::BeginTabItem("Trace", nullptr, traceFlags)) {
-            drawTrace(processes);
+        // Log: every process merged by time, the full width.
+        auto logFlags = openLogTab ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None;
+        openLogTab = false;
+        if (ImGui::BeginTabItem("Log", nullptr, logFlags)) {
+            drawLog(processes);
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();
@@ -249,8 +249,8 @@ auto IntrospectWindow::selectWhenAvailable(std::string target, std::string recor
     pendingRecord = std::move(record);
 }
 
-auto IntrospectWindow::showTrace() -> void {
-    openTraceTab = true;
+auto IntrospectWindow::showLog() -> void {
+    openLogTab = true;
 }
 
 auto IntrospectWindow::drawProcesses(const std::vector<IntrospectSession::Process>& processes) -> void {
@@ -341,108 +341,108 @@ auto IntrospectWindow::drawRecord() -> void {
     ImGui::PopID();
 }
 
-auto IntrospectWindow::takeTrace() -> void {
-    if (tracePaused) {
+auto IntrospectWindow::takeLog() -> void {
+    if (logPaused) {
         return;
     }
     incoming.clear();
-    session.takeTraceEvents(incoming);
+    session.takeLogEvents(incoming);
     for (auto& event : incoming) {
-        TraceRow row;
+        LogRow row;
         row.tsNs = event.tsNs;
         row.process = std::move(event.process);
         row.event = std::move(event.event);
         row.fieldsText = row.event->contains("fields") ? (*row.event)["fields"].dump() : "{}";
         auto severity = row.event->value("severity", "info");
         row.severity = severity == "error" ? 2 : (severity == "warning" ? 1 : 0);
-        if (traceOriginNs == 0) {
-            traceOriginNs = row.tsNs;
+        if (logOriginNs == 0) {
+            logOriginNs = row.tsNs;
         }
         // Batches from different processes overlap in time; most events still land at the end.
-        if (traceRows.empty() || row.tsNs >= traceRows.back().tsNs) {
-            if (!traceVisibleStale && traceRowVisible(row)) {
-                traceVisible.push_back((int) traceRows.size());
+        if (logRows.empty() || row.tsNs >= logRows.back().tsNs) {
+            if (!logVisibleStale && logRowVisible(row)) {
+                logVisible.push_back((int) logRows.size());
             }
-            traceRows.push_back(std::move(row));
+            logRows.push_back(std::move(row));
         } else {
-            auto at = std::ranges::upper_bound(traceRows, row.tsNs, {}, &TraceRow::tsNs);
-            traceRows.insert(at, std::move(row));
-            traceVisibleStale = true;
+            auto at = std::ranges::upper_bound(logRows, row.tsNs, {}, &LogRow::tsNs);
+            logRows.insert(at, std::move(row));
+            logVisibleStale = true;
         }
     }
-    if (traceRows.size() > maxTraceRows) {
-        auto excess = traceRows.size() - maxTraceRows + maxTraceRows / 10;
-        traceRows.erase(traceRows.begin(), traceRows.begin() + (std::ptrdiff_t) excess);
-        traceVisibleStale = true;
+    if (logRows.size() > maxLogRows) {
+        auto excess = logRows.size() - maxLogRows + maxLogRows / 10;
+        logRows.erase(logRows.begin(), logRows.begin() + (std::ptrdiff_t) excess);
+        logVisibleStale = true;
     }
 }
 
-auto IntrospectWindow::traceRowVisible(const TraceRow& row) const -> bool {
+auto IntrospectWindow::logRowVisible(const LogRow& row) const -> bool {
     auto contains = [](std::string_view text, const char* filter) {
         return filter[0] == '\0' || text.find(filter) != std::string_view::npos;
     };
     const auto& e = *row.event;
-    if (row.severity < traceMinSeverity) {
+    if (row.severity < logMinSeverity) {
         return false;
     }
-    if (!contains(row.process, traceFilterProcess.data())) {
+    if (!contains(row.process, logFilterProcess.data())) {
         return false;
     }
-    if (!contains(e.value("category", ""), traceFilterCategory.data())) {
+    if (!contains(e.value("category", ""), logFilterCategory.data())) {
         return false;
     }
-    if (!contains(e.value("type", ""), traceFilterType.data())) {
+    if (!contains(e.value("type", ""), logFilterType.data())) {
         return false;
     }
-    if (traceFilterText[0] != '\0') {
-        return contains(e.value("name", ""), traceFilterText.data()) || contains(e.value("text", ""), traceFilterText.data()) || contains(row.fieldsText, traceFilterText.data());
+    if (logFilterText[0] != '\0') {
+        return contains(e.value("name", ""), logFilterText.data()) || contains(e.value("text", ""), logFilterText.data()) || contains(row.fieldsText, logFilterText.data());
     }
     return true;
 }
 
-auto IntrospectWindow::drawTrace(const std::vector<IntrospectSession::Process>& processes) -> void {
-    ImGui::Checkbox("Pause", &tracePaused);
+auto IntrospectWindow::drawLog(const std::vector<IntrospectSession::Process>& processes) -> void {
+    ImGui::Checkbox("Pause", &logPaused);
     ImGui::SameLine();
-    if (ImGui::Checkbox("Follow", &traceFollow)) {
-        traceFollowScrollY = -1.0f;
+    if (ImGui::Checkbox("Follow", &logFollow)) {
+        logFollowScrollY = -1.0f;
     }
     ImGui::SameLine();
     if (ImGui::Button("Clear")) {
-        traceRows.clear();
-        traceVisible.clear();
+        logRows.clear();
+        logVisible.clear();
         selectedEvent.reset();
-        traceFollowScrollY = -1.0f;
+        logFollowScrollY = -1.0f;
     }
     auto filter = [&](const char* label, char* buffer, size_t size, float width) {
         ImGui::SameLine();
         ImGui::SetNextItemWidth(width);
         if (ImGui::InputTextWithHint(label, label + 2, buffer, size)) {
-            traceVisibleStale = true;
+            logVisibleStale = true;
         }
     };
     ImGui::SameLine();
     ImGui::SetNextItemWidth(130.0f);
-    if (ImGui::Combo("##severity", &traceMinSeverity, "everything\0warnings, errors\0errors\0")) {
-        traceVisibleStale = true;
+    if (ImGui::Combo("##severity", &logMinSeverity, "everything\0warnings, errors\0errors\0")) {
+        logVisibleStale = true;
     }
-    filter("##process", traceFilterProcess.data(), traceFilterProcess.size(), 110.0f);
-    filter("##category", traceFilterCategory.data(), traceFilterCategory.size(), 110.0f);
-    filter("##type", traceFilterType.data(), traceFilterType.size(), 140.0f);
-    filter("##name, text or fields", traceFilterText.data(), traceFilterText.size(), 200.0f);
-    if (traceVisibleStale) {
-        traceVisible.clear();
-        for (size_t i = 0; i < traceRows.size(); i++) {
-            if (traceRowVisible(traceRows[i])) {
-                traceVisible.push_back((int) i);
+    filter("##process", logFilterProcess.data(), logFilterProcess.size(), 110.0f);
+    filter("##category", logFilterCategory.data(), logFilterCategory.size(), 110.0f);
+    filter("##type", logFilterType.data(), logFilterType.size(), 140.0f);
+    filter("##name, text or fields", logFilterText.data(), logFilterText.size(), 200.0f);
+    if (logVisibleStale) {
+        logVisible.clear();
+        for (size_t i = 0; i < logRows.size(); i++) {
+            if (logRowVisible(logRows[i])) {
+                logVisible.push_back((int) i);
             }
         }
-        traceVisibleStale = false;
+        logVisibleStale = false;
         // Fewer rows can move the scroll up on their own; that isn't the user scrolling.
-        traceFollowScrollY = -1.0f;
+        logFollowScrollY = -1.0f;
     }
     ImGui::SameLine();
-    ImGui::TextDisabled("%zu of %zu events", traceVisible.size(), traceRows.size());
-    for (const auto& [process, count] : session.traceDropped()) {
+    ImGui::TextDisabled("%zu of %zu events", logVisible.size(), logRows.size());
+    for (const auto& [process, count] : session.logDropped()) {
         ImGui::SameLine();
         ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "%s dropped %llu", process.c_str(), (unsigned long long) count);
     }
@@ -457,7 +457,7 @@ auto IntrospectWindow::drawTrace(const std::vector<IntrospectSession::Process>& 
     auto detailHeight = selectedEvent != nullptr ? ImGui::GetContentRegionAvail().y * 0.3f : 0.0f;
     auto flags = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollX | ImGuiTableFlags_ScrollY |
                  ImGuiTableFlags_SizingFixedFit;
-    if (ImGui::BeginTable("trace", 8, flags, ImVec2(0.0f, -detailHeight))) {
+    if (ImGui::BeginTable("log", 8, flags, ImVec2(0.0f, -detailHeight))) {
         ImGui::TableSetupScrollFreeze(0, 1);
         // Fixed widths: the clipper only lays out visible rows, so fitting to contents would size from a handful.
         ImGui::TableSetupColumn("time s", ImGuiTableColumnFlags_WidthFixed, 80.0f);
@@ -470,10 +470,10 @@ auto IntrospectWindow::drawTrace(const std::vector<IntrospectSession::Process>& 
         ImGui::TableSetupColumn("text, fields", ImGuiTableColumnFlags_WidthFixed, 900.0f);
         ImGui::TableHeadersRow();
         ImGuiListClipper clipper;
-        clipper.Begin((int) traceVisible.size());
+        clipper.Begin((int) logVisible.size());
         while (clipper.Step()) {
             for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; i++) {
-                const auto& row = traceRows[(size_t) traceVisible[(size_t) i]];
+                const auto& row = logRows[(size_t) logVisible[(size_t) i]];
                 const auto& e = *row.event;
                 ImGui::TableNextRow();
                 if (row.severity == 2) {
@@ -483,12 +483,12 @@ auto IntrospectWindow::drawTrace(const std::vector<IntrospectSession::Process>& 
                 }
                 ImGui::TableSetColumnIndex(0);
                 ImGui::PushID(i);
-                auto time = std::format("{:.4f}", (double) (row.tsNs - traceOriginNs) * 1e-9);
+                auto time = std::format("{:.4f}", (double) (row.tsNs - logOriginNs) * 1e-9);
                 bool selected = selectedEvent == row.event;
                 if (ImGui::Selectable(time.c_str(), selected, ImGuiSelectableFlags_SpanAllColumns)) {
                     selectedEvent = row.event;
                     selectedEventProcess = row.process;
-                    traceFollow = false;
+                    logFollow = false;
                 }
                 ImGui::PopID();
                 ImGui::TableSetColumnIndex(1);
@@ -521,12 +521,12 @@ auto IntrospectWindow::drawTrace(const std::vector<IntrospectSession::Process>& 
         }
         // Scrolling up by any means (wheel, scrollbar, keys) leaves the scroll above where following put it: stop
         // following, so the scroll stays where the user took it.
-        if (traceFollow && traceFollowScrollY >= 0.0f && ImGui::GetScrollY() < traceFollowScrollY - 1.0f) {
-            traceFollow = false;
+        if (logFollow && logFollowScrollY >= 0.0f && ImGui::GetScrollY() < logFollowScrollY - 1.0f) {
+            logFollow = false;
         }
-        if (traceFollow && !tracePaused) {
+        if (logFollow && !logPaused) {
             ImGui::SetScrollY(ImGui::GetScrollMaxY());
-            traceFollowScrollY = ImGui::GetScrollMaxY();
+            logFollowScrollY = ImGui::GetScrollMaxY();
         }
         ImGui::EndTable();
     }

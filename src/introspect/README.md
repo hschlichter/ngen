@@ -1,7 +1,7 @@
 # Introspection
 
 `ngen-introspect` is the one tool for seeing into the running processes — ngen-view, ngen-asset-server, later the editor — and for calling them: their
-records, their traces merged by time, and their methods. It has a window for humans and a command line for agents and scripts; both are RPC clients
+records, their logs merged by time, and their methods. It has a window for humans and a command line for agents and scripts; both are RPC clients
 and nothing else. The processes don't know about the tool: it finds them through `.ngen-discovery/` in its working directory and connects to each.
 
 ![ngen-introspect's Records tab: the asset server's and ngen-view's records, and the view's assets record as a table](../../screenshots/introspect_hero.png)
@@ -46,7 +46,7 @@ records with `registerRpcRecords` (engine layer); the asset server answers the t
 | asset | `requests` | requests in flight and the 64 most recent finished ones |
 | asset | `clients` | connected clients, bytes queued, assets waiting to stream |
 
-Records are data and the trace is flow and messages (`src/trace/README.md`): a record never goes into the trace.
+Records are data and the log is flow and messages (`src/log/README.md`): a record never goes into the log.
 
 **A record at a frame:** the console command `record <name> <file>` (method `introspect.record {name, path}`) appends the record to a file as one
 JSON line: `{record, requested_frame, frame, ts_ns, value}`, `frame` being the frame it was ready (GPU readbacks take a few). The view takes the
@@ -65,10 +65,10 @@ state is a method.
 ./ngen-cli introspect get asset:12345 cache
 ./ngen-cli introspect describe view                     # methods with parameter schemas
 ./ngen-cli introspect call view view.camera.set '{"x": 5.3, "y": 11.3, "z": 1.2, "yaw": -169.8, "pitch": -0.2}'
-./ngen-cli introspect trace --until-exit=view --output=/tmp/trace.jsonl   # every process's events until the view exits
+./ngen-cli introspect log --until-exit=view --output=/tmp/log.jsonl   # every process's events until the view exits
 ```
 
-**`trace`** subscribes to every process (`trace.subscribe`, `src/trace/README.md`), including ones that start later, and writes their events as
+**`log`** subscribes to every process (`log.subscribe`, `src/log/README.md`), including ones that start later, and writes their events as
 JSON lines: `ts_ns, process, thread, severity, category, type, name, text, fields`. It takes events from its own start; `--history` takes
 everything the processes' rings still hold. `--until-exit=<target>` stops once a matching process has connected and gone, its last events
 included; without it the command runs until Ctrl-C. `--process=`, `--category=` and `--type=` filter (comma lists); `--severity=warning` keeps
@@ -82,22 +82,22 @@ A target is a kind (`view`), `kind:pid`, or a pid; a kind with several live proc
 ## Window
 
 `./ngen-cli introspect` with no command opens the window with two tabs. Records has the processes and their records on the left and the selected
-record on the right; Trace has every process's events, the full width, with any process the tool can't reach named in its toolbar. Objects show as a tree, arrays of objects as tables (click a header to sort, again to reverse, a third time for the record's own
-order). Refresh fetches the record again; Auto refreshes it on an interval. The Trace tab holds the last 200,000 events of every process, merged by
+record on the right; Log has every process's events, the full width, with any process the tool can't reach named in its toolbar. Objects show as a tree, arrays of objects as tables (click a header to sort, again to reverse, a third time for the record's own
+order). Refresh fetches the record again; Auto refreshes it on an interval. The Log tab holds the last 200,000 events of every process, merged by
 time, with a severity column (warnings yellow, errors red), filters by severity, process, category, type and name, text or fields, Pause, Follow, and
 the selected event below. It is drawn with SDL's
 renderer and Dear ImGui — no Vulkan device, nothing of the renderer — and keeps no `imgui.ini`.
 
 For a look without a display: `SDL_VIDEODRIVER=offscreen ./ngen-cli introspect --select=view/culling --frames=60 --screenshot=out.png`.
-`--select=<target>/<record>` shows a record as soon as its process is there; `--trace` opens the Trace tab.
+`--select=<target>/<record>` shows a record as soon as its process is there; `--log` opens the Log tab.
 
 ## Layout
 
 | Part | Files |
 |---|---|
 | Targets | `introspecttarget.*` — process names (`kind:pid`) and resolving a target |
-| Command line | `introspectcommands.*` — `list`, `get`, `describe`, `call` over a blocking `RpcClient`; `introspecttrace.*` — `trace` |
-| Session | `introspectsession.*` — the connections: polls discovery, connects to new processes, fetches records and subscribes to traces on an `RpcServer` that only connects out |
+| Command line | `introspectcommands.*` — `list`, `get`, `describe`, `call` over a blocking `RpcClient`; `introspectlog.*` — `log` |
+| Session | `introspectsession.*` — the connections: polls discovery, connects to new processes, fetches records and subscribes to logs on an `RpcServer` that only connects out |
 | Window | `introspectwindow.*` — the ImGui layout and the generic JSON view |
 | Program | `src/apps/introspect.cpp` — arguments, SDL and the frame loop |
 
@@ -106,5 +106,5 @@ For a look without a display: `SDL_VIDEODRIVER=offscreen ./ngen-cli introspect -
 - Table cells that hold objects or arrays show compact JSON; they can't be expanded in place.
 - The asset server has no `rpc.describe`, so `describe asset` fails; its methods are listed in `src/asset/README.md`.
 - A process is connected to once; if the tool's connection to it drops, it isn't reconnected (a restarted process has a new pid and is).
-- Profiler zones aren't on the trace stream; the `profile` record has frame times, the `zones` record each zone's times over the last
+- Profiler zones aren't on the log stream; the `profile` record has frame times, the `zones` record each zone's times over the last
   60 frames, and `dump-profile` writes the full Chrome trace.

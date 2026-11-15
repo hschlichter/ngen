@@ -1,7 +1,7 @@
 #include "consolecommands.h"
 
+#include "log.h"
 #include "rpcregistry.h"
-#include "trace.h"
 
 #include <nlohmann/json.hpp>
 
@@ -18,17 +18,17 @@ auto ConsoleCommands::add(std::string name, std::string method, Parser parse) ->
 auto ConsoleCommands::run(const RpcRegistry& registry, const std::string& name, const std::string& args) const -> void {
     auto found = commands.find(name);
     if (found == commands.end()) {
-        TRACE_ERROR("Engine", "ScriptCommandFailed", name).text(std::format("unknown console command '{}'", name));
+        LOG_ERROR("Engine", "ScriptCommandFailed", name).text(std::format("unknown console command '{}'", name));
         return;
     }
     auto params = found->second.parse(args);
     if (!params) {
-        TRACE_ERROR("Engine", "ScriptCommandFailed", name).text(std::format("{}: {}", name, params.error()));
+        LOG_ERROR("Engine", "ScriptCommandFailed", name).text(std::format("{}: {}", name, params.error()));
         return;
     }
     RpcResponder responder([name](const RpcReply& reply) {
         if (!reply.ok) {
-            TRACE_ERROR("Engine", "ScriptCommandFailed", name).text(std::format("{}: {}", name, reply.message));
+            LOG_ERROR("Engine", "ScriptCommandFailed", name).text(std::format("{}: {}", name, reply.message));
         }
     });
     registry.invoke(found->second.method, *params, responder);

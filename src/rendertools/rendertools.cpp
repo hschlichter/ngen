@@ -3,6 +3,7 @@
 #include "deletionqueue.h"
 #include "framegraph.h"
 #include "gpuscene.h"
+#include "log.h"
 #include "packedtexture.h"
 #include "pipelineregistry.h"
 #include "previewtextures.h"
@@ -13,7 +14,6 @@
 #include "resourcepool.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
-#include "trace.h"
 
 #include <algorithm>
 #include <array>
@@ -186,12 +186,12 @@ auto RenderTools::afterSubmit(Renderer& renderer, const RenderFrame& frame) -> v
         if (!readback.screenshot) {
             bool ok = writeScreenshotPng(readback.path.c_str(), rgba, readback.width, readback.height);
             if (ok) {
-                TRACE_EVENT("Render", "TextureDump", readback.path)
+                LOG_EVENT("Render", "TextureDump", readback.path)
                     .text(std::format("texture dump written: {} texture {} level {} ({}x{})", readback.path, readback.texture, readback.level, readback.width, readback.height))
                     .field("texture", (int64_t) readback.texture)
                     .field("level", (int64_t) readback.level);
             } else {
-                TRACE_ERROR("Render", "TextureDumpFailed", readback.path).text(std::format("cannot write texture dump {}", readback.path));
+                LOG_ERROR("Render", "TextureDumpFailed", readback.path).text(std::format("cannot write texture dump {}", readback.path));
             }
             continue;
         }
@@ -209,11 +209,11 @@ auto RenderTools::afterSubmit(Renderer& renderer, const RenderFrame& frame) -> v
             published.screenshots.push_back({.path = readback.path, .ok = ok, .frame = frame.frame, .width = readback.width, .height = readback.height});
         }
         if (ok) {
-            TRACE_EVENT("Render", "Screenshot", readback.path)
+            LOG_EVENT("Render", "Screenshot", readback.path)
                 .text(std::format("screenshot written: {} ({}x{})", readback.path, readback.width, readback.height))
                 .field("frame", (int64_t) frame.frame);
         } else {
-            TRACE_ERROR("Render", "ScreenshotFailed", readback.path).text(std::format("cannot write screenshot {}", readback.path)).field("frame", (int64_t) frame.frame);
+            LOG_ERROR("Render", "ScreenshotFailed", readback.path).text(std::format("cannot write screenshot {}", readback.path)).field("frame", (int64_t) frame.frame);
         }
     }
     readbacks.clear();
@@ -457,7 +457,7 @@ auto RenderTools::recordTextureDump(const Renderer& renderer, RhiCommandBuffer* 
     for (auto& dump : std::exchange(dumps, {})) {
         auto texIt = textures.find(dump.texture);
         if (texIt == textures.end() || texIt->second.slot == GpuScene::fallbackSlot || dump.level >= texIt->second.mipLevels) {
-            TRACE_ERROR("Render", "TextureDumpFailed", dump.path).text(std::format("dump-texture: texture {} level {} not found", dump.texture, dump.level));
+            LOG_ERROR("Render", "TextureDumpFailed", dump.path).text(std::format("dump-texture: texture {} level {} not found", dump.texture, dump.level));
             continue;
         }
         const auto& cached = texIt->second;

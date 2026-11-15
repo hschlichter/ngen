@@ -2,9 +2,9 @@
 
 #include "capturefiles.h"
 #include "gpuscenecapture.h"
+#include "log.h"
 #include "renderdebugjson.h"
 #include "renderworld.h"
-#include "trace.h"
 
 #include <nlohmann/json.hpp>
 
@@ -236,11 +236,11 @@ auto ViewDumps::onFrameDebug(const FrameDebugCapture& capture) -> void {
         if (!target.path.empty()) {
             auto path = target.path + "/frame.json";
             if (writeFrameDebugJson(path.c_str(), capture)) {
-                TRACE_EVENT("Render", "FrameDebugWritten", path)
+                LOG_EVENT("Render", "FrameDebugWritten", path)
                     .text(std::format("frame debug written: {} (frame {}, {} passes)", path, capture.frame, capture.passes.size()))
                     .field("frame", (int64_t) capture.frame);
             } else {
-                TRACE_ERROR("Render", "DumpFailed", path).text(std::format("dump-frame: cannot write {}", path));
+                LOG_ERROR("Render", "DumpFailed", path).text(std::format("dump-frame: cannot write {}", path));
             }
         }
         respondWith(target, [&](FILE* f) { writeFrameDebugJson(f, capture); });
@@ -256,17 +256,17 @@ auto ViewDumps::onCaptureResult(CaptureResult& result) -> bool {
     auto& target = dump->target;
     if (!result.error.empty()) {
         if (!target.path.empty() || dump->gpuSceneGroup >= 0 || !target.responder.valid()) {
-            TRACE_ERROR("Render", "CaptureFailed", result.resource).text(std::format("capture {} {}: {}", result.pass, result.resource, result.error));
+            LOG_ERROR("Render", "CaptureFailed", result.resource).text(std::format("capture {} {}: {}", result.pass, result.resource, result.error));
         }
         target.responder.fail(rpc::appError, result.error);
     } else {
         if (!target.path.empty()) {
             if (writeCaptureFiles(target.path, result, dump->watch.display, 65536)) {
-                TRACE_EVENT("Render", "CaptureWritten", target.path)
+                LOG_EVENT("Render", "CaptureWritten", target.path)
                     .text(std::format("capture written: {} ({} {}, frame {})", target.path, result.pass.empty() ? "-" : result.pass, result.resource, result.frame))
                     .field("frame", (int64_t) result.frame);
             } else {
-                TRACE_ERROR("Render", "DumpFailed", target.path).text(std::format("capture: cannot write {}", target.path));
+                LOG_ERROR("Render", "DumpFailed", target.path).text(std::format("capture: cannot write {}", target.path));
             }
         }
         respondWith(target, [&](FILE* f) { writeCaptureJson(f, result, 65536); });
@@ -297,9 +297,9 @@ auto ViewDumps::finishGpuScene(int group) -> void {
     if (!target.path.empty()) {
         auto file = target.path + "/instances_joined.json";
         if (writeGpuSceneJoinedJson(file, rows, viewCount)) {
-            TRACE_EVENT("Render", "GpuSceneWritten", file).text(std::format("GPU scene written: {} ({} instances)", file, rows.size()));
+            LOG_EVENT("Render", "GpuSceneWritten", file).text(std::format("GPU scene written: {} ({} instances)", file, rows.size()));
         } else {
-            TRACE_ERROR("Render", "DumpFailed", file).text(std::format("dump-gpuscene: cannot write {}", file));
+            LOG_ERROR("Render", "DumpFailed", file).text(std::format("dump-gpuscene: cannot write {}", file));
         }
     }
     respondWith(target, [&](FILE* f) { writeGpuSceneJoinedJson(f, rows, viewCount); });

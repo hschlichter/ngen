@@ -5,6 +5,7 @@
 #include "blitpass.h"
 #include "instanceuploadpass.h"
 #include "jobsystem.h"
+#include "log.h"
 #include "material.h"
 #include "mesh.h"
 #include "mipchain.h"
@@ -17,7 +18,6 @@
 #include "rhidevice.h"
 #include "rhiswapchain.h"
 #include "shadowpass.h"
-#include "trace.h"
 
 #include <algorithm>
 #include <array>
@@ -195,9 +195,9 @@ auto Renderer::init(RhiDevice* rhiDevice, AssetClient* shaders, RhiExtent2D wind
     }
 
     if (!device->limits().timestamps) {
-        TRACE_WARNING("Render", "TimestampsUnavailable", "device").text("GPU timestamps not supported on this device; pass timings disabled");
+        LOG_WARNING("Render", "TimestampsUnavailable", "device").text("GPU timestamps not supported on this device; pass timings disabled");
     } else {
-        TRACE_EVENT("Render", "GpuClockCalibration", "device")
+        LOG_EVENT("Render", "GpuClockCalibration", "device")
             .text(std::format("GPU clock calibration: {}", device->limits().calibratedTimestamps ? "available" : "unavailable, GPU track anchored at submit"))
             .field("available", device->limits().calibratedTimestamps);
     }
@@ -347,7 +347,7 @@ static auto addClearPass(FrameGraph& fg, FgTextureHandle color, RhiExtent2D exte
         });
 }
 
-// A byte count for the trace: "812 B", "10.2 MiB".
+// A byte count for the log: "812 B", "10.2 MiB".
 static auto formatUploadBytes(uint64_t bytes) -> std::string {
     if (bytes < 1024 * 1024) {
         return std::format("{:.1f} KiB", (double) bytes / 1024.0);
@@ -547,7 +547,7 @@ auto Renderer::applySceneChanges(const SceneChanges& changes) -> void {
         return;
     }
     auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
-    TRACE_EVENT("Render", "SceneChangesApplied", "RenderWorld")
+    LOG_EVENT("Render", "SceneChangesApplied", "RenderWorld")
         .text(std::format("scene changes: {} draws, {} meshes added and {} removed, {} textures added and {} removed, {} materials set and {} removed; {} uploads ({}) queued, in {:.0f} ms",
                           changes.instances.size(),
                           changes.meshesAdded.size(),
@@ -677,7 +677,7 @@ auto Renderer::flushSceneUploads() -> void {
     rebuildGeometryDescriptorSets();
     descriptorSetsDirty = false;
     auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
-    TRACE_EVENT("Render", "SceneUploaded", "RenderWorld")
+    LOG_EVENT("Render", "SceneUploaded", "RenderWorld")
         .text(std::format("scene on the GPU: {} instance slots, {} meshes, {} textures ({}) in {:.0f} ms", gpuInstances.size(), gpuScene.meshRanges().size(), gpuScene.textures().size(), formatUploadBytes(bytes), ms))
         .field("instances", (int64_t) gpuInstances.size())
         .field("meshes", (int64_t) gpuScene.meshRanges().size())
@@ -922,7 +922,7 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
         if (auto overflow = drawLists.drawListOverflow(); overflow != reportedDrawListOverflow) {
             // While the draw records wait for a growth, the draw lists are cut to the capacity on purpose (GrowthBehind said so).
             if (overflow > 0 && !drawLists.commandsWaiting()) {
-                TRACE_WARNING("Render", "CullDrawListOverflow", "DrawLists")
+                LOG_WARNING("Render", "CullDrawListOverflow", "DrawLists")
                     .text(std::format("{} draw commands dropped past their draw list's end: the CPU's bucket counts are short of the cull shader's buckets, so those draws are missing", overflow))
                     .field("dropped", (int64_t) overflow);
             }
@@ -934,12 +934,12 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
             auto before = drawLists.workCapacity();
             if (drawLists.ensureWorkCapacity(0, m_frameIndex)) {
                 descriptorSetsDirty = true;
-                TRACE_EVENT("Render", "MeshletWorkGrown", "cull.workitems")
+                LOG_EVENT("Render", "MeshletWorkGrown", "cull.workitems")
                     .text(std::format("{} meshlets didn't fit the work items ({}): grown to {}", overflow, before, drawLists.workCapacity()))
                     .field("overflow", (int64_t) overflow)
                     .field("capacity", (int64_t) drawLists.workCapacity());
             } else if (!reportedWorkFull && !drawLists.workGrowing()) {
-                TRACE_WARNING("Render", "MeshletWorkFull", "cull.workitems")
+                LOG_WARNING("Render", "MeshletWorkFull", "cull.workitems")
                     .text(std::format("{} meshlets didn't fit the work items ({}), already the largest buffer the device makes: they aren't drawn", overflow, before))
                     .field("overflow", (int64_t) overflow)
                     .field("capacity", (int64_t) before);
@@ -960,9 +960,9 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
     }
     if (!index) {
         if (index.error() == RhiError::OutOfDate) {
-            TRACE_EVENT("Render", "SwapchainRecreate", "swapchain").text("swapchain out of date at acquire; recreating").field("reason", "acquire_failed");
+            LOG_EVENT("Render", "SwapchainRecreate", "swapchain").text("swapchain out of date at acquire; recreating").field("reason", "acquire_failed");
             if (!swapchain->recreate({.width = (uint32_t) snapshot.windowWidth, .height = (uint32_t) snapshot.windowHeight})) {
-                TRACE_ERROR("Render", "SwapchainRecreateFailed", "swapchain").text("swapchain recreate failed after acquire");
+                LOG_ERROR("Render", "SwapchainRecreateFailed", "swapchain").text("swapchain recreate failed after acquire");
             } else {
                 recreateDepthTexture(swapchain->extent());
             }
@@ -1315,9 +1315,9 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
         presented = device->present(swapchain, renderFinishedSemaphores[*index], *index);
     }
     if (!presented) {
-        TRACE_EVENT("Render", "SwapchainRecreate", "swapchain").text("swapchain out of date at present; recreating").field("reason", "present_failed");
+        LOG_EVENT("Render", "SwapchainRecreate", "swapchain").text("swapchain out of date at present; recreating").field("reason", "present_failed");
         if (!swapchain->recreate({.width = (uint32_t) snapshot.windowWidth, .height = (uint32_t) snapshot.windowHeight})) {
-            TRACE_ERROR("Render", "SwapchainRecreateFailed", "swapchain").text("swapchain recreate failed after present");
+            LOG_ERROR("Render", "SwapchainRecreateFailed", "swapchain").text("swapchain recreate failed after present");
         } else {
             recreateDepthTexture(swapchain->extent());
         }
@@ -1328,10 +1328,10 @@ auto Renderer::renderFrame(RenderSnapshot& snapshot) -> void {
 
     if (!firstFramePresented) {
         firstFramePresented = true;
-        TRACE_EVENT("Render", "FirstFramePresented", "frame")
-            .text(std::format("first frame presented (frame {}), {:.0f} ms after start", frame, trace::msSinceStart()))
+        LOG_EVENT("Render", "FirstFramePresented", "frame")
+            .text(std::format("first frame presented (frame {}), {:.0f} ms after start", frame, logging::msSinceStart()))
             .field("frame", (int64_t) frame)
-            .field("since_start_ms", trace::msSinceStart());
+            .field("since_start_ms", logging::msSinceStart());
     }
     currentFrame = (currentFrame + 1) % swapchain->imageCount();
 }

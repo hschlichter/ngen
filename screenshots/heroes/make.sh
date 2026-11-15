@@ -3,7 +3,7 @@
 #
 #   screenshots/heroes/make.sh [hero...]     # from the repository root; every hero when none is named
 #
-# Heroes: renderer, view, introspect, trace, config, tools, rhi. Needs the set variant built (./ngen-cli build) and the debug variant's
+# Heroes: renderer, view, introspect, log, cvars, tools, rhi. Needs the set variant built (./ngen-cli build) and the debug variant's
 # RHI examples (./_out/ngen-build -p linux-vulkan -c debug examples), the set variant's asset server running in the repository root
 # (./ngen-cli asset-server &), no other ngen-view running there, the streaming test world under assets/streamtest-world/, ImageMagick
 # (magick) and ffmpeg. Each hero writes its frames under _out/heroes/<hero>/ and composes them into screenshots/<library>_hero.png (the
@@ -92,22 +92,22 @@ hero_introspect() {
     magick "$out/introspect/shot.png" -strip -depth 8 $shots/introspect_hero.png
 }
 
-# The introspect window's Trace tab across a short run of the layered scene: the view's and the asset server's events merged by time.
-hero_trace() {
-    fresh trace
-    SDL_VIDEODRIVER=offscreen ./ngen-cli introspect --trace --frames=9000 --screenshot="$out/trace/shot.png" > "$out/trace.log" 2>&1 &
+# The introspect window's Log tab across a short run of the layered scene: the view's and the asset server's events merged by time.
+hero_log() {
+    fresh log
+    SDL_VIDEODRIVER=offscreen ./ngen-cli introspect --log --frames=9000 --screenshot="$out/log/shot.png" > "$out/log.log" 2>&1 &
     window=$!
     sleep 1
     view assets/layered/root.usda --frames=400 > /dev/null 2>&1
     wait $window
-    magick "$out/trace/shot.png" -strip -depth 8 $shots/trace_hero.png
+    magick "$out/log/shot.png" -strip -depth 8 $shots/log_hero.png
 }
 
 # The Cvars window over the castle, cropped to it.
-hero_config() {
-    fresh config
-    view "$world" --camera=/cameras/castle --show-ui --script=$shots/heroes/config.txt > "$out/config.log" 2>&1
-    magick "$out/config/shot.png" -crop 1100x640+0+0 +repage -strip -depth 8 $shots/config_hero.png
+hero_cvars() {
+    fresh cvars
+    view "$world" --camera=/cameras/castle --show-ui --script=$shots/heroes/cvars.txt > "$out/cvars.log" 2>&1
+    magick "$out/cvars/shot.png" -crop 1100x640+0+0 +repage -strip -depth 8 $shots/cvar_hero.png
 }
 
 # The debug camera above the castle with the streaming roots' bounds and the Streaming window.
@@ -128,7 +128,7 @@ hero_rhi() {
         -strip -depth 8 $shots/rhi_hero.png
 }
 
-heroes=${*:-renderer view introspect trace config tools rhi}
+heroes=${*:-renderer view introspect log cvars tools rhi}
 for hero in $heroes; do
     echo "hero: $hero"
     "hero_$hero"

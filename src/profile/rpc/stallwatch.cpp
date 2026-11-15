@@ -1,7 +1,7 @@
 #include "stallwatch.h"
 
+#include "log.h"
 #include "profile.h"
-#include "trace.h"
 
 #include <algorithm>
 #include <condition_variable>
@@ -62,7 +62,7 @@ auto check() -> void {
     auto ended = [nowNs](const Reported& reported) {
         const auto& info = reported.info;
         auto outerName = nameOf(reported.locationId);
-        TRACE_EVENT("Profile", "StallEnded", info.track)
+        LOG_EVENT("Profile", "StallEnded", info.track)
             .text(std::format("{} left {} after about {:.1f} s", info.track, outerName, seconds(reported.startNs, nowNs)))
             .field("track", info.track)
             .field("zone", outerName)
@@ -101,7 +101,7 @@ auto check() -> void {
         entry.info.seconds = seconds(stuck->startNs, nowNs);
         if (!same) {
             auto source = sourceLocationOf(stuck->locationId);
-            TRACE_WARNING("Profile", "Stall", stack.track)
+            LOG_WARNING("Profile", "Stall", stack.track)
                 .text(std::format("{} has been in {} for {:.1f} s ({}:{}); open zones, outermost first: {}", stack.track, entry.info.zone, entry.info.seconds, source.file, source.line, entry.info.stack))
                 .field("track", stack.track)
                 .field("zone", entry.info.zone)

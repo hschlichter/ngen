@@ -62,7 +62,7 @@
   <rect x="202" y="524" width="94" height="50" rx="7" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
   <text x="214" y="554.0" class="lib">profile</text>
   <rect x="306" y="524" width="76" height="50" rx="7" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
-  <text x="318" y="554.0" class="lib">trace</text>
+  <text x="318" y="554.0" class="lib">log</text>
   <rect x="392" y="524" width="85" height="50" rx="7" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>
   <text x="404" y="554.0" class="lib">cvar</text>
   <rect x="487" y="524" width="94" height="50" rx="7" fill="#ffffff" stroke="#ea580c" stroke-opacity="0.6"/>

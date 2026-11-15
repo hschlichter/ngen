@@ -12,14 +12,14 @@
 #include <string>
 #include <thread>
 
-namespace trace {
+namespace logging {
 
-// Streams the process's ring to RPC subscribers. A client calls trace.subscribe and then receives trace.events
+// Streams the process's ring to RPC subscribers. A client calls log.subscribe and then receives log.events
 // notifications: batches of events in seq order, sent every batchInterval or once batchEvents are waiting.
 //
 // A slow subscriber never stalls the process: while more than maxQueuedBytes wait to be written on its connection
 // nothing more is sent, and events the ring overwrites meanwhile are counted in the next batch's `dropped`.
-class TraceStream {
+class LogStream {
 public:
     static constexpr size_t batchEvents = 1024;
     static constexpr std::chrono::milliseconds batchInterval{50};
@@ -28,12 +28,12 @@ public:
     static constexpr size_t maxEventsPerNotification = 4096;
 
     // `process` names this process in every batch ("view:1234"). The server must outlive the stream.
-    TraceStream(RpcServer& server, std::string process);
-    TraceStream(const TraceStream&) = delete;
-    auto operator=(const TraceStream&) -> TraceStream& = delete;
-    ~TraceStream();
+    LogStream(RpcServer& server, std::string process);
+    LogStream(const LogStream&) = delete;
+    auto operator=(const LogStream&) -> LogStream& = delete;
+    ~LogStream();
 
-    // Answers trace.subscribe and trace.unsubscribe, on whatever thread the message arrived; false for any other
+    // Answers log.subscribe and log.unsubscribe, on whatever thread the message arrived; false for any other
     // message, which the caller handles.
     auto handle(RpcServer::ConnectionId connection, const rpc::Json& message) -> bool;
     // Forgets a closed connection's subscription.
@@ -59,4 +59,4 @@ private:
     std::thread thread;
 };
 
-} // namespace trace
+} // namespace logging

@@ -1,9 +1,9 @@
 #include "buffergrowth.h"
 
+#include "log.h"
 #include "profile.h"
 #include "rendercvars.h"
 #include "rhidevice.h"
-#include "trace.h"
 
 #include <algorithm>
 #include <format>
@@ -48,9 +48,9 @@ auto BufferGrowth::destroyBuffers(RhiDevice* device, std::vector<GrownBuffer>& m
 }
 
 auto BufferGrowth::failed(uint64_t needed, uint64_t capacity, uint64_t wanted) -> void {
-    // The reason is in the trace, from the device. Starting again at once would ask it for the same buffers every frame.
+    // The reason is in the log, from the device. Starting again at once would ask it for the same buffers every frame.
     failedFor = std::max<uint64_t>(needed, 1);
-    TRACE_ERROR("Render", "BufferGrowthFailed", status.name)
+    LOG_ERROR("Render", "BufferGrowthFailed", status.name)
         .text(std::format("{}: the buffers for {} couldn't all be made; it stays at {} until more than {} is needed", status.name, wanted, capacity, failedFor))
         .field("capacity", (int64_t) capacity)
         .field("wanted", (int64_t) wanted);
@@ -115,7 +115,7 @@ auto BufferGrowth::updateNow(RhiDevice* device, uint64_t needed, uint64_t capaci
             failed(needed, capacity, growingCapacity);
         } else if (growingCapacity > capacity || (policy == Behind::Sized && growingCapacity != capacity)) {
             install(growingCapacity, taken->made);
-            TRACE_EVENT("Render", "BufferGrown", status.name)
+            LOG_EVENT("Render", "BufferGrown", status.name)
                 .text(std::format("{} {} from {} to {} on a background job, started when {} were needed, ready {:.1f} ms after",
                                   status.name,
                                   growingCapacity > capacity ? "grown" : "made smaller",
@@ -166,7 +166,7 @@ auto BufferGrowth::updateNow(RhiDevice* device, uint64_t needed, uint64_t capaci
             waiting = true;
             waitingSinceNs = profile::now();
             status.waits++;
-            TRACE_EVENT("Render", "GrowthOnNeed", status.name)
+            LOG_EVENT("Render", "GrowthOnNeed", status.name)
                 .text(std::format("{} needs {} and has {}: a buffer for {} is being made on a background job, and what needs it waits", status.name, needed, capacity, growingCapacity))
                 .field("needed", (int64_t) needed)
                 .field("capacity", (int64_t) capacity)
@@ -204,7 +204,7 @@ auto BufferGrowth::updateNow(RhiDevice* device, uint64_t needed, uint64_t capaci
                 waiting = true;
                 waitingSinceNs = profile::now();
                 status.waits++;
-                TRACE_EVENT("Render", "GrowthOwnBuffer", status.name)
+                LOG_EVENT("Render", "GrowthOwnBuffer", status.name)
                     .text(std::format("{} needs {}, past its capacity of {}: its frames make a buffer of their own until it fits, and a growth to {} is on its way",
                                       status.name,
                                       needed,
@@ -224,7 +224,7 @@ auto BufferGrowth::updateNow(RhiDevice* device, uint64_t needed, uint64_t capaci
                 waiting = true;
                 waitingSinceNs = profile::now();
                 status.waits++;
-                TRACE_WARNING("Render", "GrowthBehind", status.name)
+                LOG_WARNING("Render", "GrowthBehind", status.name)
                     .text(std::format("{} needs {}, past its capacity of {}, before its growth (to {}) is ready: what doesn't fit waits for it", status.name, needed, capacity, growingCapacity))
                     .field("needed", (int64_t) needed)
                     .field("capacity", (int64_t) capacity)
@@ -235,7 +235,7 @@ auto BufferGrowth::updateNow(RhiDevice* device, uint64_t needed, uint64_t capaci
     if (waiting && needed <= capacity) {
         waiting = false;
         status.lastWaitMs = (double) (profile::now() - waitingSinceNs) * 1e-6;
-        TRACE_EVENT("Render", "GrowthReady", status.name)
+        LOG_EVENT("Render", "GrowthReady", status.name)
             .text(std::format("{} holds what it needs again ({} of {}), after {:.1f} ms {}",
                               status.name,
                               needed,

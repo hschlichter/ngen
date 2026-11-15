@@ -66,7 +66,7 @@ by hand and runs until Ctrl-C or SIGTERM:
 ```
 
 `--delay=<id pattern>:<ms>` (repeatable; `*` matches any run of characters) holds the answer for matching ids that long after packing, so a test
-can see what a client does while an asset is missing. The server traces each pattern as a warning at start-up and each held answer, so a run
+can see what a client does while an asset is missing. The server logs each pattern as a warning at start-up and each held answer, so a run
 with it can't be mistaken for a normal one. `asset.delay.set {pattern, ms}` changes them while the server runs (0 ms removes a pattern), and
 the `status` record lists them under `delays`.
 
@@ -105,14 +105,14 @@ is in, `_out/<platform>/<config>/`. It uses nothing from `src/build/`: its own c
   Each connection holding an asset that is out of date gets one `asset.changed` with those ids, every id of the file it holds (a USD file's
   layer pack, meshes and materials together). A connection whose last answer for an id was a failure is also told when the source goes back to
   what the cache holds (a broken edit undone). The server packs nothing for a notice: a client that still wants the asset requests it. A
-  connection is watched until it closes. The trace has `AssetChanged` (files, assets, clients told) and a line for changes that tell nobody.
-- **The trace.** The server's log is its trace (`server/assettrace.h`), printed one timestamped line per event like every process's: its
+  connection is watched until it closes. The log has `AssetChanged` (files, assets, clients told) and a line for changes that tell nobody.
+- **The log.** The server's log is its log (`server/assetlog.h`), printed one timestamped line per event like every process's: its
   rules and cache at start-up, clients connecting and leaving, each request with its asset count, per asset whether it was up to date, packed (time, size, inputs, hash) or failed
   (with the packer's output), and per request a summary when it is done (time, assets sent and bytes, held, failed). Redirect it to a file to keep
-  it: `./ngen-cli asset-server > /tmp/asset-server.log 2>&1 &`. Every line is a trace event (category `Asset`, type `Message`, the line in
-  `text`), streamed like any process's trace (`src/trace/README.md`), so `ngen-introspect` shows it next to the view's events. A request
+  it: `./ngen-cli asset-server > /tmp/asset-server.log 2>&1 &`. Every line is a log event (category `Asset`, type `Message`, the line in
+  `text`), streamed like any process's log (`src/log/README.md`), so `ngen-introspect` shows it next to the view's events. A request
   that fails (refused, no rule, no such file, the packer failed, and the packer's output) is a warning, on stderr; the rest is info, on stdout.
-- **The profiler** (`src/profile/README.md`): the server's threads are tracks (Main, RPC I/O, Trace I/O, Pack N, File Watcher, Cache Saver);
+- **The profiler** (`src/profile/README.md`): the server's threads are tracks (Main, RPC I/O, Log I/O, Pack N, File Watcher, Cache Saver);
   a request (`AssetRequest`), a pack task (`Pack`, and inside it a zone named after the rule), the wait for a packer process (`PackerRun`, group
   Wait), the cache's records and saves, deliveries and pumping are zones. It has the `profile` and `zones` records and answers
   `introspect.profile` (a Chrome trace of its history), and starts Tracy's client at launch. A packer is profiled too (a zone per stage: read,
@@ -155,7 +155,7 @@ A packer is a standalone program (`src/apps/packer<type>.cpp`) run with the same
 ```
 
 It reads `--source`, writes the packed asset to `--out`, and writes a Make-format depfile listing every file it read to `--depfile`. It exits
-nonzero, with a message on stdout or stderr, when it fails. What it prints on stdout when it succeeds is a warning, in the server's trace.
+nonzero, with a message on stdout or stderr, when it fails. What it prints on stdout when it succeeds is a warning, in the server's log.
 `pack/packer.h` parses the arguments.
 
 A packer with secondary outputs writes each to `secondaryOutputFile(out, fragment)` (`<out>#<fragment>`, `/` replaced by `.`) and lists them in
@@ -207,7 +207,7 @@ another file removed, so composition inside the file (internal references, node 
 defined inside a variant is read from such a stage with that variant selected (a session layer selects it), and its asset id is its variant
 path (`<file>#/asset{shape=a}Geom`).
 
-What the engine doesn't support is reported, not packed: a warning per prim in the layer pack, and on stdout, so in the server's trace. Inherits,
+What the engine doesn't support is reported, not packed: a warning per prim in the layer pack, and on stdout, so in the server's log. Inherits,
 specializes, relocates, layer offsets, collection-based bindings, time samples without a default value, value types the format has no
 form for, asset paths that don't resolve, and an `over` that authors geometry (a mesh is packed from the file that defines it).
 
@@ -230,7 +230,7 @@ waiting for packers. It is an ordinary client: from the root layer it follows wh
 nothing new turns up. What a pack names is the format's to say, so it sits with it: `namedAssets` (`pack/scenepack.h`) lists a layer pack's
 sublayers, references and payloads, meshes, materials and asset-valued attributes (such as a material input's texture), and a material
 pack's textures; a change to what the format can name changes it in the same place. Nothing is composed, so every LOD level and every variant is packed, not only what a view would
-reach. Each asset streams back as for a view (the bytes are dropped once read); the server's trace and records show it as any client. It
+reach. Each asset streams back as for a view (the bytes are dropped once read); the server's log and records show it as any client. It
 prints its progress per batch and, at the end, the assets by kind, packed and from the cache, and every failure with the server's errors;
 it exits 1 when one failed. The streamtest world: 2,745 assets (593 layers, 2,058 meshes, 24 materials, 70 textures) in 9.5 s from a
 mostly warm cache, 8.3 GiB streamed.

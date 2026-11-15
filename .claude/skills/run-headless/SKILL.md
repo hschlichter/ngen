@@ -1,13 +1,13 @@
 ---
 name: run-headless
-description: Build and run ngen-view headless, read its records and its trace through ngen-introspect to verify engine behavior. Use when running the app, confirming a change works, or checking rendering/scene/material behavior — headless runs traced with ngen-introspect are this project's primary verification loop (the app is a Vulkan window; this machine cannot screenshot it).
+description: Build and run ngen-view headless, read its records and its log through ngen-introspect to verify engine behavior. Use when running the app, confirming a change works, or checking rendering/scene/material behavior — headless runs logged with ngen-introspect are this project's primary verification loop (the app is a Vulkan window; this machine cannot screenshot it).
 ---
 
 # Run ngen headless and read the evidence
 
 The verification loop for engine changes: build, run headless with a script that records the values the change is about, while
-`ngen-introspect trace` records every process's flow and messages; read both, judge whether the intended behavior actually happened. Records
-hold the numbers (passes, draws, textures, culling, memory); the trace holds what happened in what order, and the warnings and errors, which a
+`ngen-introspect log` records every process's flow and messages; read both, judge whether the intended behavior actually happened. Records
+hold the numbers (passes, draws, textures, culling, memory); the log holds what happened in what order, and the warnings and errors, which a
 clean run has none of. Prefer this over screenshots or "it compiles".
 
 ## Build
@@ -34,30 +34,30 @@ across runs (it packs only what a view requests, and caches the result in `.ngen
 
 ```sh
 ./ngen-cli asset-server > /tmp/asset-server.log 2>&1 &        # the set variant's server; leave it running
-./ngen-cli introspect trace --until-exit=view --output=/tmp/trace.jsonl & trace=$!   # first; records until the view has exited
+./ngen-cli introspect log --until-exit=view --output=/tmp/log.jsonl & log=$!   # first; records until the view has exited
 SDL_VIDEODRIVER=offscreen ./ngen-cli view <scene> --frames=200
-wait $trace                                                     # the trace file is written when the view has gone
+wait $log                                                     # the log file is written when the view has gone
 ```
 
 Rebuild and restart the asset server after changing `pack.cpp` or anything under `src/asset/server/`. `./ngen-cli introspect get asset status`
 shows what it is doing (also `rules`, `cache`, `requests`, `clients`); with servers for several variants running, name one by pid (`asset:<pid>`,
 from `./ngen-cli introspect list`).
 
-- Start the trace before the view. It takes events from its own start, from the view and the asset server alike, merged by time; the file
+- Start the log before the view. It takes events from its own start, from the view and the asset server alike, merged by time; the file
   is written, sorted, once the view has exited and its last events are in (`ProcessExiting` is the view's last event). Without
   `--until-exit` it runs until Ctrl-C. Filters: `--category=`, `--type=`, `--process=` (comma lists), `--severity=warning|error`; `--history`
   takes everything the processes' rings still hold.
-- A view's trace is short: the start-up timeline (each step with its time, up to `FirstFramePresented`), the files the run wrote, exit — a
-  few dozen events for a clean run, however many frames. Nothing is traced per frame; per-frame numbers are records. The console shows the
+- A view's log is short: the start-up timeline (each step with its time, up to `FirstFramePresented`), the files the run wrote, exit — a
+  few dozen events for a clean run, however many frames. Nothing is logged per frame; per-frame numbers are records. The console shows the
   same lines, so `./ngen-cli view … 2>&1 | less` reads a run without the tool; for a slow start, look at which step's `ms` is large.
 - `ngen-cli view` replaces itself with the set variant's `ngen-view`, so `timeout`, signals and exit codes behave exactly as with the binary.
   Prefer `--frames` to a `timeout` kill, so the view exits cleanly and its last events are sent.
-- Write the trace to `/tmp` or the session scratchpad, not into the repo.
+- Write the log to `/tmp` or the session scratchpad, not into the repo.
 - The view's first frame comes at once; the scene arrives while it runs. `--frames`, `--screenshot` and script frame numbers count from when
-  the scene is first resident (everything it wants loaded, uploaded and drawn; the trace's `SceneResident`), so a script sees the loaded
+  the scene is first resident (everything it wants loaded, uploaded and drawn; the log's `SceneResident`), so a script sees the loaded
   scene. `--no-wait-resident` counts from start-up instead, to look at loading itself. Console commands that change what is drawn (`lod`, `purposes`,
   `repack`) hold the script's count until the change is drawn, and `wait-resident` does the same. Sponza takes a few seconds to be resident:
-  give the trace command a `timeout` above that if you add one.
+  give the log command a `timeout` above that if you add one.
 
 ## See and drive the frame
 
@@ -144,17 +144,17 @@ SDL_VIDEODRIVER=offscreen ./ngen-cli view <scene> &          # keeps running; no
 
 ## Inspect
 
-Read the records and the trace with `jq`. Typical checks:
+Read the records and the log with `jq`. Typical checks:
 
 ```sh
-jq -c 'select(.severity != "info") | {process, severity, type, text}' /tmp/trace.jsonl   # warnings and errors; empty on a clean run
-jq -r '[.process, .type, .text] | @tsv' /tmp/trace.jsonl                            # the run's flow
+jq -c 'select(.severity != "info") | {process, severity, type, text}' /tmp/log.jsonl   # warnings and errors; empty on a clean run
+jq -r '[.process, .type, .text] | @tsv' /tmp/log.jsonl                            # the run's flow
 jq -c 'select(.record == "render") | [.value.textures[] | "\(.width)x\(.height)"] | group_by(.) | map({(.[0]): length}) | add' /tmp/records.jsonl
 ```
 
 If the value under test is not in a record, add it to one (`registerViewRecords` in `src/view/viewcommands.cpp`). If a step of the flow or
-a failure is not visible in the trace, add a `TRACE_EVENT`, `TRACE_WARNING` or `TRACE_ERROR` at that point (conventions in
-`src/trace/README.md`: flow and messages, not data; stable field values, no pointers/handles), rebuild, rerun. Events added for a change stay
+a failure is not visible in the log, add a `LOG_EVENT`, `LOG_WARNING` or `LOG_ERROR` at that point (conventions in
+`src/log/README.md`: flow and messages, not data; stable field values, no pointers/handles), rebuild, rerun. Events added for a change stay
 in the code — there is no "remove when done" step.
 
 ## Test scenes

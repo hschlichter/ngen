@@ -129,27 +129,27 @@ auto AssetServer::start(const Options& startOptions) -> std::expected<void, std:
         for (const auto& extension : rule.extensions) {
             extensions += (extensions.empty() ? "" : " ") + extension;
         }
-        traceLine("rule {}: {} -> {}", rule.name, extensions, rule.packer);
+        logLine("rule {}: {} -> {}", rule.name, extensions, rule.packer);
     }
-    traceLine("cache {}: {} assets recorded", cacheDirectory.string(), cache.size());
+    logLine("cache {}: {} assets recorded", cacheDirectory.string(), cache.size());
     delays = options.delays;
     for (const auto& delay : delays) {
-        traceWarning("test aid: answers for {} are held {} ms (--delay)", delay.pattern, delay.ms);
+        logWarning("test aid: answers for {} are held {} ms (--delay)", delay.pattern, delay.ms);
     }
     auto workers = std::max(1u, std::thread::hardware_concurrency());
     jobs = std::make_unique<PackJobs>(workers);
 
     addRecords();
-    watcher.start([this](std::vector<fs::path> files) { onFilesChanged(std::move(files)); }, [](const std::string& message) { traceWarning("watch: {}", message); }, options.pollOnly);
-    traceLine("watching the sources of what clients receive, {}", options.pollOnly ? "polled once a second" : "through inotify");
-    traceStream = std::make_unique<trace::TraceStream>(rpc, std::format("asset:{}", getpid()));
+    watcher.start([this](std::vector<fs::path> files) { onFilesChanged(std::move(files)); }, [](const std::string& message) { logWarning("watch: {}", message); }, options.pollOnly);
+    logLine("watching the sources of what clients receive, {}", options.pollOnly ? "polled once a second" : "through inotify");
+    logStream = std::make_unique<logging::LogStream>(rpc, std::format("asset:{}", getpid()));
     rpc.setRequestHandler([this](RpcServer::ConnectionId connection, const rpc::Json& message, std::vector<std::byte>) {
         onMessage(connection, message);
     });
     rpc.setConnectionHandler([this](RpcServer::ConnectionId connection, bool connected) {
-        traceLine("client {} {}", connection, connected ? "connected" : "disconnected");
+        logLine("client {} {}", connection, connected ? "connected" : "disconnected");
         if (!connected) {
-            traceStream->disconnected(connection);
+            logStream->disconnected(connection);
             forget(connection);
         }
         std::lock_guard lock(streamMutex);
@@ -186,11 +186,11 @@ auto AssetServer::start(const Options& startOptions) -> std::expected<void, std:
 auto AssetServer::stop() -> void {
     // First: the watcher's thread sends notices through rpc.
     watcher.stop();
-    if (traceStream) {
-        traceStream->finish(std::chrono::seconds(1));
+    if (logStream) {
+        logStream->finish(std::chrono::seconds(1));
     }
     rpc.stop();
-    traceStream.reset();
+    logStream.reset();
     jobs.reset();
     cache.flush();
     if (!discoveryFile.empty()) {
@@ -200,7 +200,7 @@ auto AssetServer::stop() -> void {
 }
 
 auto AssetServer::onMessage(RpcServer::ConnectionId connection, const rpc::Json& message) -> void {
-    if (traceStream->handle(connection, message)) {
+    if (logStream->handle(connection, message)) {
         return;
     }
     if (rpc::messageKind(message) != rpc::MessageKind::Request) {
@@ -234,9 +234,9 @@ auto AssetServer::onMessage(RpcServer::ConnectionId connection, const rpc::Json&
             }
         }
         if (ms > 0) {
-            traceWarning("test aid: answers for {} are held {} ms (asset.delay.set)", pattern, ms);
+            logWarning("test aid: answers for {} are held {} ms (asset.delay.set)", pattern, ms);
         } else {
-            traceLine("test aid: answers for {} are no longer held", pattern);
+            logLine("test aid: answers for {} are no longer held", pattern);
         }
         responder.respond(rpc::Json::object());
     } else if (method == "introspect.plot") {
@@ -257,7 +257,7 @@ auto AssetServer::onMessage(RpcServer::ConnectionId connection, const rpc::Json&
     } else if (serveRecordsCall(records, method, params, responder)) {
         return;
     } else {
-        traceWarning("client {}: unknown method {}", connection, method);
+        logWarning("client {}: unknown method {}", connection, method);
         rpc.send(connection, rpc::makeError(id, rpc::methodNotFound, std::format("no method {}", method)));
     }
 }
@@ -265,7 +265,7 @@ auto AssetServer::onMessage(RpcServer::ConnectionId connection, const rpc::Json&
 auto AssetServer::onAssetRequest(RpcServer::ConnectionId connection, const rpc::Json& id, const rpc::Json& params) -> void {
     PROFILE_ZONE_DETAIL("AssetRequest", Assets);
     if (!params.contains("ids") || !params["ids"].is_array()) {
-        traceWarning("client {}: asset.request without an \"ids\" array", connection);
+        logWarning("client {}: asset.request without an \"ids\" array", connection);
         rpc.send(connection, rpc::makeError(id, rpc::invalidParams, "asset.request needs \"ids\", an array of asset ids"));
         return;
     }
@@ -281,15 +281,15 @@ auto AssetServer::onAssetRequest(RpcServer::ConnectionId connection, const rpc::
     bool force = params.value("force", false);
     auto request = nextRequest++;
     if (ids.empty()) {
-        traceLine("client {} request {}: no assets", connection, request);
+        logLine("client {} request {}: no assets", connection, request);
     } else if (ids.size() == 1) {
-        traceLine("client {} request {}: {}{}", connection, request, ids.front(), force ? ", forced repack" : "");
+        logLine("client {} request {}: {}{}", connection, request, ids.front(), force ? ", forced repack" : "");
     } else {
-        traceLine("client {} request {}: {} assets{}", connection, request, ids.size(), force ? ", forced repack" : "");
+        logLine("client {} request {}: {} assets{}", connection, request, ids.size(), force ? ", forced repack" : "");
     }
     if (!ids.empty()) {
         std::lock_guard lock(requestMutex);
-        requests[request] = RequestTrace{.connection = connection, .assets = ids.size(), .remaining = ids.size(), .start = std::chrono::steady_clock::now()};
+        requests[request] = RequestLog{.connection = connection, .assets = ids.size(), .remaining = ids.size(), .start = std::chrono::steady_clock::now()};
     }
     rpc.send(connection, rpc::makeResult(id, {{"request", request}}));
     for (const auto& asset : ids) {
@@ -403,12 +403,12 @@ auto AssetServer::requestsRecord() -> rpc::Json {
     for (const auto& entry : finishedRequests) {
         finished.push_back({
             {"request", entry.request},
-            {"connection", entry.trace.connection},
-            {"assets", entry.trace.assets},
-            {"sent", entry.trace.sent},
-            {"held", entry.trace.held},
-            {"failed", entry.trace.failed},
-            {"bytes", entry.trace.bytes},
+            {"connection", entry.log.connection},
+            {"assets", entry.log.assets},
+            {"sent", entry.log.sent},
+            {"held", entry.log.held},
+            {"failed", entry.log.failed},
+            {"bytes", entry.log.bytes},
             {"ms", entry.ms},
         });
     }
@@ -465,7 +465,7 @@ auto AssetServer::subscribe(const std::string& id, Subscriber subscriber, int64_
         auto it = inFlight.find(id);
         if (it != inFlight.end()) {
             // Already being packed: the result goes to this request too.
-            traceLine("  {}  already in progress; request {} waits for it", id, subscriber.request);
+            logLine("  {}  already in progress; request {} waits for it", id, subscriber.request);
             it->second.push_back(subscriber);
             return;
         }
@@ -486,7 +486,7 @@ auto AssetServer::subscribe(const std::string& id, Subscriber subscriber, int64_
             }
         }
         if (heldMs > 0) {
-            traceLine("  {}  answer held {} ms (--delay)", id, heldMs);
+            logLine("  {}  answer held {} ms (--delay)", id, heldMs);
             std::this_thread::sleep_for(std::chrono::milliseconds(heldMs));
         }
         deliver(id, outcome);
@@ -501,14 +501,14 @@ auto AssetServer::pack(const std::string& id, int64_t forceRequest) -> Outcome {
     auto primary = id.substr(0, hash);
     if (!validId(primary)) {
         outcome.errors.push_back(std::format("{} is not an asset id: a relative path below the server's directory", id));
-        traceWarning("  {}  refused: not a relative path below the server's directory", id);
+        logWarning("  {}  refused: not a relative path below the server's directory", id);
         return outcome;
     }
     auto extension = fs::path(primary).extension().string();
     auto ruleIt = ruleByExtension.find(extension);
     if (ruleIt == ruleByExtension.end()) {
         outcome.errors.push_back(std::format("{}: no pack rule for '{}' files", id, extension));
-        traceWarning("  {}  failed: no pack rule for '{}' files", id, extension);
+        logWarning("  {}  failed: no pack rule for '{}' files", id, extension);
         return outcome;
     }
     const auto& rule = rules[ruleIt->second];
@@ -517,7 +517,7 @@ auto AssetServer::pack(const std::string& id, int64_t forceRequest) -> Outcome {
     std::error_code ec;
     if (!fs::is_regular_file(primary, ec)) {
         outcome.errors.push_back(std::format("{}: no such file", primary));
-        traceWarning("  {}  failed: no such file", id);
+        logWarning("  {}  failed: no such file", id);
         return outcome;
     }
     auto key = jobKey(rule);
@@ -556,11 +556,11 @@ auto AssetServer::pack(const std::string& id, int64_t forceRequest) -> Outcome {
     }
     if (!forced && upToDate()) {
         outcome.packed = packedByThisRequest;
-        traceLine("  {}  {} ({})", id, packedByThisRequest ? "packed by this forced request" : "up to date", hashText(outcome.hash));
+        logLine("  {}  {} ({})", id, packedByThisRequest ? "packed by this forced request" : "up to date", hashText(outcome.hash));
         return outcome;
     }
     if (forced) {
-        traceLine("  {}  repack forced", id);
+        logLine("  {}  repack forced", id);
     }
     auto ran = runPacker(primary, rule, key);
     if (!ran.ok) {
@@ -569,7 +569,7 @@ auto AssetServer::pack(const std::string& id, int64_t forceRequest) -> Outcome {
     }
     if (!upToDate()) {
         outcome.errors.push_back(std::format("{}: packing {} wrote no such output", id, primary));
-        traceWarning("  {}  failed: packing {} wrote no such output", id, primary);
+        logWarning("  {}  failed: packing {} wrote no such output", id, primary);
         return outcome;
     }
     outcome.packed = true;
@@ -602,7 +602,7 @@ auto AssetServer::runPacker(const std::string& primary, const PackRule& rule, ui
     }
     // A job writes its secondary outputs afresh; an earlier run's list would name files that may no longer exist.
     clearSecondaryOutputs(output);
-    traceLine("  {}  packing with {}", primary, rule.packer);
+    logLine("  {}  packing with {}", primary, rule.packer);
     packerRuns++;
     auto started = std::chrono::steady_clock::now();
     ProcessResult result;
@@ -614,15 +614,15 @@ auto AssetServer::runPacker(const std::string& primary, const PackRule& rule, ui
     if (result.exitCode != 0) {
         outcome.errors = splitLines(result.output);
         outcome.errors.push_back(std::format("{} exited with {}", rule.packer, result.exitCode));
-        traceWarning("  {}  failed after {} ms: {} exited with {}", primary, millisSince(started), rule.packer, result.exitCode);
+        logWarning("  {}  failed after {} ms: {} exited with {}", primary, millisSince(started), rule.packer, result.exitCode);
         for (const auto& line : splitLines(result.output)) {
-            traceWarning("  {}    {}", primary, line);
+            logWarning("  {}    {}", primary, line);
         }
         return outcome;
     }
     // A packer's output on success is its warnings: shown, the job still succeeds.
     for (const auto& line : splitLines(result.output)) {
-        traceWarning("  {}    {}", primary, line);
+        logWarning("  {}    {}", primary, line);
     }
     std::vector<std::string> inputs = {primary};
     for (const auto& dep : parseDepfile(depfile)) {
@@ -635,7 +635,7 @@ auto AssetServer::runPacker(const std::string& primary, const PackRule& rule, ui
     auto hash = cache.record(primary, key, packer, inputs, output, secondaries);
     if (!hash) {
         outcome.errors.push_back(std::format("{}: cannot hash the packer's inputs or outputs", primary));
-        traceWarning("  {}  failed: cannot hash the packer's inputs or outputs", primary);
+        logWarning("  {}  failed: cannot hash the packer's inputs or outputs", primary);
         return outcome;
     }
     outcome.ok = true;
@@ -645,15 +645,15 @@ auto AssetServer::runPacker(const std::string& primary, const PackRule& rule, ui
     std::error_code ec;
     auto size = fs::file_size(output, ec);
     if (secondaries.empty()) {
-        traceLine("  {}  packed in {} ms, {}, {} inputs ({})", primary, millisSince(started), bytesText(ec ? 0 : size), inputs.size(), hashText(*hash));
+        logLine("  {}  packed in {} ms, {}, {} inputs ({})", primary, millisSince(started), bytesText(ec ? 0 : size), inputs.size(), hashText(*hash));
     } else {
-        traceLine("  {}  packed in {} ms, {} and {} more outputs, {} inputs ({})",
-                  primary,
-                  millisSince(started),
-                  bytesText(ec ? 0 : size),
-                  secondaries.size(),
-                  inputs.size(),
-                  hashText(*hash));
+        logLine("  {}  packed in {} ms, {} and {} more outputs, {} inputs ({})",
+                primary,
+                millisSince(started),
+                bytesText(ec ? 0 : size),
+                secondaries.size(),
+                inputs.size(),
+                hashText(*hash));
     }
     return outcome;
 }
@@ -690,7 +690,7 @@ auto AssetServer::deliver(const std::string& id, const Outcome& outcome) -> void
             if (!read) {
                 rpc.send(subscriber.connection,
                          rpc::makeNotification("asset.failed", {{"request", subscriber.request}, {"id", id}, {"errors", {std::format("cannot read {}", outcome.path)}}, {"ms", outcome.ms}}));
-                traceWarning("  {}  failed: cannot read {}", id, outcome.path);
+                logWarning("  {}  failed: cannot read {}", id, outcome.path);
                 answered(subscriber.request, Answer::Failed, 0);
                 continue;
             }
@@ -910,14 +910,14 @@ auto AssetServer::onFilesChanged(std::vector<fs::path> files) -> void {
         told += restoredTold.size();
     }
     if (notices.empty()) {
-        traceLine("changed: {}; content unchanged, nothing to tell", fileList);
+        logLine("changed: {}; content unchanged, nothing to tell", fileList);
         return;
     }
     for (const auto& [connection, ids] : notices) {
         rpc.send(connection, rpc::makeNotification("asset.changed", {{"ids", ids}}));
         noticesSent++;
     }
-    TRACE_EVENT("Asset", "AssetChanged", "asset-server")
+    LOG_EVENT("Asset", "AssetChanged", "asset-server")
         .text(std::format("changed: {}; {} asset{} out of date, {} client{} told", fileList, told, told == 1 ? "" : "s", notices.size(), notices.size() == 1 ? "" : "s"))
         .field("files", (int64_t) files.size())
         .field("assets", (int64_t) told)
@@ -942,10 +942,10 @@ auto AssetServer::answered(int64_t request, Answer answer, uint64_t bytes) -> vo
     if (--entry.remaining > 0) {
         return;
     }
-    traceLine("client {} request {}: done in {} ms; {} sent ({}), {} already held, {} failed", entry.connection, request, millisSince(entry.start), entry.sent, bytesText(entry.bytes), entry.held, entry.failed);
+    logLine("client {} request {}: done in {} ms; {} sent ({}), {} already held, {} failed", entry.connection, request, millisSince(entry.start), entry.sent, bytesText(entry.bytes), entry.held, entry.failed);
     finishedRequests.push_back({
         .request = request,
-        .trace = entry,
+        .log = entry,
         .ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - entry.start).count(),
     });
     if (finishedRequests.size() > finishedRequestsKept) {

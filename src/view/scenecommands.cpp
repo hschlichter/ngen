@@ -2,9 +2,9 @@
 
 #include "assetclient.h"
 #include "camera.h"
+#include "log.h"
 #include "renderthread.h"
 #include "renderworld.h"
-#include "trace.h"
 #include "viewpicking.h"
 #include "viewscene.h"
 
@@ -471,7 +471,7 @@ auto registerSceneCommands(RpcRegistry& registry, ConsoleCommands& console, RpcR
             auto y = (uint32_t) std::max(0, p["y"].get<int>());
             view.picking.request(x, y, [&view, responder](std::optional<uint32_t> instance) mutable {
                 view.selectedPath = instance ? view.scene.instancePath(*instance) : std::string();
-                TRACE_EVENT("Engine", "Picked", view.selectedPath.empty() ? "(nothing)" : view.selectedPath)
+                LOG_EVENT("Engine", "Picked", view.selectedPath.empty() ? "(nothing)" : view.selectedPath)
                     .text(view.selectedPath.empty() ? std::string("picked nothing") : std::format("picked {}", view.selectedPath))
                     .field("prim", view.selectedPath);
                 responder.respond({{"prim", view.selectedPath}});
@@ -569,7 +569,7 @@ auto registerSceneCommands(RpcRegistry& registry, ConsoleCommands& console, RpcR
                 return;
             }
             auto assets = view.scene.assetsUnder(path);
-            TRACE_EVENT("Engine", "AssetsOf", path).text(std::format("{} uses {} assets", path, assets.size())).field("assets", (int64_t) assets.size());
+            LOG_EVENT("Engine", "AssetsOf", path).text(std::format("{} uses {} assets", path, assets.size())).field("assets", (int64_t) assets.size());
             responder.respond({{"prim", path}, {"assets", assets}});
         });
     registry.add({.name = "view.quit", .summary = "Stop the view after this frame.", .result = "{}"}, [&view](const Json&, RpcResponder responder) {

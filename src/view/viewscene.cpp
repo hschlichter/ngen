@@ -1,10 +1,10 @@
 #include "viewscene.h"
 
 #include "assetclient.h"
+#include "log.h"
 #include "packedtexture.h"
 #include "profile.h"
 #include "scenepack.h"
-#include "trace.h"
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -320,7 +320,7 @@ auto ViewScene::apply(Request& request) -> void {
         }
         if (heuristic->prefer && *heuristic->prefer != lodPreferenceNow) {
             lodPreferenceNow = *heuristic->prefer;
-            TRACE_EVENT("Scene", "LodPreferenceChanged", id).text(std::format("LOD roots measure by {} first", lodPreferenceName(lodPreferenceNow))).field("prefer", std::string(lodPreferenceName(lodPreferenceNow)));
+            LOG_EVENT("Scene", "LodPreferenceChanged", id).text(std::format("LOD roots measure by {} first", lodPreferenceName(lodPreferenceNow))).field("prefer", std::string(lodPreferenceName(lodPreferenceNow)));
             refreshLodGroups({});
             placeNeeded = true;
         }
@@ -338,7 +338,7 @@ auto ViewScene::apply(Request& request) -> void {
             }
         }
         streamingChanged = true;
-        TRACE_EVENT("Scene", "StreamingCountersReset", id).text("streaming counters reset");
+        LOG_EVENT("Scene", "StreamingCountersReset", id).text("streaming counters reset");
     } else if (auto* tuningRequest = std::get_if<TuningRequest>(&request)) {
         applyTuning(*tuningRequest);
     } else if (auto* purpose = std::get_if<PurposeRequest>(&request)) {
@@ -384,7 +384,7 @@ auto ViewScene::applyOpen(const std::string& sceneId) -> void {
     reportedReleasedMeshes = 0;
     reportedReleasedBytes = 0;
     openedAt = std::chrono::steady_clock::now();
-    TRACE_EVENT("Scene", "SceneRequested", sceneId.empty() ? "(empty scene)" : sceneId).text(sceneId.empty() ? std::string("an empty scene") : std::format("scene {} requested", sceneId));
+    LOG_EVENT("Scene", "SceneRequested", sceneId.empty() ? "(empty scene)" : sceneId).text(sceneId.empty() ? std::string("an empty scene") : std::format("scene {} requested", sceneId));
     composeNeeded = !sceneId.empty();
     placeNeeded = true;
 }
@@ -442,7 +442,7 @@ auto ViewScene::applyRefresh(const std::vector<std::string>& ids, bool force) ->
         }
     }
     requestAssets(wanted, force);
-    TRACE_EVENT("Scene", "AssetsRefreshRequested", id)
+    LOG_EVENT("Scene", "AssetsRefreshRequested", id)
         .text(std::format("{} assets {} ({} of the scene's)", wanted.size(), force ? "to repack" : "changed at their source, fetched again", sceneAssets))
         .field("forced", force)
         .field("assets", (int64_t) wanted.size())
@@ -472,11 +472,11 @@ auto ViewScene::receive(const std::string& assetId) -> void {
             reason += reason.empty() ? line : "; " + line;
         }
         if (refreshed) {
-            TRACE_WARNING("Scene", "SceneAssetFailed", assetId).text(std::format("{}: fetching it again failed, the scene keeps what it had: {}", assetId, reason.empty() ? std::string("no reason given") : reason));
+            LOG_WARNING("Scene", "SceneAssetFailed", assetId).text(std::format("{}: fetching it again failed, the scene keeps what it had: {}", assetId, reason.empty() ? std::string("no reason given") : reason));
             return;
         }
         failedAssets.insert(assetId);
-        TRACE_WARNING("Scene", "SceneAssetFailed", assetId).text(std::format("{} failed: {}", assetId, reason.empty() ? std::string("no reason given") : reason));
+        LOG_WARNING("Scene", "SceneAssetFailed", assetId).text(std::format("{} failed: {}", assetId, reason.empty() ? std::string("no reason given") : reason));
         if (kind == AssetKind::Layer && composer) {
             composer->markFailed(assetId);
             composeNeeded = true;
@@ -491,7 +491,7 @@ auto ViewScene::receive(const std::string& assetId) -> void {
     auto packKind = scenePackKind(asset->bytes);
     if (packKind && *packKind == ScenePackKind::Layer) {
         if (auto error = composer->addPack(assetId, asset->bytes)) {
-            TRACE_WARNING("Scene", "SceneAssetFailed", assetId).text(*error);
+            LOG_WARNING("Scene", "SceneAssetFailed", assetId).text(*error);
             composer->markFailed(assetId);
         }
         composeNeeded = true;
@@ -545,7 +545,7 @@ auto ViewScene::receive(const std::string& assetId) -> void {
         }
     } else {
         failedAssets.insert(assetId);
-        TRACE_WARNING("Scene", "SceneAssetFailed", assetId).text(std::format("{} isn't a layer, mesh, material or texture pack", assetId));
+        LOG_WARNING("Scene", "SceneAssetFailed", assetId).text(std::format("{} isn't a layer, mesh, material or texture pack", assetId));
     }
     // A placement waiting for it is built again.
     arrived.insert(assetId);
@@ -576,7 +576,7 @@ auto ViewScene::compose() -> void {
     stats.levelsHeld = composed.levelsHeld;
     stats.contentsReached = composed.contentsReached;
     stats.releasedContents += composed.released;
-    traceCompleted();
+    logCompleted();
     for (const auto& needed : needs) {
         if (requestedPacks.insert(needed).second) {
             fresh.emplace_back(needed, AssetKind::Layer);
@@ -590,11 +590,11 @@ auto ViewScene::compose() -> void {
     // Every layer pack it names has been answered: the composition is the scene's.
     composeReported = true;
     for (const auto& message : composer->messages()) {
-        TRACE_WARNING("Scene", "CompositionMessage", id).text(message);
+        LOG_WARNING("Scene", "CompositionMessage", id).text(message);
     }
     const auto& world = composer->world();
     if (world.layerStack.empty()) {
-        TRACE_ERROR("Scene", "SceneFailed", id).text(std::format("scene {}: its root layer can't be had", id));
+        LOG_ERROR("Scene", "SceneFailed", id).text(std::format("scene {}: its root layer can't be had", id));
     }
     PROFILE_ZONE_DETAIL("CountEntities", Scene);
     size_t entities = 0;
@@ -604,7 +604,7 @@ auto ViewScene::compose() -> void {
     });
     auto ms = msSince(start);
     stats.lastComposeMs = ms;
-    TRACE_EVENT("Scene", "PacksComposed", id)
+    LOG_EVENT("Scene", "PacksComposed", id)
         .text(std::format("{} composed: {} layer packs, {} prims, {} prototypes, {:.0f} ms after it was requested", id, requestedPacks.size(), entities, world.prototypeCount(), msSince(openedAt)))
         .field("packs", (int64_t) requestedPacks.size())
         .field("prims", (int64_t) entities)
@@ -627,7 +627,7 @@ auto ViewScene::reportAssets() -> void {
         return;
     }
     assetsReported = true;
-    TRACE_EVENT("Scene", "SceneAssetsReceived", id)
+    LOG_EVENT("Scene", "SceneAssetsReceived", id)
         .text(std::format("{} meshes, {} materials and {} textures drawn; {} answers since the last report, {:.0f} ms after the scene was requested", meshPacks.size(), materialPacks.size(), texturePacks.size(), assetsSinceReport, msSince(openedAt)))
         .field("meshes", (int64_t) meshPacks.size())
         .field("materials", (int64_t) materialPacks.size())
@@ -768,7 +768,7 @@ auto ViewScene::applyTuning(const TuningRequest& request) -> void {
     } else if (request.reset || request.thresholds) {
         auto root = authoredRootOf(request.path);
         if (!root) {
-            TRACE_WARNING("Scene", "LodTuningRefused", request.path).text(std::format("{}: no LOD root placed at this path, nothing to override", request.path));
+            LOG_WARNING("Scene", "LodTuningRefused", request.path).text(std::format("{}: no LOD root placed at this path, nothing to override", request.path));
         } else if (request.reset) {
             next->overrides.erase(root->first);
             changedRoot = root->first;
@@ -779,7 +779,7 @@ auto ViewScene::applyTuning(const TuningRequest& request) -> void {
             auto domain = unloadOnly ? LodDomain::Streaming : LodDomain::Imaging;
             auto index = request.heuristic ? (int32_t) *request.heuristic : chooseLodHeuristic(heuristics, domain, lodPreferenceNow);
             if (index < 0 || (size_t) index >= heuristics.size()) {
-                TRACE_WARNING("Scene", "LodTuningRefused", request.path).text(std::format("{}: no heuristic {} to override ({} authored)", request.path, index, heuristics.size()));
+                LOG_WARNING("Scene", "LodTuningRefused", request.path).text(std::format("{}: no heuristic {} to override ({} authored)", request.path, index, heuristics.size()));
             } else {
                 auto kind = heuristics[(size_t) index].kind;
                 const auto& asked = *request.thresholds;
@@ -795,10 +795,10 @@ auto ViewScene::applyTuning(const TuningRequest& request) -> void {
                     }
                 }
                 if ((asked.thresholds && !lodThresholdsOrdered(kind, *asked.thresholds)) || (asked.blendThresholds && !lodThresholdsOrdered(kind, *asked.blendThresholds))) {
-                    TRACE_WARNING("Scene", "LodTuningRefused", request.path)
+                    LOG_WARNING("Scene", "LodTuningRefused", request.path)
                         .text(std::format("{}: thresholds must {} as UsdLod reads them; nothing changed", request.path, kind == LodHeuristicKind::Distance ? "ascend" : "descend"));
                 } else if (!unloadFits) {
-                    TRACE_WARNING("Scene", "LodTuningRefused", request.path)
+                    LOG_WARNING("Scene", "LodTuningRefused", request.path)
                         .text(std::format("{}: unload thresholds must be one per load threshold ({}), in order, each at or past its load threshold; nothing changed", request.path, load.size()));
                 } else {
                     auto& entry = next->overrides[root->first][(uint32_t) index];
@@ -820,7 +820,7 @@ auto ViewScene::applyTuning(const TuningRequest& request) -> void {
         return;
     }
     tuning = std::move(next);
-    TRACE_EVENT("Scene", "LodTuningChanged", id)
+    LOG_EVENT("Scene", "LodTuningChanged", id)
         .text(std::format("LOD tuning: bias {:.2f}, hysteresis {:.0f}%, blending {}, {} authored roots overridden{}",
                           tuning->bias,
                           tuning->hysteresis * 100.0f,
@@ -1033,7 +1033,7 @@ auto ViewScene::evaluateLevels() -> bool {
     if (!changed) {
         return false;
     }
-    TRACE_EVENT("Scene", "ResidencyChanged", id)
+    LOG_EVENT("Scene", "ResidencyChanged", id)
         .text(std::format("LOD levels: {} roots finer, {} coarser of {} evaluated; {} levels requested, {} released", finer, coarser, stats.lodRootsEvaluated, requested, releasedNow))
         .field("finer", (int64_t) finer)
         .field("coarser", (int64_t) coarser)
@@ -1141,7 +1141,7 @@ auto ViewScene::reportReleases() -> void {
     reportedReleasedContents = stats.releasedContents;
     reportedReleasedMeshes = stats.releasedMeshes;
     reportedReleasedBytes = stats.releasedMeshBytes;
-    TRACE_EVENT("Scene", "LevelsUnloaded", id)
+    LOG_EVENT("Scene", "LevelsUnloaded", id)
         .text(std::format("unloaded {} levels (out of their roots' resident levels), {} composed contents no level reaches, {} mesh packs ({:.1f} MiB)", levels, contents, meshes, (double) bytes / (1024.0 * 1024.0)))
         .field("levels", (int64_t) levels)
         .field("contents", (int64_t) contents)
@@ -1159,18 +1159,18 @@ auto ViewScene::relink() -> void {
         }
     }
     stats.releasedContents += composer->stats().released;
-    traceCompleted();
+    logCompleted();
     requestAssets(fresh, false);
     stats.relinks++;
     countWorld();
     placeNeeded = true;
 }
 
-auto ViewScene::traceCompleted() -> void {
-    PROFILE_ZONE_DETAIL("TraceCompleted", Scene);
+auto ViewScene::logCompleted() -> void {
+    PROFILE_ZONE_DETAIL("LogCompleted", Scene);
     for (const auto& completed : composer->stats().completed) {
         auto kind = completed.kind == ContentKind::Prototype ? "prototype" : "level";
-        TRACE_EVENT("Scene", "ContentComposed", completed.path)
+        LOG_EVENT("Scene", "ContentComposed", completed.path)
             .text(std::format("{} {} composed with every pack it names, in {} composes", kind, completed.path, completed.rounds))
             .field("kind", std::string(kind))
             .field("rounds", (int64_t) completed.rounds);

@@ -1,9 +1,9 @@
 #include "viewcommands.h"
 
+#include "log.h"
 #include "profile.h"
 #include "rpcendpoint.h"
 #include "sessionscript.h"
-#include "trace.h"
 
 #include <nlohmann/json.hpp>
 
@@ -66,7 +66,7 @@ auto registerViewCommands(RpcRegistry& registry, ConsoleCommands& console, RpcRe
                 line["record"] = name;
                 line["requested_frame"] = requested;
                 line["frame"] = view.frameCounter;
-                line["ts_ns"] = trace::now();
+                line["ts_ns"] = logging::now();
                 line["value"] = *reply.result;
                 std::ofstream out(path, std::ios::app);
                 out << line.dump() << '\n';

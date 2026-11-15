@@ -1,6 +1,6 @@
-#include "tracering.h"
+#include "logring.h"
 
-#include "trace.h"
+#include "log.h"
 
 #include <algorithm>
 #include <chrono>
@@ -12,7 +12,7 @@
 #include <sstream>
 #include <thread>
 
-namespace trace {
+namespace logging {
 
 namespace {
 
@@ -90,10 +90,10 @@ auto threadLabel() -> const std::string& {
     return label;
 }
 
-TraceRing::TraceRing() : slots(capacity) {
+LogRing::LogRing() : slots(capacity) {
 }
 
-auto TraceRing::push(Event event) -> void {
+auto LogRing::push(Event event) -> void {
     if (event.thread.empty()) {
         event.thread = threadLabel();
     }
@@ -114,7 +114,7 @@ auto TraceRing::push(Event event) -> void {
     }
 }
 
-auto TraceRing::read(uint64_t from, size_t max, std::vector<Event>& out) const -> Read {
+auto LogRing::read(uint64_t from, size_t max, std::vector<Event>& out) const -> Read {
     std::lock_guard lock(mutex);
     uint64_t first = next > capacity ? next - capacity : 1;
     Read result;
@@ -130,17 +130,17 @@ auto TraceRing::read(uint64_t from, size_t max, std::vector<Event>& out) const -
     return result;
 }
 
-auto TraceRing::head() const -> uint64_t {
+auto LogRing::head() const -> uint64_t {
     std::lock_guard lock(mutex);
     return next;
 }
 
-auto TraceRing::oldest() const -> uint64_t {
+auto LogRing::oldest() const -> uint64_t {
     std::lock_guard lock(mutex);
     return next > capacity ? next - capacity : 1;
 }
 
-auto TraceRing::firstAtOrAfter(uint64_t tsNs) const -> uint64_t {
+auto LogRing::firstAtOrAfter(uint64_t tsNs) const -> uint64_t {
     std::lock_guard lock(mutex);
     uint64_t first = next > capacity ? next - capacity : 1;
     // Times rise with seq, so search.
@@ -157,14 +157,14 @@ auto TraceRing::firstAtOrAfter(uint64_t tsNs) const -> uint64_t {
     return low;
 }
 
-auto TraceRing::waitFor(uint64_t seq, std::chrono::milliseconds timeout) const -> void {
+auto LogRing::waitFor(uint64_t seq, std::chrono::milliseconds timeout) const -> void {
     std::unique_lock lock(mutex);
     grew.wait_for(lock, timeout, [&] { return next >= seq; });
 }
 
-auto ring() -> TraceRing& {
-    static TraceRing instance;
+auto ring() -> LogRing& {
+    static LogRing instance;
     return instance;
 }
 
-} // namespace trace
+} // namespace logging

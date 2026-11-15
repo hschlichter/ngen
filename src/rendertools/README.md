@@ -39,7 +39,7 @@ tool, so a program without the UI keeps every record and dump it serves.
 
 ## Rules
 
-- **Layering**: links `renderer`, `trace` and `profile`; `viewcommands`, `ui` and the program link it. Nothing in the renderer includes a header
+- **Layering**: links `renderer`, `log` and `profile`; `viewcommands`, `ui` and the program link it. Nothing in the renderer includes a header
   from here.
 - **Free when off**: a snapshot is built, a command logged or a counter read only in a frame that asked for it.
 - **Previews**: textures for a UI go through `PreviewTextures`; without one, none are made, and the dumps' pixels are still there.

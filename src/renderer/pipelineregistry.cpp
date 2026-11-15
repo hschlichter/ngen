@@ -2,8 +2,8 @@
 
 #include "assetclient.h"
 #include "deletionqueue.h"
+#include "log.h"
 #include "rhidevice.h"
-#include "trace.h"
 
 #include <algorithm>
 #include <cassert>
@@ -102,7 +102,7 @@ auto PipelineRegistry::module(const ShaderRef& shader, std::string& error) -> Rh
         std::lock_guard lock(infoMutex);
         modules[shader.id] = {.module = created, .hash = asset->hash};
     }
-    TRACE_EVENT("Render", "ShaderLoaded", shader.id).text(std::format("loaded shader {} ({})", shader.id, asset->hash)).field("hash", asset->hash);
+    LOG_EVENT("Render", "ShaderLoaded", shader.id).text(std::format("loaded shader {} ({})", shader.id, asset->hash)).field("hash", asset->hash);
     return created;
 }
 
@@ -172,13 +172,13 @@ auto PipelineRegistry::create(Entry& entry) -> void {
     if (pipeline == nullptr) {
         entry.state = PipelineState::Failed;
         entry.error = error;
-        TRACE_ERROR("Render", "PipelineCreateFailed", entry.name).text(std::format("pipeline {}: {}", entry.name, entry.error)).field("reason", entry.error);
+        LOG_ERROR("Render", "PipelineCreateFailed", entry.name).text(std::format("pipeline {}: {}", entry.name, entry.error)).field("reason", entry.error);
         return;
     }
     device->setDebugName(pipeline, entry.name.c_str());
     entry.pipeline = pipeline;
     entry.state = PipelineState::Ready;
-    TRACE_EVENT("Render", "PipelineCreated", entry.name).text(std::format("pipeline {} created", entry.name));
+    LOG_EVENT("Render", "PipelineCreated", entry.name).text(std::format("pipeline {} created", entry.name));
 }
 
 auto PipelineRegistry::request(std::span<Entry* const> wanted) -> void {
@@ -200,7 +200,7 @@ auto PipelineRegistry::request(std::span<Entry* const> wanted) -> void {
     for (const auto& id : ids) {
         list += list.empty() ? id : ", " + id;
     }
-    TRACE_EVENT("Render", "ShadersRequested", "pipelines").text(std::format("{} shaders requested: {}", ids.size(), list)).field("count", (int64_t) ids.size());
+    LOG_EVENT("Render", "ShadersRequested", "pipelines").text(std::format("{} shaders requested: {}", ids.size(), list)).field("count", (int64_t) ids.size());
 }
 
 auto PipelineRegistry::reportPending(Entry& entry) -> void {
@@ -208,7 +208,7 @@ auto PipelineRegistry::reportPending(Entry& entry) -> void {
         return;
     }
     entry.reportedPending = true;
-    TRACE_EVENT("Render", "PipelinePending", entry.name).text(std::format("pipeline {} is pending: its shaders haven't arrived", entry.name));
+    LOG_EVENT("Render", "PipelinePending", entry.name).text(std::format("pipeline {} is pending: its shaders haven't arrived", entry.name));
 }
 
 auto PipelineRegistry::get(PipelineHandle handle) -> RhiPipeline* {
@@ -319,7 +319,7 @@ auto PipelineRegistry::reload(std::span<const std::string> shaderIds) -> void {
     for (const auto& id : ids) {
         list += list.empty() ? id : ", " + id;
     }
-    TRACE_EVENT("Render", "ShadersReloadRequested", "pipelines").text(std::format("{} changed shader{} requested again: {}", ids.size(), ids.size() == 1 ? "" : "s", list)).field("count", (int64_t) ids.size());
+    LOG_EVENT("Render", "ShadersReloadRequested", "pipelines").text(std::format("{} changed shader{} requested again: {}", ids.size(), ids.size() == 1 ? "" : "s", list)).field("count", (int64_t) ids.size());
 }
 
 auto PipelineRegistry::finishReload(const std::string& id, uint64_t frame) -> void {
@@ -333,7 +333,7 @@ auto PipelineRegistry::finishReload(const std::string& id, uint64_t frame) -> vo
         for (const auto& line : errors) {
             text += "\n  " + line;
         }
-        TRACE_WARNING("Render", "ShaderReloadFailed", id).text(text);
+        LOG_WARNING("Render", "ShaderReloadFailed", id).text(text);
         std::lock_guard lock(infoMutex);
         for (auto& entry : entries) {
             if (std::ranges::any_of(shadersOf(entry), [&](const ShaderRef& shader) { return shader.id == id; })) {
@@ -354,7 +354,7 @@ auto PipelineRegistry::finishReload(const std::string& id, uint64_t frame) -> vo
                 entry.error.clear();
             }
         }
-        TRACE_EVENT("Render", "ShaderReloaded", id).text(std::format("shader {} is back to the content its pipelines have ({}): nothing to recreate", id, oldHash)).field("version", oldHash).field("pipelines", (int64_t) 0);
+        LOG_EVENT("Render", "ShaderReloaded", id).text(std::format("shader {} is back to the content its pipelines have ({}): nothing to recreate", id, oldHash)).field("version", oldHash).field("pipelines", (int64_t) 0);
         return;
     }
     std::optional<ShaderRef> ref;
@@ -375,7 +375,7 @@ auto PipelineRegistry::finishReload(const std::string& id, uint64_t frame) -> vo
     };
     auto* created = device->createShaderModule(desc);
     if (created == nullptr) {
-        TRACE_WARNING("Render", "ShaderReloadFailed", id).text(std::format("shader {} ({}): cannot create the shader module; the pipelines keep hash {}", id, asset->hash, oldHash));
+        LOG_WARNING("Render", "ShaderReloadFailed", id).text(std::format("shader {} ({}): cannot create the shader module; the pipelines keep hash {}", id, asset->hash, oldHash));
         return;
     }
     auto* oldModule = moduleIt->second.module;
@@ -405,7 +405,7 @@ auto PipelineRegistry::finishReload(const std::string& id, uint64_t frame) -> vo
         std::lock_guard lock(infoMutex);
         if (pipeline == nullptr) {
             entry.error = std::format("recreating it for {} ({}) failed, it keeps the old pipeline: {}", id, asset->hash, error);
-            TRACE_WARNING("Render", "PipelineRecreateFailed", entry.name).text(std::format("pipeline {}: {}", entry.name, entry.error));
+            LOG_WARNING("Render", "PipelineRecreateFailed", entry.name).text(std::format("pipeline {}: {}", entry.name, entry.error));
             failed++;
             continue;
         }
@@ -417,7 +417,7 @@ auto PipelineRegistry::finishReload(const std::string& id, uint64_t frame) -> vo
         recreated++;
     }
     retired->defer(frame, [rhiDevice = device, oldModule] { rhiDevice->destroyShaderModule(oldModule); });
-    TRACE_EVENT("Render", "ShaderReloaded", id)
+    LOG_EVENT("Render", "ShaderReloaded", id)
         .text(std::format("shader {} reloaded ({} to {}): {} pipeline{} recreated{}", id, oldHash, asset->hash, recreated, recreated == 1 ? "" : "s", failed > 0 ? std::format(", {} kept the old one", failed) : ""))
         .field("hash", asset->hash)
         .field("pipelines", (int64_t) recreated)
@@ -450,7 +450,7 @@ auto PipelineRegistry::update(uint64_t frame, uint32_t budget) -> void {
             continue;
         }
         if (auto failed = failedShader(entry); !failed.empty()) {
-            TRACE_ERROR("Render", "ShaderPackFailed", entry.name).text(failed);
+            LOG_ERROR("Render", "ShaderPackFailed", entry.name).text(failed);
             std::lock_guard lock(infoMutex);
             entry.state = PipelineState::Failed;
             entry.error = failed;

@@ -18,7 +18,7 @@ the file mechanics around it.
 3. Sections in order, per CLAUDE.md: status header (new plans start as `**Status. Draft.**`), current
    state, scope with explicit In/Out, concrete steps naming real files and signatures, visibility (the records, RPC, console commands and windows it adds;
    "none" stated with its reason), verification with
-   observable binary criteria (trace events — see the `run-headless` skill — byte-identical outputs, what
+   observable binary criteria (log events — see the `run-headless` skill — byte-identical outputs, what
    a test scene should show), then "Deferred / follow-ups" with trigger conditions.
 4. Register it in `docs/README.md`: add a link line with a one-line description under the matching section.
 

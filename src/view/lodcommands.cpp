@@ -621,7 +621,7 @@ auto registerLodCommands(RpcRegistry& registry, ConsoleCommands& console, RpcRec
     registry.add(
         {
             .name = "view.lod.override",
-            .summary = "One heuristic's thresholds and blend thresholds in place of the authored ones, for the authored root of the LOD root at a path: every placement of it (every instance of an instanceable asset). A session opinion, never saved. Thresholds in the heuristic's unit (a distance in the stage's units, ascending; a screen size as a fraction of the view, descending). The LodTuningChanged trace event says what changed; LodTuningRefused why nothing did.",
+            .summary = "One heuristic's thresholds and blend thresholds in place of the authored ones, for the authored root of the LOD root at a path: every placement of it (every instance of an instanceable asset). A session opinion, never saved. Thresholds in the heuristic's unit (a distance in the stage's units, ascending; a screen size as a fraction of the view, descending). The LodTuningChanged log event says what changed; LodTuningRefused why nothing did.",
             .params = {requiredField("root", RpcType::String, "a LOD root's full path (a streaming root or a render-LOD group)"),
                        optionalField("heuristic", RpcType::Int, "which of its heuristics (an index in authored order); the one the preference uses when absent"),
                        optionalField("thresholds", RpcType::Array, "finest first"),

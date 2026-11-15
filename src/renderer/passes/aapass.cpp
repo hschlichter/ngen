@@ -1,8 +1,8 @@
 #include "aapass.h"
 
+#include "log.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
-#include "trace.h"
 
 #include <array>
 #include <format>
@@ -23,7 +23,7 @@ auto AAPass::init(RhiDevice* dev, PipelineRegistry& pipelines, uint32_t frameCou
     auto neededUsage = RhiTextureUsage::Storage | RhiTextureUsage::TransferSrc;
     computeSupported = device->supportsTextureFormat(floatFormat, neededUsage);
     if (!computeSupported) {
-        TRACE_WARNING("Render", "FormatFallback", "AAPass").text("R16G16B16A16_SFLOAT not usable as storage image; falling back to blit");
+        LOG_WARNING("Render", "FormatFallback", "AAPass").text("R16G16B16A16_SFLOAT not usable as storage image; falling back to blit");
         format = inputFormat;
         return true;
     }

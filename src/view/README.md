@@ -101,7 +101,7 @@ cutout whose opacity texture is still uploading draws opaque. A material that ha
   published (so a moved camera's levels count: while the camera moves, the scene isn't resident);
 - the render thread has applied all scene changes in a frame it finished, with no upload or pipeline pending.
 
-`ViewFrame::updateResidency` checks once a frame, and traces `SceneResident` when it becomes true, with the time since start and the longest frame while
+`ViewFrame::updateResidency` checks once a frame, and logs `SceneResident` when it becomes true, with the time since start and the longest frame while
 loading.
 
 Until the scene is first resident the camera frames what has arrived (`--camera-frame=/prim`: what is drawn at and under that prim, once
@@ -153,7 +153,7 @@ do its instances: only where it is placed.
   until it arrives.
 - **Changes.** The slots a pass touched, against what they held, are its `SceneChanges`; the main loop takes them (`takeChanges`) and hands
   them to the renderer, which changes only that on the GPU (`src/renderer/README.md`, "Scene data on the GPU"). `PlacementsChanged`
-  traces each pass that changed something: placements built, slots added, removed and updated, its time.
+  logs each pass that changed something: placements built, slots added, removed and updated, its time.
 - **Requests.** A placement asks for the meshes, materials and textures its prims want and lack when it is built, drawn or not (a level
   loading is placed undrawn), so what a level needs is requested as soon as the level is linked.
 - **Libraries.** `MeshLibrary`, `MaterialLibrary` and `TextureLibrary` keep one entry per mesh asset, per material (or display colour) and per
@@ -206,8 +206,8 @@ do its instances: only where it is placed.
   pass the first dome in prim order whose image is held as an HDR lat-long with its irradiance (`.exr`, `src/asset/README.md`) becomes
   `RenderWorld::environment` (`collectEnvironment`): the image's texture handle, its scale (color × intensity × 2^exposure), the rotation from
   world directions into the image's frame (the dome's own rotation, then its pole axis onto +Z: `Z`, `Y`, or the stage's up axis for
-  `scene`), and the irradiance. A second dome, a format other than `latlong`, or an image that isn't HDR is traced once
-  (`DomeLightIgnored`); a change of sky traces `EnvironmentChanged`. The `environment` record shows the dome as authored, its image, whether
+  `scene`), and the irradiance. A second dome, a format other than `latlong`, or an image that isn't HDR is logged once
+  (`DomeLightIgnored`); a change of sky logs `EnvironmentChanged`. The `environment` record shows the dome as authored, its image, whether
   the renderer drew it, and the light it casts on a surface facing up and facing down; `render.sky.on` turns it off.
 - **Changing what is drawn**: `setLodLevel` (the `lod` console command, `view.lod.set`), `resetLodLevel` (`lod-reset`, `view.lod.reset`: back to the
   root's default) and `setPurposeShown` are requests: the scene thread composes, fetches what the change needs and rebuilds, and the
@@ -228,7 +228,7 @@ do its instances: only where it is placed.
   memory is the budgets' to decide, not a count of roots. The roots evaluated are the streaming roots of drawn placements, kept as placements are built
   and released (`placedRoots`), so an evaluation costs per placed root and walks no tree. The main thread posts the camera (`setCamera`) once it has been placed, not while it follows the scene
   loading; the scene thread evaluates when it moved, after a pass that drew roots not drawn before and when levels changed, and gives the composer only what changed, which links
-  the levels again without composing the stage (`WorldComposer::relink`). `ResidencyChanged` traces each change of selected and resident
+  the levels again without composing the stage (`WorldComposer::relink`). `ResidencyChanged` logs each change of selected and resident
   levels.
 - **Residency**: what is loaded is decided by where the camera is and what is authored, never by time. A root's streaming heuristic (domain
   `streaming`: its thresholds the load radii, `streaming:unloadThresholds` the unload radii; src/world/README.md "Loading") gives its state, the
@@ -296,7 +296,7 @@ do its instances: only where it is placed.
   the root keeps drawing a coarser level that waits for nothing; while no loaded level at or coarser than the selected one is ready, it
   draws its coarsest loaded level, filling in as its pieces arrive; with no loaded level at or coarser than the selected one it draws nothing
   (a hole, counted), never a finer level. A root's level placements are synced before it picks, so it switches in the pass the last
-  piece arrives, and a district appears whole, with its materials, instead of model by model. `LevelsSwitched` traces the roots whose drawn
+  piece arrives, and a district appears whole, with its materials, instead of model by model. `LevelsSwitched` logs the roots whose drawn
   level changed, once per pass; the `streaming` record's `waiting` and the LOD window's tooltip on a loading row count what the desired level
   waits for (meshes, materials and textures not held, levels still composing and so not linked). GPU uploads aren't part of it: a switched
   level's new meshes are uploaded over the next frames within the upload budget.
@@ -304,7 +304,7 @@ do its instances: only where it is placed.
   and everything follows: its placement is released, the composer releases the contents no level reaches any more, the library entries no
   placement uses leave the libraries and the renderer, and a mesh's pack goes once no placement names it. While resident and not drawn, a
   level is placed undrawn and holds its library and GPU entries, so switching to it draws at once. Layer packs and material and texture packs
-  stay held. `LevelsUnloaded` traces each scene update that let something go (levels, contents, mesh packs), and the `streaming` and `scenethread`
+  stay held. `LevelsUnloaded` logs each scene update that let something go (levels, contents, mesh packs), and the `streaming` and `scenethread`
   records and the LOD window (a loaded level's tooltip: the resident levels and why) show what was unloaded.
 
   ![A level's states from not resident to drawn, the level its root draws when the selected one is ready, late or missing, and what unloading releases](../../screenshots/view_level_lifecycle.svg)
@@ -327,7 +327,7 @@ do its instances: only where it is placed.
     every root picks as if that many times closer, applied to the thresholds, a distance's times it, a screen size's over its square); the
     hysteresis (`lod-hysteresis`, the GPU pick's push constant); blending (`lod-blending on|off`, off drops every band). All in
     `view.lod.tuning`, the window's header and fields. `tunedLodHeuristic` is what the CPU pick, the groups' records (`lodGroupOf`) and the
-    records use. `LodTuningChanged` traces a change; `LodTuningRefused` a path with no root, a heuristic not there, thresholds out of order.
+    records use. `LodTuningChanged` logs a change; `LodTuningRefused` a path with no root, a heuristic not there, thresholds out of order.
     The `lod`, `streaming`, `renderlod` and `lodtool` records carry the tuning; rows say `tuned`.
   - *Layers* (the cvars `tools.lod.*`: `lod-show labels|gizmo|gizmo-all|flash on|off`, the window): the LOD Level view (`view lodlevel`: at
     half strength over the lit image, the drawn level of the nearest LOD root, or with `lod-show color depth` (`tools.lod.colorByDepth`)
@@ -377,7 +377,7 @@ do its instances: only where it is placed.
 - **Names**: draw instances and lights carry a prim index; `primPath` turns it into the entity's full path, for the render debugger, the
   frame debugger, the GPU scene window and the dumps.
 
-The trace shows the steps:
+The log shows the steps:
 - `SceneRequested`;
 - `PacksComposed`, once every layer pack named has been answered (packs, prims, prototypes);
 - `SceneAssetsReceived`, once the meshes, materials and textures wanted have been answered;
@@ -436,7 +436,7 @@ or Select shown for every row shown. Repack selected (or the row's menu) has the
 to date; Repack scene does it for every asset of the scene (`ViewScene::assetIds`: layer packs, meshes, materials, textures). The view
 fetches what was repacked, fetches again the meshes and materials of a repacked USD file, and rebuilds its scene, so an edit to a source shows
 without a restart (`ViewScene::refresh` with `force`, the `repack <id>... | scene` console command and `view.repack`, which answers once the scene is resident
-again; the trace has `AssetsRefreshRequested`). What arrives unchanged keeps its library entry and isn't uploaded again. A shader's repack
+again; the log has `AssetsRefreshRequested`). What arrives unchanged keeps its library entry and isn't uploaded again. A shader's repack
 refreshes only the server's cache.
 
 **Edits reach the view by themselves.** The asset server tells the view when a source of something it received changes (`asset.changed`,

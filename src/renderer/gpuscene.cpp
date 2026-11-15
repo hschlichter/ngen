@@ -8,12 +8,12 @@
 #include "gpuuploader.h"
 #include "instanceuploadpass.h"
 #include "jobsystem.h"
+#include "log.h"
 #include "mesh.h"
 #include "profile.h"
 #include "profilegpu.h"
 #include "rhicommandbuffer.h"
 #include "rhidevice.h"
-#include "trace.h"
 
 #include <algorithm>
 #include <array>
@@ -321,7 +321,7 @@ auto GpuScene::updatePool(Pool pool, uint64_t needed) -> bool {
         }
         auto made = BufferGrowth::makeNow(device, describe(elements));
         if (!BufferGrowth::complete(made)) {
-            // The device couldn't make them (the reason is in the trace): the pool stays without buffers, and its meshes wait.
+            // The device couldn't make them (the reason is in the log): the pool stays without buffers, and its meshes wait.
             BufferGrowth::destroyBuffers(device, made);
             return false;
         }
@@ -380,7 +380,7 @@ auto GpuScene::addMesh(MeshHandle handle, std::shared_ptr<const MeshDesc> mesh) 
     if (!poolFullReported && !growing) {
         poolFullReported = true;
         auto limit = poolLimitBytes();
-        TRACE_WARNING("Render", "GeometryPoolFull", "gpuscene.pool")
+        LOG_WARNING("Render", "GeometryPoolFull", "gpuscene.pool")
             .text(std::format("the geometry pool is full ({} MiB per buffer): meshes that don't fit wait, undrawn, until removed meshes make room", limit / (1024 * 1024)))
             .field("limitBytes", (int64_t) limit)
             .field("vertexUsed", (int64_t) vertexRanges.used())
@@ -445,7 +445,7 @@ auto GpuScene::placeWaitingMeshes() -> void {
     bool emptied = stillWaiting.empty();
     waitingMeshes = std::move(stillWaiting);
     if (emptied && std::exchange(poolFullReported, false)) {
-        TRACE_EVENT("Render", "GeometryPoolFits", "gpuscene.pool").text("every mesh that waited for room in the geometry pool is in it");
+        LOG_EVENT("Render", "GeometryPoolFits", "gpuscene.pool").text("every mesh that waited for room in the geometry pool is in it");
     }
 }
 
@@ -721,7 +721,7 @@ auto GpuScene::beginFrame(uint64_t frame) -> bool {
             slots.push_back(fallbackTexture);
         } else {
             slotOverflow++;
-            TRACE_WARNING("Render", "TextureSlotsFull", "materials").text(std::format("texture {}: no slot left of {}; its materials use the fallback", index, maxTextures));
+            LOG_WARNING("Render", "TextureSlotsFull", "materials").text(std::format("texture {}: no slot left of {}; its materials use the fallback", index, maxTextures));
             continue;
         }
         slots[slot] = it->second.texture;
@@ -1195,7 +1195,7 @@ auto GpuScene::installInstances(uint32_t capacity, RhiBuffer* buffer, uint32_t c
         dirtyMarked = 0;
     }
     if (keep) {
-        TRACE_EVENT("Render", "InstanceBufferGrown", "gpuscene.instances")
+        LOG_EVENT("Render", "InstanceBufferGrown", "gpuscene.instances")
             .text(std::format("instance buffer grown to {} slots for {}; the {} slots before are copied on the GPU", instanceCapacity, count, instanceMoveSlots))
             .field("capacity", (int64_t) instanceCapacity)
             .field("instances", (int64_t) count)

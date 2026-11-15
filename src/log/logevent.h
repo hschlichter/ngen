@@ -5,7 +5,7 @@
 #include <variant>
 #include <vector>
 
-namespace trace {
+namespace logging {
 
 // How much an event matters: Info narrates flow, Warning is something that went wrong but was worked around, Error is
 // something that failed.
@@ -50,4 +50,4 @@ auto msSinceStart() -> double;
 // The calling thread's label in events.
 auto threadLabel() -> const std::string&;
 
-} // namespace trace
+} // namespace logging

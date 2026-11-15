@@ -9,8 +9,8 @@
 
 IntrospectSession::IntrospectSession(Options sessionOptions) : options(std::move(sessionOptions)) {
     rpc.setRequestHandler([this](RpcServer::ConnectionId, const rpc::Json& message, std::vector<std::byte>) {
-        if (rpc::messageKind(message) == rpc::MessageKind::Notification && message["method"] == "trace.events" && message.contains("params")) {
-            onTraceEvents(message["params"]);
+        if (rpc::messageKind(message) == rpc::MessageKind::Notification && message["method"] == "log.events" && message.contains("params")) {
+            onLogEvents(message["params"]);
         }
     });
     rpc.setConnectionHandler([this](RpcServer::ConnectionId connection, bool isConnected) {
@@ -73,8 +73,8 @@ auto IntrospectSession::poll() -> void {
         rpc.call(*connection, "introspect.list", rpc::Json::object(), [this, name](const rpc::Json& response, std::vector<std::byte>) {
             onRecordList(name, response);
         });
-        if (options.trace) {
-            rpc.call(*connection, "trace.subscribe", {{"since_ns", options.traceSinceNs}}, [](const rpc::Json&, std::vector<std::byte>) {});
+        if (options.log) {
+            rpc.call(*connection, "log.subscribe", {{"since_ns", options.logSinceNs}}, [](const rpc::Json&, std::vector<std::byte>) {});
         }
     }
 }
@@ -86,7 +86,7 @@ auto IntrospectSession::wanted(const RpcEndpointInfo& endpoint) const -> bool {
     return std::ranges::any_of(options.processes, [&](const std::string& target) { return matchesTarget(target, endpoint); });
 }
 
-auto IntrospectSession::onTraceEvents(const rpc::Json& params) -> void {
+auto IntrospectSession::onLogEvents(const rpc::Json& params) -> void {
     auto process = params.value("process", std::string());
     std::lock_guard lock(mutex);
     auto lost = params.value("dropped", (uint64_t) 0);
@@ -97,28 +97,28 @@ auto IntrospectSession::onTraceEvents(const rpc::Json& params) -> void {
         return;
     }
     for (const auto& event : params["events"]) {
-        pendingTrace.push_back({.tsNs = event.value("ts_ns", (uint64_t) 0), .process = process, .event = std::make_shared<const rpc::Json>(event)});
+        pendingLog.push_back({.tsNs = event.value("ts_ns", (uint64_t) 0), .process = process, .event = std::make_shared<const rpc::Json>(event)});
     }
-    if (pendingTrace.size() > maxPendingTraceEvents) {
-        auto excess = pendingTrace.size() - maxPendingTraceEvents;
+    if (pendingLog.size() > maxPendingLogEvents) {
+        auto excess = pendingLog.size() - maxPendingLogEvents;
         for (size_t i = 0; i < excess; i++) {
-            dropped[pendingTrace[i].process]++;
+            dropped[pendingLog[i].process]++;
         }
-        pendingTrace.erase(pendingTrace.begin(), pendingTrace.begin() + (std::ptrdiff_t) excess);
+        pendingLog.erase(pendingLog.begin(), pendingLog.begin() + (std::ptrdiff_t) excess);
     }
 }
 
-auto IntrospectSession::takeTraceEvents(std::vector<TraceEvent>& out) -> void {
+auto IntrospectSession::takeLogEvents(std::vector<LogEvent>& out) -> void {
     std::lock_guard lock(mutex);
     if (out.empty()) {
-        out.swap(pendingTrace);
+        out.swap(pendingLog);
         return;
     }
-    out.insert(out.end(), std::make_move_iterator(pendingTrace.begin()), std::make_move_iterator(pendingTrace.end()));
-    pendingTrace.clear();
+    out.insert(out.end(), std::make_move_iterator(pendingLog.begin()), std::make_move_iterator(pendingLog.end()));
+    pendingLog.clear();
 }
 
-auto IntrospectSession::traceDropped() const -> std::map<std::string, uint64_t> {
+auto IntrospectSession::logDropped() const -> std::map<std::string, uint64_t> {
     std::lock_guard lock(mutex);
     return dropped;
 }

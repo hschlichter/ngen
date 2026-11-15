@@ -1,8 +1,8 @@
 #include "placement.h"
 
+#include "log.h"
 #include "primpath.h"
 #include "profile.h"
-#include "trace.h"
 #include "viewscene.h"
 
 #include <glm/gtc/matrix_transform.hpp>
@@ -1769,11 +1769,11 @@ auto ViewScene::place() -> void {
             changes.environmentChanged = true;
             changes.environment = environment;
             if (environment) {
-                TRACE_EVENT("Scene", "EnvironmentChanged", primPaths[environment->primHandle.index - 1])
+                LOG_EVENT("Scene", "EnvironmentChanged", primPaths[environment->primHandle.index - 1])
                     .text(std::format("the sky is {}'s image", primPaths[environment->primHandle.index - 1]))
                     .field("radiance", (double) glm::length(environment->radiance));
             } else {
-                TRACE_EVENT("Scene", "EnvironmentChanged", "(none)").text("no sky: the clear colour and the configured ambient");
+                LOG_EVENT("Scene", "EnvironmentChanged", "(none)").text("no sky: the clear colour and the configured ambient");
             }
         }
     }
@@ -1908,7 +1908,7 @@ auto ViewScene::place() -> void {
     profile::endZone();
     inputsRevision++;
     if (passSwitchedFiner + passSwitchedCoarser > 0) {
-        TRACE_EVENT("Scene", "LevelsSwitched", id)
+        LOG_EVENT("Scene", "LevelsSwitched", id)
             .text(std::format("{} roots draw another level: {} finer, {} coarser (first: {})", passSwitchedFiner + passSwitchedCoarser, passSwitchedFiner, passSwitchedCoarser, passFirstSwitched))
             .field("finer", (int64_t) passSwitchedFiner)
             .field("coarser", (int64_t) passSwitchedCoarser);
@@ -1924,7 +1924,7 @@ auto ViewScene::place() -> void {
     stats.walksKept = walks.size();
     stats.lodGroups = (uint32_t) (drawn.lodGroups.size() - freeLodGroups.size());
     stats.lodGroupsChanged = groupsChanged;
-    TRACE_EVENT("Scene", "PlacementsChanged", id)
+    LOG_EVENT("Scene", "PlacementsChanged", id)
         .text(std::format("{} placements built of {} ({} drawn){}: {} slots added, {} removed, {} updated, {} LOD groups changed of {}, in {:.1f} ms",
                           passBuilt,
                           placementCount,
@@ -1949,7 +1949,7 @@ auto ViewScene::place() -> void {
 }
 
 // The first dome light, in prim order, whose image is an HDR lat-long the asset server packed with its irradiance; a dome that can't be
-// one is traced once (DomeLightIgnored). The image's frame has its pole on +Z (packedtexture.h): a world direction goes into the dome's own
+// one is logged once (DomeLightIgnored). The image's frame has its pole on +Z (packedtexture.h): a world direction goes into the dome's own
 // space, then its pole axis (Z, Y, or the stage's up axis for "scene") onto +Z.
 auto ViewScene::collectEnvironment() -> std::optional<RenderEnvironment> {
     PROFILE_ZONE_DETAIL("CollectEnvironment", Scene);
@@ -1957,7 +1957,7 @@ auto ViewScene::collectEnvironment() -> std::optional<RenderEnvironment> {
     std::optional<RenderEnvironment> environment;
     auto ignore = [this](uint32_t prim, const std::string& why) {
         if (domesWarned.insert(prim).second) {
-            TRACE_WARNING("Scene", "DomeLightIgnored", primPaths[prim - 1]).text(std::format("dome light {} ignored: {}", primPaths[prim - 1], why));
+            LOG_WARNING("Scene", "DomeLightIgnored", primPaths[prim - 1]).text(std::format("dome light {} ignored: {}", primPaths[prim - 1], why));
         }
     };
     for (const auto& [prim, dome] : domesByPrim) {

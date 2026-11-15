@@ -1,14 +1,14 @@
 #pragma once
 
 #include "assetcache.h"
-#include "assettrace.h"
+#include "assetlog.h"
 #include "filewatcher.h"
+#include "logstream.h"
 #include "packjobs.h"
 #include "packrule.h"
 #include "rpcprotocol.h"
 #include "rpcrecords.h"
 #include "rpcserver.h"
-#include "tracestream.h"
 
 #include <atomic>
 #include <chrono>
@@ -85,8 +85,8 @@ private:
         size_t offset = 0;
     };
 
-    // What the trace reports when a request is done.
-    struct RequestTrace {
+    // What the log reports when a request is done.
+    struct RequestLog {
         RpcServer::ConnectionId connection = 0;
         size_t assets = 0;
         size_t remaining = 0;
@@ -150,8 +150,8 @@ private:
     AssetCache cache;
     std::unique_ptr<PackJobs> jobs;
     RpcServer rpc;
-    // Answers trace.subscribe and streams the trace; created in start(), reset in stop() after rpc has stopped.
-    std::unique_ptr<trace::TraceStream> traceStream;
+    // Answers log.subscribe and streams the log; created in start(), reset in stop() after rpc has stopped.
+    std::unique_ptr<logging::LogStream> logStream;
     uint16_t boundPort = 0;
     std::filesystem::path discoveryFile;
     std::atomic<int64_t> nextRequest{1};
@@ -169,11 +169,11 @@ private:
     RpcRecords records;
 
     std::mutex requestMutex;
-    std::unordered_map<int64_t, RequestTrace> requests;
+    std::unordered_map<int64_t, RequestLog> requests;
     // The most recent finished requests, oldest first, for the requests record.
     struct FinishedRequest {
         int64_t request = 0;
-        RequestTrace trace;
+        RequestLog log;
         double ms = 0.0;
     };
     std::deque<FinishedRequest> finishedRequests;

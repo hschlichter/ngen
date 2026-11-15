@@ -89,8 +89,8 @@ Everything the backend has to say — what it set up (API version, instance exte
 optional features it found, swapchain size), validation
 messages and native errors — goes to `RhiDeviceOptions::onMessage`, a `RhiMessageHandler` taking a `RhiMessageSeverity`
 (`Info`, `Warning`, `Error`) and the text. The device passes it on to the swapchains it creates. Without a handler info
-prints on stdout and the rest on stderr, which is what the examples use; ngen-view puts them into its trace. The RHI
-depends on no logging or trace library and prints nothing on its own.
+prints on stdout and the rest on stderr, which is what the examples use; ngen-view puts them into its log. The RHI
+depends on no logging or log library and prints nothing on its own.
 
 ### Descs with defaults, flags with types
 
@@ -419,7 +419,7 @@ A device is driven from one thread (the render thread), with one exception: maki
   pipelines, submits, the swapchain, `waitIdle`.
 
 The RHI's messages (`RhiDeviceOptions::onMessage`) can come from the thread that made the resource; the handler is thread safe in ngen
-(the trace).
+(the log).
 
 ## Known gaps
 
