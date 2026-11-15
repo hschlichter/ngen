@@ -118,7 +118,7 @@ auto sceneThreadRecord(const ViewContext& view) -> Json {
     auto [posted, applied] = view.scene.requestCounts();
     return {
         {"requests", {{"posted", posted}, {"applied", applied}}},
-        {"batches", t.batches},
+        {"updates", t.updates},
         {"compose",
          {{"count", t.composes},
           {"lastMs", t.lastComposeMs},

@@ -126,7 +126,7 @@ longer than `profile.stall.seconds` (default 5, 0 turns it off) is a stall:
 
 - a `Stall` warning in the trace (category Profile), once per stall: the lane, the innermost zone over the threshold with its file and line,
   and every zone the thread has open with how long each has been: `Scene has been in SyncRoots for 5.3 s (src/view/placement.cpp:1162); open
-  zones, outermost first: SceneBatch 5.6 s > Place 5.3 s > … > SyncInstancer 0.0 s`.
+  zones, outermost first: SceneUpdate 5.6 s > Place 5.3 s > … > SyncInstancer 0.0 s`.
 - `StallEnded` when the outermost zone over the threshold ends, with about how long it lasted (to the watch's 250 ms). Going deeper inside one
   stall is the same stall.
 

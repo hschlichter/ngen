@@ -143,10 +143,10 @@ struct SceneStreaming {
     uint64_t arrivedUnwanted = 0;
     uint32_t findings = 0; // authoring findings over the placed roots, at the last evaluation
 };
-// The scene thread's work as of a snapshot: batches of requests and answers taken, composes (each composes with the packs held and asks for
+// The scene thread's work as of a snapshot: scene updates (the requests and answers one round took), composes (each composes with the packs held and asks for
 // those it names and lacks) and placement passes (the renderer's inputs placed from the World), the assets in flight by kind, and what it holds.
 struct SceneThreadStats {
-    uint64_t batches = 0;
+    uint64_t updates = 0;
     uint64_t composes = 0;
     double lastComposeMs = 0.0; // the last compose that had every layer pack it named
     // The last compose: contents composed and those kept from before (prototypes and LOD level contents), and how many it reached.
@@ -290,7 +290,7 @@ extern config::Bool purposeProxy; // scene.purposes.proxy
 // use, each kept by asset. Everything comes from the asset server; nothing of USD. See src/view/README.md.
 //
 // Nothing here waits. A scene thread owns the composer, the packs and the libraries: it takes requests (open, LOD, purposes, refresh,
-// transforms) and the assets that arrive, composes and places per batch, and publishes a SceneSnapshot and what changed for the
+// transforms) and the assets that arrive, composes and places per scene update, and publishes a SceneSnapshot and what changed for the
 // renderer (takeChanges). The main thread asks through the requests and reads the latest snapshot, taken once a frame by update().
 class ViewScene {
 public:
@@ -501,7 +501,7 @@ private:
     std::condition_variable_any wake;
     std::deque<Request> requests;
     bool answered = false;                          // the asset client answered something since the scene thread last looked
-    bool working = false;                           // the scene thread took a batch and hasn't published its result yet
+    bool working = false;                           // the scene thread took a scene update and hasn't published its result yet
     std::shared_ptr<const SceneSnapshot> published; // the latest, for update()
     // Snapshots update() let go of: the scene thread frees them (their placements and lists only they held can take a while), so the main
     // thread only swaps a pointer.
@@ -558,7 +558,7 @@ private:
     uint64_t reportedReleasedContents = 0;
     uint64_t reportedReleasedMeshes = 0;
     uint64_t reportedReleasedBytes = 0;
-    // One LevelsUnloaded per batch that let something go.
+    // One LevelsUnloaded per scene update that let something go.
     auto reportReleases() -> void;
     std::shared_ptr<const SceneLodChoices> choices = std::make_shared<SceneLodChoices>();
     bool composeReported = false; // PacksComposed traced since the scene opened or a pack last arrived

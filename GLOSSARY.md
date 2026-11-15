@@ -202,7 +202,6 @@ sense of a map; that is a scene.
 `src/view/README.md`.
 
 - **Arrival** — an asset the server answered, taken by the scene thread.
-- **Batch** — one round of the scene thread: the requests and arrivals it took, a compose, a placement pass, and a publish.
 - **Draw** — one prim's submesh as drawn: a slot in `RenderWorld`, an instance on the GPU.
 - **Default light** — the distant light the view adds when a scene authors none.
 - **Draw slot** — a draw's index in `RenderWorld` and the GPU instance buffer; a draw keeps its slot while it exists.
@@ -223,6 +222,7 @@ sense of a map; that is a scene.
   Script frames count only while nothing waits for it.
 - **Scene changes** (`SceneChanges`) — what a placement pass changed (draw slots added, removed and updated, meshes, materials, textures,
   lights, LOD groups); the main thread hands it to the render thread, which changes only that on the GPU.
+- **Scene update** — one round of the scene thread: the requests and arrivals it took, a compose, a placement pass, and a publish.
 - **Scene thread** — `ViewScene`'s thread: owns the composer, the packs and the libraries; composes, places and publishes.
 - **`SceneSnapshot`** — what the scene thread publishes; the main thread takes the latest once a frame and every query reads it.
 - **Script** — `--script=<file>`, lines of `<frame> <verb> [args]`; frames count from the first residency. The *script clock* holds while
@@ -392,7 +392,7 @@ sense of a map; that is a scene.
 
 | Word | Meanings |
 |---|---|
-| batch | the scene thread's batch (one round); an upload batch (`UploadBatch`); a batch of events on the trace stream |
+| batch | an upload batch (`UploadBatch`); a batch of events on the trace stream. The scene thread's round is a *scene update* |
 | bucket | a culling bucket (single/double-sided × opaque/cutout); nothing else |
 | cell, region, tile | test-world streaming areas; *region* is also a culling (view, bucket) pair, *tile* a shadow-atlas cascade tile |
 | component | a World component (lights, LOD roots, instancers, payloads); a future gameplay component; a UI or software component in prose |

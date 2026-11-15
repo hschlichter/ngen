@@ -42,7 +42,7 @@ detail ones `AdvanceTime`, `ResetCameras`, `SendSceneInputs`, `CountLodPops`, `D
 `Hooks.<hook>`, the readbacks together `Readbacks`, and the submit `SubmitSnapshot` (group Wait: it waits for a free render slot). The loop
 hands `profile.history.seconds`, `profile.gpu.detail`, `profile.stall.seconds` and `profile.budget.frameMs` to the collector in
 `sendSceneInputs` when they change. The scene thread's loop is a
-`SceneBatch` with its requests, asset arrivals, compose, level evaluation and publish inside, and `Idle` slices while it waits.
+`SceneUpdate` with its requests, asset arrivals, compose, level evaluation and publish inside, and `Idle` slices while it waits.
 
 **The hooks.** `ViewHooks` (`viewhooks.h`) is how the layers above the engine join the frame, at the points above; each does nothing unless
 overridden. The tools implement them (`ToolsHooks`, `src/tools/README.md`) and the UI wraps the tools' (`UiHooks`, `src/ui/uihooks.*`), so the
@@ -87,8 +87,8 @@ The view shows a scene composed from its packs, with nothing of USD in it (`src/
 - **Requests.** It takes requests in order: `open`, `setLodLevel`, `setPurposeShown`, `refresh` (Repack and change notices) and
   `setLocalTransform` (gizmo drags and `translate`). Each returns at once.
 - **Arrivals.** It takes what the asset server answered (`AssetClient::takeAnswered`, woken by the client).
-- **Per batch** of requests and arrivals it composes with the layer packs held (one that hasn't arrived is a gap), requests the packs it names
-  and lacks, and runs a placement pass, which requests the meshes, materials and textures the placements want and lack.
+- **Per scene update**, one round over the requests and arrivals it took, it composes with the layer packs held (one that hasn't arrived is a
+  gap), requests the packs it names and lacks, and runs a placement pass, which requests the meshes, materials and textures the placements want and lack.
 - **Publishing.** It publishes a `SceneSnapshot`, which the main thread takes once a frame (`update`) and all queries read, and the changes for
   the renderer.
 - **Unchanged arrivals.** An asset fetched again that arrives with the same version keeps its library entry, so nothing is uploaded again.
@@ -97,7 +97,7 @@ The view shows a scene composed from its packs, with nothing of USD in it (`src/
 cutout whose opacity texture is still uploading draws opaque. A material that hasn't arrived uses the display colour.
 
 **Resident.** The scene is resident when everything it wants is loaded, uploaded and drawn:
-- the scene thread has nothing queued, requested or unplaced, no camera posted it hasn't evaluated, and no batch it took and hasn't
+- the scene thread has nothing queued, requested or unplaced, no camera posted it hasn't evaluated, and no scene update it took and hasn't
   published (so a moved camera's levels count: while the camera moves, the scene isn't resident);
 - the render thread has applied all scene changes in a frame it finished, with no upload or pipeline pending.
 
@@ -190,7 +190,7 @@ do its draws: only where it is placed.
 - **Transforms**: in float, parent times local, then scaled to metres by the root layer's `metersPerUnit`, as the view always drew; the
   camera's up is the scene's up axis. A prim's transform for the queries (`transform`, selection, the gizmo) is found in the published tree
   (`findTransform`): the deepest drawn placement at or above the path that holds it, the prim's transform in its walk, placed. A gizmo's
-  move is the view's session opinion of the prim; the placements holding it are built again in the same batch, and what is under it moves.
+  move is the view's session opinion of the prim; the placements holding it are built again in the same scene update, and what is under it moves.
   A path's bounds (`bounds`: the selection's box and gizmo, framing, go-to) walk the published tree down to the path, not every draw:
   each placement's whole bounds are kept from one snapshot to the next (`PlacementBounds`), since a node once published is never changed in
   place, so while the camera moves only the placements a snapshot replaced are walked again. On Eldermark with `/World/Regions` selected:
@@ -245,7 +245,7 @@ do its draws: only where it is placed.
   nearest above it: a threshold per level boundary, each imaging threshold at or before its load radius, each load radius at or before its
   unload radius, a child's imaging thresholds and unload radii inside its parent's first imaging threshold and load radius. A finding is
   reported (the `streaming` record's `findings`, with the values), not corrected.
-- **Streaming measured** (`SceneStreaming`, `measureStreaming` after each batch): per root, which levels are ready (placed and waiting for
+- **Streaming measured** (`SceneStreaming`, `measureStreaming` after each scene update): per root, which levels are ready (placed and waiting for
   nothing), each level's lead (seconds from ready to selected; 0 when selected before it was ready), late (drawing coarser than selected) or a
   hole (drawing nothing), its reloads; totals since the scene opened or `view.streaming.reset` (`streaming-reset`): late and holes now, late
   switches, holes, root-seconds drawn coarser, loads, reloads and releases, the leads' count, minimum and median, mesh packs that arrived with
@@ -304,7 +304,7 @@ do its draws: only where it is placed.
   and everything follows: its placement is released, the composer releases the contents no level reaches any more, the library entries no
   placement uses leave the libraries and the renderer, and a mesh's pack goes once no placement names it. While resident and not drawn, a
   level is placed undrawn and holds its library and GPU entries, so switching to it draws at once. Layer packs and material and texture packs
-  stay held. `LevelsUnloaded` traces each batch that let something go (levels, contents, mesh packs), and the `streaming` and `scenethread`
+  stay held. `LevelsUnloaded` traces each scene update that let something go (levels, contents, mesh packs), and the `streaming` and `scenethread`
   records and the LOD window (a loaded level's tooltip: the resident levels and why) show what was unloaded.
 
   ![A level's states from not resident to drawn, the level its root draws when the selected one is ready, late or missing, and what unloading releases](../../screenshots/view_level_lifecycle.svg)
@@ -395,7 +395,7 @@ The trace shows the steps:
 
 From the asset server to the screen, stage by stage in the order data flows:
 1. **Asset client**: requested, received (packed or from the server's cache), failed, in flight.
-2. **Scene thread**: requests posted and applied, batches, composes and placement passes (count, whether one is needed, the placements and
+2. **Scene thread**: requests posted and applied, scene updates, composes and placement passes (count, whether one is needed, the placements and
    those drawn, the last changing pass's time, placements built and slots added, removed and updated, walks built and kept), assets in flight
    by kind, packs held, library entries, idle.
 3. **Scene changes**: what a placement pass changed, which the main thread takes each frame and hands to the render thread.

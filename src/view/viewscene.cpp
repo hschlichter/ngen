@@ -219,12 +219,12 @@ auto ViewScene::addChanges(SceneChanges changes) -> void {
     pending.append(std::move(changes));
 }
 
-// The scene thread: requests in order, then what the asset server answered, then one compose and placement pass for the batch. Nothing waits
+// The scene thread: requests in order, then what the asset server answered, then one compose and placement pass for the update. Nothing waits
 // but the loop itself, for the next request or answer.
 auto ViewScene::run(const std::stop_token& stop) -> void {
     profile::registerThread("Scene");
     while (!stop.stop_requested()) {
-        std::deque<Request> batch;
+        std::deque<Request> taken;
         bool answers = false;
         std::vector<std::shared_ptr<const SceneSnapshot>> toFree;
         {
@@ -242,14 +242,14 @@ auto ViewScene::run(const std::stop_token& stop) -> void {
             }
             toFree = std::move(retired);
             retired.clear();
-            // Woken only to free what the main thread let go of: no batch, so nothing is published (which would hand back another).
+            // Woken only to free what the main thread let go of: no update, so nothing is published (which would hand back another).
             if (requests.empty() && !answered && !postedCamera.has_value()) {
                 lock.unlock();
                 PROFILE_ZONE("SceneRetire", Scene);
                 toFree.clear();
                 continue;
             }
-            batch = std::move(requests);
+            taken = std::move(requests);
             requests.clear();
             answers = answered;
             answered = false;
@@ -264,9 +264,9 @@ auto ViewScene::run(const std::stop_token& stop) -> void {
             PROFILE_ZONE("SceneRetire", Scene);
             toFree.clear();
         }
-        PROFILE_ZONE("SceneBatch", Scene);
-        stats.batches++;
-        for (auto& request : batch) {
+        PROFILE_ZONE("SceneUpdate", Scene);
+        stats.updates++;
+        for (auto& request : taken) {
             apply(request);
         }
         if (answers) {
@@ -292,7 +292,7 @@ auto ViewScene::run(const std::stop_token& stop) -> void {
         reportReleases();
         reportAssets();
         publish();
-        requestsApplied += batch.size();
+        requestsApplied += taken.size();
     }
 }
 
@@ -637,7 +637,7 @@ auto ViewScene::reportAssets() -> void {
 }
 
 // A gizmo's move: the view's session opinion of the prim (localOverrides), kept until the scene closes. The placements holding the prim are
-// built again in this batch's pass, walking it afresh with the opinion, and what is drawn under it moves with them.
+// built again in this update's pass, walking it afresh with the opinion, and what is drawn under it moves with them.
 auto ViewScene::applyTransform(const std::string& path, const glm::mat4& local) -> void {
     PROFILE_ZONE_DETAIL("ApplyTransform", Scene);
     auto found = tree ? findTransform(*tree, path) : std::nullopt;
