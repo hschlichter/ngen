@@ -88,7 +88,7 @@
   <!-- World -->
   <rect x="696" y="92" width="276" height="300" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-opacity="0.45"/>
   <text x="708" y="116" class="lib">World</text>
-  <text x="762" y="116" class="s">every composed prim is an entity</text>
+  <text x="762" y="116" class="s">every composed prim is a Prim</text>
 
   <rect x="708" y="126" width="252" height="104" rx="7" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
   <text x="720" y="144" class="m" font-weight="700">World::stage</text>
@@ -105,7 +105,7 @@
   <text x="720" y="274" class="s">prototypes: instanced content, kept once</text>
   <text x="720" y="291" class="s">LOD level contents, loaded or not</text>
 
-  <text x="708" y="324" class="s">components, beside the entities:</text>
+  <text x="708" y="324" class="s">tables, beside the prims:</text>
   <rect x="708" y="332" width="50" height="22" rx="6" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>
   <text x="716" y="347" class="m">Light</text>
   <rect x="764" y="332" width="64" height="22" rx="6" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.6"/>

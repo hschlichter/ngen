@@ -104,14 +104,11 @@ Every program's `main` is in `src/apps/` (the build system's and the RHI example
 
 - **Arc** — a composition arc: a sublayer, reference, payload, variant (and in USD inherits, specializes, relocates, which the engine doesn't
   compose).
-- **Component** (World) — data beside the entities, per content: lights, LOD roots, point instancers, payload placements. Not a gameplay
-  component; that framework is a roadmap step.
 - **Compose round** — one `WorldComposer::compose()`: compose from the packs held, return the packs named and not held. The caller fetches them,
   `addPack`s them and composes again until nothing is needed; each round goes one level of arcs deeper.
 - **Content** (`WorldContent`) — a separately composed, immutable piece of the World: the stage, a prototype, or a LOD level. Kept across
   composes at a stable index, with a `version` that changes each time it is composed.
 - **Default prim** — the prim a reference or payload naming no prim targets.
-- **Entity** — one composed prim in the World, whatever its type or purpose.
 - **Fingerprint** — one line per prim (path, type, point count, optionally its world matrix) printed by `ngen-worldcheck` and `ngen-usdcheck`.
 - **Gap** — an arc to a pack not held yet, composed as nothing for now; the content is composed again once the pack arrives.
 - **Instance / instanceable** — an instanceable prim with arcs that bring specs; it names a shared *prototype* and has no children of its own.
@@ -125,7 +122,9 @@ Every program's `main` is in `src/apps/` (the build system's and the RHI example
 - **Payload** — an arc whose target loads separately; in the engine, payloads under LOD levels are what streams.
 - **Pcp** — OpenUSD's prim cache population, the composition engine `WorldComposer` follows.
 - **PointInstancer / point** — a prim that draws prototypes at per-point transforms; each visible point draws its prototype.
-- **Prim** — a node in USD's namespace, named by its path (`/World/Tree`).
+- **Prim** — a node in USD's namespace, named by its path (`/World/Tree`). In the World, one composed prim (`Prim`, by `PrimId` in its
+  content), whatever its type or purpose. A `PrimHandle` is something else: the view's handle of a prim it draws or lights with. An *entity*
+  is a gameplay object, which the engine doesn't have yet.
 - **Prim index** — a prim's tree of nodes in strength order, each a *site* (a prim path in a layer stack) contributing opinions.
 - **Prototype** — the content shared by instances with the same arcs; its paths are relative to it.
 - **Purpose** — `default`, `render`, `proxy` or `guide`; `guide` and `proxy` draw only when turned on (`scene.purposes.*`).
@@ -136,7 +135,9 @@ Every program's `main` is in `src/apps/` (the build system's and the RHI example
   What USD keeps in a stage's session layer; the view holds no layer for it.
 - **Spec** — a prim's opinions in one layer (`def`, `over`, `class`).
 - **Stage** — USD's composed scene. In the World, the stage is the content holding the root layer stack's prims.
-- **Stand-in** — the entity in a LOD root's content for one of its levels, linked to the level's own content.
+- **Stand-in** — the prim in a LOD root's content for one of its levels, linked to the level's own content.
+- **Table** (World) — data beside the prims, per content: lights, LOD roots, point instancers, payload placements. Other engines would
+  not call these components: a component is a gameplay object's part, and that framework is a roadmap step.
 - **USD / OpenUSD** — the scene format the worlds are authored in; OpenUSD (`pxr`) is linked only by the USD packer, `ngen-usdcheck` and the
   editor code.
 - **Variant set / variant / selection** — named alternatives on a prim; the strongest `variants` opinion selects one. A set with no selection
@@ -399,7 +400,7 @@ sense of a map; that is a scene.
 | batch | an upload batch (`UploadBatch`); a batch of events on the log stream. The scene thread's round is a *scene update* |
 | bucket | a culling bucket (single/double-sided × opaque/cutout); nothing else |
 | cell, region, tile | test-world streaming areas; *region* is also a copy region of the RHI (a range of a buffer or a texture), *tile* a shadow-atlas cascade tile |
-| component | a World component (lights, LOD roots, instancers, payloads); a future gameplay component; a UI or software component in prose |
+| component | a future gameplay component; a UI or software component in prose. The World's data beside its prims is its *tables* |
 | content | a World content (stage, prototype, level); "content developers" means the people authoring worlds |
 | frame | the main thread's `ViewFrame`; a render frame on a frame context; an RPC frame (length-prefixed message); a script's frame number |
 | group | a render-LOD group (GPU-picked LOD root); a profile group (zone colour); a cvar group (name prefix); a workgroup of 256 culling slots (group box) |

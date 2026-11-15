@@ -173,7 +173,7 @@ do its instances: only where it is placed.
   it on its next wake without publishing; one the main thread never took is freed after the lock, and a `SceneChanges` joins the pending
   one by moving its lists when that is empty. So `update` and `takeChanges` swap pointers under the lock and wait on nothing large.
 
-- **What is drawn**: entities that are active, defined and not abstract, visible (an invisible ancestor hides its subtree), not in a LOD
+- **What is drawn**: prims that are active, defined and not abstract, visible (an invisible ancestor hides its subtree), not in a LOD
   level their root doesn't draw, with a mesh asset, and of a purpose that is shown: `default` and `render` always, `guide` and `proxy`
   when turned on (the cvars `scene.purposes.guide` and `scene.purposes.proxy`: the `purposes` console command, `view.purposes`, which
   answers once the change is drawn, the View menu).
@@ -366,7 +366,7 @@ do its instances: only where it is placed.
     the debug views).
 - **Point instancers and variants reached**: every PointInstancer reached while drawing (`instancers()`, the `instancers` record): its
   points and those shown, its prototypes, and the prims its points drew; every prim with variant sets (`variantPrims()`, the `variants`
-  record): each set and the variant it composed to (`Entity::variantSelections`). A LOD root in a point's prototype draws its default
+  record): each set and the variant it composed to (`Prim::variantSelections`). A LOD root in a point's prototype draws its default
   level and has no row in `lodRoots()`: the heuristic doesn't choose per point (the composer says so once per instancer).
 - **Payload placements**: every prim with payloads reached while drawing (`payloads()`, the `payloads` record): its asset ids, whether
   they are loaded, and its `extentsHint` in world metres. A level not loaded isn't reached, so what is under it isn't listed; its root's
@@ -374,7 +374,7 @@ do its instances: only where it is placed.
   which the `lodlevel` view colours by. The LOD window lists the roots with a level picker per row, "Set shown" for every row its filter
   shows (default, coarsest or one level), a click to select a root and a double-click to frame it; it highlights the root at or above the
   selection, and marks a root still loading the level it wants.
-- **Names**: draw instances and lights carry a prim index; `primPath` turns it into the entity's full path, for the render debugger, the
+- **Names**: draw instances and lights carry a prim index; `primPath` turns it into the prim's full path, for the render debugger, the
   frame debugger, the GPU scene window and the dumps.
 
 The log shows the steps:

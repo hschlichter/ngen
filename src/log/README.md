@@ -94,7 +94,7 @@ loading didn't cover. Each step that takes time says how long; the two "after st
 - **Data.** If the event's point is a number someone will read later, it belongs in a record. `FrameGraphCompiled` with a pass count,
   `TextureUploaded` per texture or `RenderStats` every 60 frames are all data: the `render` record holds the passes, textures and draw
   counters, and a script records it at the frame it needs.
-- **Steady state.** Nothing per frame, per pass, per draw or per entity, and nothing sampled every N frames. A drag sends preview edits every
+- **Steady state.** Nothing per frame, per pass, per draw or per prim, and nothing sampled every N frames. A drag sends preview edits every
   frame; only the edit that commits it is logged.
 - **Echoes of a reply.** A method's result goes back to its caller. A call that fails is logged (`RpcCallFailed`), one that works isn't.
 

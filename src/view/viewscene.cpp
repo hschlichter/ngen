@@ -596,18 +596,18 @@ auto ViewScene::compose() -> void {
     if (world.layerStack.empty()) {
         LOG_ERROR("Scene", "SceneFailed", id).text(std::format("scene {}: its root layer can't be had", id));
     }
-    PROFILE_ZONE_DETAIL("CountEntities", Scene);
-    size_t entities = 0;
-    world.visit([&entities](const VisitedEntity&) {
-        entities++;
+    PROFILE_ZONE_DETAIL("CountPrims", Scene);
+    size_t prims = 0;
+    world.visit([&prims](const VisitedPrim&) {
+        prims++;
         return true;
     });
     auto ms = msSince(start);
     stats.lastComposeMs = ms;
     LOG_EVENT("Scene", "PacksComposed", id)
-        .text(std::format("{} composed: {} layer packs, {} prims, {} prototypes, {:.0f} ms after it was requested", id, requestedPacks.size(), entities, world.prototypeCount(), msSince(openedAt)))
+        .text(std::format("{} composed: {} layer packs, {} prims, {} prototypes, {:.0f} ms after it was requested", id, requestedPacks.size(), prims, world.prototypeCount(), msSince(openedAt)))
         .field("packs", (int64_t) requestedPacks.size())
-        .field("prims", (int64_t) entities)
+        .field("prims", (int64_t) prims)
         .field("prototypes", (int64_t) world.prototypeCount())
         .field("ms", ms);
 }
@@ -1177,7 +1177,7 @@ auto ViewScene::logCompleted() -> void {
     }
 }
 
-// The prims World::visit reaches in a content: its entities (a level content's root among them, the stage's and a prototype's not), an
+// The prims World::visit reaches in a content: its prims (a level content's root among them, the stage's and a prototype's not), an
 // instance's prototype in place of the instance's children, and a LOD level's linked content in place of its stand-in.
 auto ViewScene::countWorld() -> void {
     PROFILE_ZONE_DETAIL("CountWorld", Scene);
@@ -1189,26 +1189,26 @@ auto ViewScene::countPrims(const World& world, const WorldContent& content, bool
         return it->second.second;
     }
     size_t count = 0;
-    std::vector<EntityId> pending;
+    std::vector<PrimId> pending;
     if (rootIsPrim) {
         pending.push_back(0);
     } else {
-        pending.assign(content.entities[0].children.begin(), content.entities[0].children.end());
+        pending.assign(content.prims[0].children.begin(), content.prims[0].children.end());
     }
     while (!pending.empty()) {
         auto id = pending.back();
         pending.pop_back();
-        const auto& entity = content.entities[id];
-        if (entity.linkedContent >= 0) {
-            count += countPrims(world, world.contents[(size_t) entity.linkedContent], true);
+        const auto& worldPrim = content.prims[id];
+        if (worldPrim.linkedContent >= 0) {
+            count += countPrims(world, world.contents[(size_t) worldPrim.linkedContent], true);
             continue;
         }
         count++;
-        if (entity.prototype >= 0) {
-            count += countPrims(world, world.contents[(size_t) entity.prototype], false);
+        if (worldPrim.prototype >= 0) {
+            count += countPrims(world, world.contents[(size_t) worldPrim.prototype], false);
             continue;
         }
-        pending.insert(pending.end(), entity.children.begin(), entity.children.end());
+        pending.insert(pending.end(), worldPrim.children.begin(), worldPrim.children.end());
     }
     primCounts[&content] = {content.version, count};
     return count;

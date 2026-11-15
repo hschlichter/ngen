@@ -134,10 +134,10 @@ auto PlacementBounds::letGo() -> void {
     keptAfterLetGo = kept.size();
 }
 
-auto findTransform(const Placement& tree, const std::string& path) -> std::optional<EntityTransform> {
+auto findTransform(const Placement& tree, const std::string& path) -> std::optional<ContentPrimTransform> {
     // The deepest drawn placement at or above the path that holds it: a prim is in the content placed nearest above it. A PointInstancer's
     // points aren't looked into: the instancer prim itself is in the content holding it.
-    auto deeper = [&](const std::shared_ptr<Placement>& child) -> std::optional<EntityTransform> {
+    auto deeper = [&](const std::shared_ptr<Placement>& child) -> std::optional<ContentPrimTransform> {
         if (!child || !child->drawn || child->kind == Placement::Kind::Instancer || !primpath::isAtOrUnder(path, child->path)) {
             return std::nullopt;
         }
@@ -260,10 +260,10 @@ auto ViewScene::overridesUnder(const std::string& usePath) const -> bool {
     return std::ranges::any_of(localOverrides, [&](const auto& entry) { return primpath::isAtOrUnder(entry.first, usePath); });
 }
 
-auto ViewScene::buildWalk(const WorldContent& content, bool rootIsPrim, Purpose purpose, const std::string& material, bool strong, const std::string& overrideBase, EntityId root)
+auto ViewScene::buildWalk(const WorldContent& content, bool rootIsPrim, Purpose purpose, const std::string& material, bool strong, const std::string& overrideBase, PrimId root)
     -> std::shared_ptr<const ContentWalk> {
     stats.walksBuilt++;
-    auto walkRoot = root != noEntity ? root : (rootIsPrim ? (EntityId) 0 : noEntity);
+    auto walkRoot = root != noPrim ? root : (rootIsPrim ? (PrimId) 0 : noPrim);
     auto out = std::make_shared<ContentWalk>();
     out->version = content.version;
     auto prims = std::make_shared<ContentTransforms>();
@@ -277,12 +277,12 @@ auto ViewScene::buildWalk(const WorldContent& content, bool rootIsPrim, Purpose 
         int32_t lodRootItem = -1; // under a level of a render-LOD root: the root's item and the level
         uint32_t lodLevel = 0;
     };
-    std::function<void(EntityId, const State&)> walk = [&](EntityId id, const State& parent) {
-        const auto& entity = content.entities[id];
+    std::function<void(PrimId, const State&)> walk = [&](PrimId id, const State& parent) {
+        const auto& worldPrim = content.prims[id];
         State state;
-        state.path = id == walkRoot ? std::string("/") : primpath::child(parent.path, entity.name);
-        glm::mat4 local(entity.localTransform);
-        if (!overrideBase.empty() && entity.xformable) {
+        state.path = id == walkRoot ? std::string("/") : primpath::child(parent.path, worldPrim.name);
+        glm::mat4 local(worldPrim.localTransform);
+        if (!overrideBase.empty() && worldPrim.xformable) {
             if (auto authored = localOverrides.find(primpath::join(overrideBase, state.path)); authored != localOverrides.end()) {
                 local = authored->second;
             }
@@ -290,26 +290,26 @@ auto ViewScene::buildWalk(const WorldContent& content, bool rootIsPrim, Purpose 
         state.absolute = parent.absolute;
         state.lodRootItem = parent.lodRootItem;
         state.lodLevel = parent.lodLevel;
-        if (!entity.xformable) {
+        if (!worldPrim.xformable) {
             state.world = parent.world;
-        } else if (entity.resetsXformStack) {
+        } else if (worldPrim.resetsXformStack) {
             state.world = local;
             state.absolute = true;
         } else {
             state.world = parent.world * local;
         }
         // A LOD item's own visibility is for readers that don't select LOD; the drawn level is shown whatever it authors.
-        if (!entity.active || !entity.defined || entity.abstract || (entity.invisible && !entity.lodItem)) {
+        if (!worldPrim.active || !worldPrim.defined || worldPrim.abstract || (worldPrim.invisible && !worldPrim.lodItem)) {
             return;
         }
-        state.purpose = entity.purpose.value_or(parent.purpose);
+        state.purpose = worldPrim.purpose.value_or(parent.purpose);
         state.material = parent.material;
         state.strong = parent.strong;
-        if (!parent.strong && entity.binding) {
-            state.material = entity.binding->materialAsset;
-            state.strong = entity.binding->strongerThanDescendants;
+        if (!parent.strong && worldPrim.binding) {
+            state.material = worldPrim.binding->materialAsset;
+            state.strong = worldPrim.binding->strongerThanDescendants;
         }
-        (*prims)[state.path] = {.local = local, .world = state.world, .xformable = entity.xformable, .resetsXformStack = entity.resetsXformStack, .absolute = state.absolute};
+        (*prims)[state.path] = {.local = local, .world = state.world, .xformable = worldPrim.xformable, .resetsXformStack = worldPrim.resetsXformStack, .absolute = state.absolute};
         if (id != walkRoot && !content.pointInstancers.empty() && content.isInstancerPrototype(id)) {
             // A PointInstancer's prototype beneath it is drawn per point, not where it is.
             return;
@@ -318,22 +318,22 @@ auto ViewScene::buildWalk(const WorldContent& content, bool rootIsPrim, Purpose 
                       .path = state.path,
                       .world = state.world,
                       .absolute = state.absolute,
-                      .entity = &entity,
+                      .prim = &worldPrim,
                       .id = id,
                       .purpose = state.purpose,
                       .material = state.material,
                       .strongBinding = state.strong,
-                      .camera = entity.typeName == "Camera",
+                      .camera = worldPrim.typeName == "Camera",
                       .payload = content.payloads.contains(id),
                       .lodRoot = content.lodRoots.contains(id) && content.lodRoots.at(id).streams,
                       .light = content.lights.contains(id),
-                      .variants = !entity.variantSelections.empty(),
+                      .variants = !worldPrim.variantSelections.empty(),
                       .renderLodRoot = content.lodRoots.contains(id) && !content.lodRoots.at(id).streams,
                       .lodRootItem = state.lodRootItem,
                       .lodLevel = state.lodLevel};
-        bool drawsMesh = !entity.meshAsset.empty();
+        bool drawsMesh = !worldPrim.meshAsset.empty();
         if (drawsMesh) {
-            prim.subsets = std::ranges::any_of(entity.children, [&](EntityId child) { return content.entities[child].binding.has_value(); });
+            prim.subsets = std::ranges::any_of(worldPrim.children, [&](PrimId child) { return content.prims[child].binding.has_value(); });
         }
         int32_t primItem = -1;
         if (drawsMesh || prim.camera || prim.payload || prim.lodRoot || prim.light || prim.variants || prim.renderLodRoot) {
@@ -341,8 +341,8 @@ auto ViewScene::buildWalk(const WorldContent& content, bool rootIsPrim, Purpose 
             primItem = (int32_t) index;
             if (drawsMesh) {
                 out->meshItems.push_back(index);
-                if (!std::ranges::contains(out->meshAssets, entity.meshAsset)) {
-                    out->meshAssets.push_back(entity.meshAsset);
+                if (!std::ranges::contains(out->meshAssets, worldPrim.meshAsset)) {
+                    out->meshAssets.push_back(worldPrim.meshAsset);
                 }
             }
             if (prim.camera || prim.payload || prim.lodRoot || prim.variants) {
@@ -362,7 +362,7 @@ auto ViewScene::buildWalk(const WorldContent& content, bool rootIsPrim, Purpose 
                                   .lodRootItem = state.lodRootItem,
                                   .lodLevel = state.lodLevel});
         }
-        if (entity.prototype >= 0) {
+        if (worldPrim.prototype >= 0) {
             out->items.push_back({.kind = WalkItem::Kind::Instance,
                                   .path = state.path,
                                   .world = state.world,
@@ -370,7 +370,7 @@ auto ViewScene::buildWalk(const WorldContent& content, bool rootIsPrim, Purpose 
                                   .purpose = state.purpose,
                                   .material = state.material,
                                   .strongBinding = state.strong,
-                                  .content = entity.prototype,
+                                  .content = worldPrim.prototype,
                                   .lodRootItem = state.lodRootItem,
                                   .lodLevel = state.lodLevel});
             return;
@@ -378,7 +378,7 @@ auto ViewScene::buildWalk(const WorldContent& content, bool rootIsPrim, Purpose 
         if (auto lod = content.lodRoots.find(id); lod != content.lodRoots.end() && !lod->second.streams) {
             // A render-LOD root's levels are walked like its other children, what is under a level tagged with the root's item and the
             // level: the renderer draws the level the root's group picks.
-            for (EntityId child : entity.children) {
+            for (PrimId child : worldPrim.children) {
                 auto level = std::ranges::find(lod->second.levels, child);
                 if (level == lod->second.levels.end()) {
                     walk(child, state);
@@ -396,7 +396,7 @@ auto ViewScene::buildWalk(const WorldContent& content, bool rootIsPrim, Purpose 
             for (uint32_t i = 0; i < lod->second.levels.size(); i++) {
                 auto standIn = lod->second.levels[i];
                 out->items.push_back({.kind = WalkItem::Kind::Level,
-                                      .path = primpath::child(state.path, content.entities[standIn].name),
+                                      .path = primpath::child(state.path, content.prims[standIn].name),
                                       .world = state.world,
                                       .absolute = state.absolute,
                                       .id = standIn,
@@ -408,15 +408,15 @@ auto ViewScene::buildWalk(const WorldContent& content, bool rootIsPrim, Purpose 
             }
             return;
         }
-        for (EntityId child : entity.children) {
+        for (PrimId child : worldPrim.children) {
             walk(child, state);
         }
     };
     State top{.path = "/", .world = glm::mat4(1.0f), .absolute = false, .purpose = purpose, .material = material, .strong = strong};
-    if (walkRoot != noEntity) {
+    if (walkRoot != noPrim) {
         walk(walkRoot, top);
     } else {
-        for (EntityId child : content.entities[0].children) {
+        for (PrimId child : content.prims[0].children) {
             walk(child, top);
         }
     }
@@ -424,7 +424,7 @@ auto ViewScene::buildWalk(const WorldContent& content, bool rootIsPrim, Purpose 
     return out;
 }
 
-auto ViewScene::walkOf(Placement::Kind kind, int32_t index, const WorldContent& content, Purpose purpose, const std::string& material, bool strong, const std::string& usePath, EntityId root)
+auto ViewScene::walkOf(Placement::Kind kind, int32_t index, const WorldContent& content, Purpose purpose, const std::string& material, bool strong, const std::string& usePath, PrimId root)
     -> std::shared_ptr<const ContentWalk> {
     bool rootIsPrim = kind == Placement::Kind::Level;
     if (overridesUnder(usePath)) {
@@ -774,7 +774,7 @@ auto ViewScene::wantMaterial(const std::string& key, Placement& node) -> void {
     }
 }
 
-auto ViewScene::resolveDraw(const std::string& meshAsset, const std::string& boundMaterial, bool strongBinding, const Entity* subsetsOf, const WorldContent& content)
+auto ViewScene::resolveDraw(const std::string& meshAsset, const std::string& boundMaterial, bool strongBinding, const Prim* subsetsOf, const WorldContent& content)
     -> std::shared_ptr<const ResolvedDraw> {
     // Prims of the same mesh bound to the same material share what they resolve to; a mesh with subset bindings resolves per prim.
     std::string key;
@@ -811,8 +811,8 @@ auto ViewScene::resolveDraw(const std::string& meshAsset, const std::string& bou
             // The subset's own binding, unless an ancestor's is stronger; a subset has no display colour of its own.
             auto name = submesh.subsetPath.substr(submesh.subsetPath.rfind('/') + 1);
             std::string subsetMaterial = boundMaterial;
-            for (EntityId child : subsetsOf->children) {
-                const auto& subset = content.entities[child];
+            for (PrimId child : subsetsOf->children) {
+                const auto& subset = content.prims[child];
                 if (subset.name == name && subset.binding && !strongBinding) {
                     subsetMaterial = subset.binding->materialAsset;
                 }
@@ -1173,8 +1173,8 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
         std::vector<std::shared_ptr<const ContentWalk>> prototypeWalks;
         std::vector<std::string> prototypePaths;
         auto instancerInContent = content.path(spec.instancer);
-        for (EntityId prototype : data.prototypes) {
-            if (prototype == noEntity) {
+        for (PrimId prototype : data.prototypes) {
+            if (prototype == noPrim) {
                 prototypeWalks.push_back(nullptr);
                 prototypePaths.emplace_back();
                 continue;
@@ -1241,7 +1241,7 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
                             node->cameras.push_back({.path = path, .worldTransform = world});
                         }
                         if (item.variants) {
-                            node->variantPrims.push_back({.path = path, .selections = item.entity->variantSelections});
+                            node->variantPrims.push_back({.path = path, .selections = item.prim->variantSelections});
                         }
                         if (!item.payload) {
                         } else if (auto payload = content.payloads.find(item.id); payload != content.payloads.end()) {
@@ -1340,8 +1340,8 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
                             made->key = lodGroupInfo[slot].key;
                             made->depth = tagDepth + 1;
                             made->heuristics = lod.heuristics;
-                            for (EntityId level : lod.levels) {
-                                made->levels.push_back(content.entities[level].name);
+                            for (PrimId level : lod.levels) {
+                                made->levels.push_back(content.prims[level].name);
                             }
                             lodGroupSources.edit(slot) = std::move(made);
                         }
@@ -1362,8 +1362,8 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
                     root.levels.resize(lod.levels.size());
                     auto& row = root.row;
                     row.path = path;
-                    for (EntityId level : lod.levels) {
-                        row.levels.push_back(content.entities[level].name);
+                    for (PrimId level : lod.levels) {
+                        row.levels.push_back(content.prims[level].name);
                         auto payload = content.payloads.find(level);
                         row.levelPayloads.push_back(payload != content.payloads.end() ? payload->second.assetIds : std::vector<std::string>{});
                     }
@@ -1423,29 +1423,29 @@ auto ViewScene::buildPlacement(const std::shared_ptr<Placement>& old, const Plac
                         }
                     }
                 }
-                const auto& entity = *item.entity;
-                if (entity.meshAsset.empty() || !drawsPurpose(item.purpose)) {
+                const auto& worldPrim = *item.prim;
+                if (worldPrim.meshAsset.empty() || !drawsPurpose(item.purpose)) {
                     continue;
                 }
                 // What it draws with: the mesh, its binding's material and the subsets' own, each asked for while it isn't held.
                 wantMaterial(item.material, *node);
                 if (item.subsets && !item.strongBinding) {
-                    for (EntityId child : entity.children) {
-                        const auto& subset = content.entities[child];
+                    for (PrimId child : worldPrim.children) {
+                        const auto& subset = content.prims[child];
                         if (subset.binding) {
                             wantMaterial(subset.binding->materialAsset, *node);
                         }
                     }
                 }
-                if (!meshPacks.contains(entity.meshAsset)) {
-                    wantAsset(*node, entity.meshAsset, AssetKind::Mesh);
+                if (!meshPacks.contains(worldPrim.meshAsset)) {
+                    wantAsset(*node, worldPrim.meshAsset, AssetKind::Mesh);
                     continue;
                 }
-                auto meshHandle = mesh(entity.meshAsset);
+                auto meshHandle = mesh(worldPrim.meshAsset);
                 if (!meshHandle) {
                     continue;
                 }
-                auto resolved = resolveDraw(entity.meshAsset, item.material, item.strongBinding, item.subsets ? &entity : nullptr, content);
+                auto resolved = resolveDraw(worldPrim.meshAsset, item.material, item.strongBinding, item.subsets ? &worldPrim : nullptr, content);
                 if (!spec.drawn) {
                     // Not drawn: it holds the entries it would draw with, so drawing it (the root switching to it) uploads nothing.
                     node->heldMeshes.push_back(meshHandle.index);
@@ -1552,7 +1552,7 @@ auto ViewScene::syncRoots(const Placement& node, const std::function<Placement&(
         auto rootWorld = rootItem.absolute ? rootItem.world : segment.world * rootItem.world;
         auto desired = w.desiredLevel(root.path, lod);
         auto isLoaded = [&](uint32_t i) {
-            return i < lod.levels.size() && content.entities[lod.levels[i]].linkedContent >= 0 && std::ranges::contains(lod.loaded, i);
+            return i < lod.levels.size() && content.prims[lod.levels[i]].linkedContent >= 0 && std::ranges::contains(lod.loaded, i);
         };
         // A level's placement as the spec says, drawn when it is `drawnLevel`; released when it isn't loaded. Read through the node, which
         // edit() may replace with a copy holding the same pointers.
@@ -1576,9 +1576,9 @@ auto ViewScene::syncRoots(const Placement& node, const std::function<Placement&(
             }
             auto standIn = lod.levels[i];
             PlacementSpec spec{.kind = Placement::Kind::Level,
-                               .content = content.entities[standIn].linkedContent,
+                               .content = content.prims[standIn].linkedContent,
                                .contentKind = Placement::Kind::Level,
-                               .path = primpath::child(root.path, content.entities[standIn].name),
+                               .path = primpath::child(root.path, content.prims[standIn].name),
                                .world = rootWorld,
                                .purpose = rootItem.purpose,
                                .material = rootItem.material,
@@ -1628,7 +1628,7 @@ auto ViewScene::syncRoots(const Placement& node, const std::function<Placement&(
         // Pending while it doesn't draw the level it wants, or a level it loads isn't linked yet (still composing): a later pass places it.
         bool pending = !drawnLevel || *drawnLevel != desired;
         for (auto level : lod.loaded) {
-            if (level < lod.levels.size() && content.entities[lod.levels[level]].linkedContent < 0) {
+            if (level < lod.levels.size() && content.prims[lod.levels[level]].linkedContent < 0) {
                 pending = true;
             }
         }
@@ -1715,7 +1715,7 @@ auto ViewScene::place() -> void {
         }
         // A content released (emptied: no level reaches it any more) goes with the placement of the level that held it, not everywhere.
         const auto& content = contentOf(w, kind, index);
-        return content.version != entry.second && !content.entities.empty();
+        return content.version != entry.second && !content.prims.empty();
     });
     PlacementSpec stage{.kind = Placement::Kind::Stage, .content = -1, .contentKind = Placement::Kind::Stage, .path = "/"};
     std::shared_ptr<Placement> next;

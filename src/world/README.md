@@ -1,14 +1,14 @@
 # World
 
 The World is the runtime scene: every prim of a scene, composed from its scene packs (`src/asset/README.md`, "Scene packs"), with no USD
-in it. `WorldComposer` composes it as USD composes a stage, for what the engine composes; `World::visit` walks it with every entity's full path and resolved state (ngen-worldcheck's fingerprint); ngen-view walks the stage and the contents itself, by their links, to place them (`src/view/README.md`, "The placement tree"). Nothing here fetches:
+in it. `WorldComposer` composes it as USD composes a stage, for what the engine composes; `World::visit` walks it with every prim's full path and resolved state (ngen-worldcheck's fingerprint); ngen-view walks the stage and the contents itself, by their links, to place them (`src/view/README.md`, "The placement tree"). Nothing here fetches:
 the caller feeds the composer packs from the asset server.
 
-![USD files (a root layer, its sublayers, a referenced asset, a payload per LOD level, variant sets) packed by ngen-packer-usd into layer packs, composed by WorldComposer into a World of entities and components, read by ngen-view's placement and by ngen-worldcheck, whose fingerprint is compared with ngen-usdcheck's from OpenUSD.](../../screenshots/world_overview.svg)
+![USD files (a root layer, its sublayers, a referenced asset, a payload per LOD level, variant sets) packed by ngen-packer-usd into layer packs, composed by WorldComposer into a World of prims and tables, read by ngen-view's placement and by ngen-worldcheck, whose fingerprint is compared with ngen-usdcheck's from OpenUSD.](../../screenshots/world_overview.svg)
 
 | Files | What |
 |---|---|
-| `world.*` | `World`, `WorldContent`, `Entity` and the components, `visit` |
+| `world.*` | `World`, `WorldContent`, `Prim` and the tables, `visit` |
 | `worldcomposer.*` | `WorldComposer`: layer packs to a `World` |
 | `xformops.*` | a prim's local transform from its `xformOpOrder` |
 | `fingerprint.h` | the fingerprint line `ngen-worldcheck` and `ngen-usdcheck` print |
@@ -16,20 +16,20 @@ the caller feeds the composer packs from the asset server.
 
 ## What a World holds
 
-- **Every composed prim is an entity**, whatever its type or purpose: scopes, shaders, guides, classes, `over`-only prims, inactive prims
-  (without children, as in USD). What is drawn is decided when the World is read (purpose, visibility, LOD levels), not by leaving entities
+- **Every composed prim is an prim**, whatever its type or purpose: scopes, shaders, guides, classes, `over`-only prims, inactive prims
+  (without children, as in USD). What is drawn is decided when the World is read (purpose, visibility, LOD levels), not by leaving prims
   out.
 - **Instanced content is kept once.** An instance (an instanceable prim with arcs) names a prototype in `World::contents` and has no
   children of its own; instances with the same arcs share one prototype. A prototype's paths are relative to it (`/Top`); `visit` expands
-  instances and gives every entity its full path.
-- **An entity** has its name, type, parent and children, whether it is defined, abstract (a class) and active, its point count (point-based
+  instances and gives every prim its full path.
+- **An prim** has its name, type, parent and children, whether it is defined, abstract (a class) and active, its point count (point-based
   prims), its authored purpose and visibility, its local transform (types that are `UsdGeomXformable`), the mesh asset its geometry is and the
   material asset it is, its variant sets as composed (`variantSelections`: each set and the variant selected), and, for a material, its
   own inputs as composed (`materialInputs`, its interface), and its material binding (the
   bound material instance as a key, `materialInstanceKey`: its pack's asset id and its inputs' values, `<asset>?<input>=<value>&…`, and
   `strongerThanDescendants`). A material that references another file's network and sets its inputs (a tile setting a library
   material's texture) is that file's pack with this one's values.
-- **Components** beside the entities, per content: lights (UsdLux's inputs, with UsdLux's fallbacks; a dome's image, its `texture:format` and its
+- **Tables** beside the prims, per content: lights (UsdLux's inputs, with UsdLux's fallbacks; a dome's image, its `texture:format` and its
   pole axis, `Y` for a `DomeLight` and `poleAxis` for a `DomeLight_1`), LOD roots (levels, default index, loaded levels,
   and every heuristic it names, `LodRoot::heuristics`) point instancers (`PointInstancerData`: prototypes,
   and per point its prototype, its transform from `positions`, `orientations` and `scales` as UsdGeomPointInstancer composes them, and whether
@@ -38,7 +38,7 @@ the caller feeds the composer packs from the asset server.
   stack's asset ids.
 - **`visit`** resolves down the hierarchy: world transforms (`!resetXformStack!` included), visibility (an invisible prim hides its
   subtree), purpose (inherited from the nearest ancestor that authors one), the bound material (the nearest binding, unless an ancestor's is
-  `strongerThanDescendants`), and whether the entity is in a LOD level its root doesn't draw, and whether it is under a PointInstancer's prototype beneath the
+  `strongerThanDescendants`), and whether the prim is in a LOD level its root doesn't draw, and whether it is under a PointInstancer's prototype beneath the
   instancer (drawn per point, not where it is; it is still visited, as it is a prim of the stage).
 
 ## Composition
@@ -114,14 +114,14 @@ reports, it corrects nothing. `pickLodLevel` is UsdLod's `ComputeLOD` for both k
 hysteresis at a boundary without a band, against the level desired before; the view and the GPU's pick follow it. `ngen-worldcheck` and
 `ngen-usdcheck` print every root's heuristics (`--lod-heuristics`, unload thresholds included), `ngen-worldcheck --lod-authoring` the contract's
 findings over the roots it reaches, and `ngen-usdcheck --lod-picks` gives UsdLod's fractional level for given cameras. A level's own authored visibility is for readers that don't select LOD (UsdLod's recommendation is the default level visible, the others
-invisible): the level the engine draws is shown whatever it authors, and visibility below it applies as usual (`Entity::lodItem`).
+invisible): the level the engine draws is shown whatever it authors, and visibility below it applies as usual (`Prim::lodItem`).
 
 A LOD root inside a prototype loads, in the prototype, every level any of its instances wants; which level each instance wants and draws
 is state of the instance (`World::lodLevels`, by the root's full path), outside the prototype. USD instead gives instances with different
 loaded levels different prototypes.
 
-**A level is a content of its own.** A LOD root's children are stand-in entities, one per level; each is linked (`Entity::linkedContent`) to
-a content in `World::contents` whose entity 0 is the level prim itself, composed loaded or not (a loaded level's payload brings opinions
+**A level is a content of its own.** A LOD root's children are stand-in prims, one per level; each is linked (`Prim::linkedContent`) to
+a content in `World::contents` whose prim 0 is the level prim itself, composed loaded or not (a loaded level's payload brings opinions
 for the level prim too), with everything under it. `visit` walks a level as that content. Which levels load is decided after composing, by
 linking (resolution): so changing a level never changes the content its root is in, only which level content its stand-in links to.
 
@@ -147,7 +147,7 @@ resolution and the bindings took.
 
 Every content has a `version`, new each time it is composed: a reader can keep what it derived from a content by version. After each compose
 and relink, a kept content the resolution didn't reach is let go at once (`stats().released`): emptied in place (its index stays, a new
-version, no entities) and composed again if it is reached later. A content being composed (incomplete, composed this round) and the
+version, no prims) and composed again if it is reached later. A content being composed (incomplete, composed this round) and the
 prototypes it uses yet are held, so a level waiting for packs doesn't compose its prototypes again every round. Which levels stay loaded is
 the caller's (`setResidentLevels`).
 

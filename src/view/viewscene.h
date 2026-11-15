@@ -375,9 +375,9 @@ public:
     auto assetIds() const -> std::vector<std::string> { return *current->assetIds; }
     // The scene's up axis, as a vector.
     auto worldUp() const -> glm::vec3;
-    // The full path of the entity a draw instance or light names (RenderWorld's prim index); empty for none.
+    // The full path of the prim a draw instance or light names (RenderWorld's prim index); empty for none.
     auto primPath(uint32_t prim) const -> std::string;
-    // The full path of the entity a draw instance (a slot of RenderWorld::meshInstances) draws; empty for none.
+    // The full path of the prim a draw instance (a slot of RenderWorld::meshInstances) draws; empty for none.
     auto instancePath(uint32_t instance) const -> std::string;
     // The world bounds of what is drawn at or under a path; invalid when nothing is.
     auto bounds(const std::string& path) const -> AABB;
@@ -642,11 +642,11 @@ private:
     // Content walks (placement.h), kept by content, version and inherited state.
     std::unordered_map<std::string, std::shared_ptr<const ContentWalk>> walks;
     // A content's walk afresh; `overrideBase`, when set, is where it is placed, to apply the gizmo's session opinions. `root`, when given, walks
-    // that entity's subtree instead (a PointInstancer's prototype), the entity's path "/".
-    auto buildWalk(const WorldContent& content, bool rootIsPrim, Purpose purpose, const std::string& material, bool strong, const std::string& overrideBase, EntityId root = noEntity)
+    // that prim's subtree instead (a PointInstancer's prototype), the prim's path "/".
+    auto buildWalk(const WorldContent& content, bool rootIsPrim, Purpose purpose, const std::string& material, bool strong, const std::string& overrideBase, PrimId root = noPrim)
         -> std::shared_ptr<const ContentWalk>;
     // A content's kept walk, afresh when a gizmo's opinion is under where it is placed.
-    auto walkOf(Placement::Kind kind, int32_t index, const WorldContent& content, Purpose purpose, const std::string& material, bool strong, const std::string& usePath, EntityId root = noEntity)
+    auto walkOf(Placement::Kind kind, int32_t index, const WorldContent& content, Purpose purpose, const std::string& material, bool strong, const std::string& usePath, PrimId root = noPrim)
         -> std::shared_ptr<const ContentWalk>;
     auto overridesUnder(const std::string& usePath) const -> bool;
 
@@ -657,7 +657,7 @@ private:
         Placement::Kind kind = Placement::Kind::Stage;
         int32_t content = -1;
         Placement::Kind contentKind = Placement::Kind::Stage;
-        EntityId instancer = noEntity;
+        PrimId instancer = noPrim;
         std::string path;
         glm::mat4 world = glm::mat4(1.0f);
         Purpose purpose = Purpose::Default;
@@ -736,7 +736,7 @@ private:
         std::shared_ptr<const std::vector<std::string>> uses;
     };
     std::unordered_map<std::string, std::shared_ptr<const ResolvedDraw>> resolvedDraws;
-    auto resolveDraw(const std::string& meshAsset, const std::string& boundMaterial, bool strongBinding, const Entity* subsetsOf, const WorldContent& content) -> std::shared_ptr<const ResolvedDraw>;
+    auto resolveDraw(const std::string& meshAsset, const std::string& boundMaterial, bool strongBinding, const Prim* subsetsOf, const WorldContent& content) -> std::shared_ptr<const ResolvedDraw>;
     // An asset a placement's prims want and lack, into its `waiting` and the pass's requests (once each; a failed one isn't waited for).
     auto wantAsset(Placement& node, const std::string& assetId, AssetKind kind) -> void;
     // The assets a material binding wants and lacks: its pack, or its textures once the pack is held.
