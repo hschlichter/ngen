@@ -54,6 +54,7 @@ Current truth for the build framework is [`../src/build/README.md`](../src/build
 - [plan_meshlet_performance.md](plan_meshlet_performance.md) — the meshlet and occlusion path measured and squeezed on the test world: workgroup skipping, a parallel scan, group boxes, occlusion in the geometry pass, meshlet packs, a slim culling record; 68.9 → 15.3 ms at `flight_10` (landed)
 - [plan_meshlet_culling_visibility.md](plan_meshlet_culling_visibility.md) — meshlet culling counted and shown: drawn means after meshlet culling everywhere, meshlets tested against the frame's final depth in the geometry pass, a `meshletcull` debug view, the work-item growth bug (landed)
 - [plan_subset_bounds.md](plan_subset_bounds.md) — each subset instance culled by its own subset's box, cascades drawn per subset, the meshlet capture decoded (landed)
+- [plan_cluster_lod.md](plan_cluster_lod.md) — cluster LOD (CLOD, Nanite-style): every mesh packed as a cluster DAG (meshoptimizer's `clusterlod.h`), clusters selected per meshlet in the task shader by projected error from the main camera, inside a UsdLod level, whole DAG resident (draft; a prototype run, apart from the roadmap's order)
 - [basic_lighting_pass_plan.md](basic_lighting_pass_plan.md) — (superseded by v2)
 - [basic_lighting_pass_plan_v2.md](basic_lighting_pass_plan_v2.md) — deferred G-buffer + lighting pass (landed)
 - [plan_threaded_rendering.md](plan_threaded_rendering.md) — dedicated render thread with snapshots (landed)
