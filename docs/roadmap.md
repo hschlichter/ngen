@@ -138,7 +138,9 @@ Load [Activision's Caldera](https://github.com/Activision/caldera) (Warzone's ma
 - **Cluster LOD** (Nanite-style): a pack-time hierarchy of simplified meshlet groups, chosen per cluster on the GPU, streamed by cluster.
   Deferred on purpose (2026-10-15). It would revisit [plan_streaming_lod.md](plan_streaming_lod.md) decisions 2 (UsdLod is the only LOD)
   and 3 (the streaming structure is authored, not computed). Trigger: much more of the engine in place, with games and other use cases built
-  on it that show what LOD they need.
+  on it that show what LOD they need. Drafted ahead of the trigger in [plan_cluster_lod.md](plan_cluster_lod.md): a DAG for every mesh,
+  inside the UsdLod level, whole DAG resident. Decision 3 is unchanged; decision 2 is amended (UsdLod stays the only authored LOD, but LOD is
+  now also generated).
 - **Frame graph**: transient buffers; cross-frame history resources (TAA); multi-queue/async compute; parallel recording.
 - **Cutout follow-ups** (from [plan_cutout_materials.md](plan_cutout_materials.md)): translucency (blended surfaces, sorting; trigger: glass or
   smoke — Sponza's `glass` and `lamp_glass_01_usd` draw opaque, with a packer warning); coverage-preserving opacity mips (trigger: foliage vanishing
