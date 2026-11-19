@@ -42,6 +42,7 @@ public:
     auto createFence(bool signaled) -> RhiFence* override;
 
     auto waitForFence(RhiFence* fence) -> void override;
+    auto fenceSignaled(RhiFence* fence) -> bool override;
     auto resetFence(RhiFence* fence) -> void override;
     auto submitCommandBuffer(RhiCommandBuffer* cmd, const RhiSubmitInfo& info) -> void override;
     auto present(RhiSwapchain* swapchain, RhiSemaphore* waitSemaphore, uint32_t imageIndex) -> std::expected<void, RhiError> override;

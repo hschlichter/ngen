@@ -99,6 +99,9 @@ substring of a library, program, tool or alias name.
 | `--render-debug` | Keep the render debug snapshot and draw log on without the window. |
 | `--renderdoc` | Load RenderDoc before the device so `renderdoc-capture` works. |
 | `--no-rpc` | No RPC endpoint and no discovery file. |
+| `--cvar <name>=<value>` | Set a cvar before the first frame; repeatable. An unknown name or a bad value is an error. |
+| `--remote-view[=<address>[:<port>]]` | The remote view on from the start: the watch page at `http://<address>:8730/`, on every interface without an address. Not in `gamerelease`. |
+| `--remote-control[=<address>[:<port>]]` | The same with remote control on (`remoteview.control`): the watch page can call every method. No authentication. Not in `gamerelease`. |
 
 Headless: set `SDL_VIDEODRIVER=offscreen`.
 
@@ -149,6 +152,9 @@ live.
 | `camera-use /camera/prim` | `view.camera.use` | Move to a camera the scene authors. |
 | `camera-frame [scene\|/prim]` | `view.camera.frame` | Frame the scene or a prim. |
 | `camera-orbit x,y,z yaw pitch [debug]` | `view.camera.orbit` | Turn around a pivot by angles, the distance kept. |
+| `camera-move forward right up [yaw pitch] [debug]` | `view.camera.move` | The controls as a call: move and turn a camera from where it is, metres then degrees; the method also takes wheel steps and `camera: controlled`. Stops a flight. |
+| `orbit-start [x y]` | `view.camera.orbit.start` | Left Alt held, as a call: orbit around what is under a framebuffer pixel, for two seconds; without a pixel, hold an orbit that is on. |
+| `orbit-stop` | `view.camera.orbit.stop` | Left Alt released, as a call. |
 | `camera-follow on\|off`, `camera-follow height <m>` | `cvar.set` | Keep the eye a height above the highest drawn surface under it. |
 | `fly <path prefix> <m/s>` | `view.camera.fly` | Fly through the scene's cameras with that prefix, in path order. Holds the script while flying. |
 | `fly-stop` | `view.camera.fly.stop` | Stop the flight. |
@@ -212,7 +218,11 @@ These set cvars. `cvar <name> <value>` sets any value; `cvar-reset [<name or pre
 | `dump-gpuscene <dir>` | `introspect.gpuscene` | GPU scene tables, culling buffers and `instances_joined.json`. |
 | `dump-profile <path>` | `introspect.profile` | Profiler history as a Chrome trace (Perfetto). |
 | `renderdoc-capture` | `renderdoc.capture` | RenderDoc capture of the next frame (needs `--renderdoc`). |
-| `window <name> on\|off` | `view.window` | Open or close a window: `memory`, `capture`, `framedebugger`, `gpuscene`, `counters`, `shaders`, `culling`, `assets`, `lod`, `streaming`, `camera`, `renderdebug`, `framegraph`, `performance`, `cvars`. |
+| `remoteview-keyframe` | `remoteview.keyframe` | The next frame sent to the remote view's watcher is a keyframe. |
+| `remoteview-disconnect` | `remoteview.disconnect` | Drop the remote view's watcher; its watch page connects again by itself. |
+| `remoteview-grab <path>` | `remoteview.grab` | The frame the watch page is showing, after decoding, as a PNG. Fails when no page answers within five seconds. |
+| `remoteview-screenshot` | `remoteview.screenshot` | A screenshot into the temporary directory, also served to the watch page at the URL answered. |
+| `window <name> on\|off` | `view.window` | Open or close a window: `memory`, `capture`, `framedebugger`, `gpuscene`, `counters`, `shaders`, `remoteview`, `culling`, `assets`, `lod`, `streaming`, `camera`, `renderdebug`, `framegraph`, `performance`, `cvars`. |
 
 ## RPC methods without a console command
 
@@ -298,7 +308,7 @@ frames later; record them at steady state (frame 120 or later).
 
 | Record | Holds |
 |---|---|
-| `status` | Frame counter, scene, selection, main camera, camera modes. |
+| `status` | Frame counter, scene, selection, main camera, camera modes, and `flight` while the camera flies (the camera reached, how many, speed, metres, seconds). |
 | `cvars` | Every cvar: type, value, default, description, range or choices. |
 | `scene` | Layer stack, up axis and units, prims, prototypes, instances, lights, LOD levels set. |
 | `environment` | The dome light, its image and the light it casts. |
@@ -322,6 +332,8 @@ frames later; record them at steady state (frame 120 or later).
 | `streamingtool` | The Streaming tool's inspection of the root at or above the selection, totals, map view. |
 | `debugcamera` | Debug camera position, yaw, pitch and the main camera's trail. |
 | `windows` | The UI's windows and whether each is open. |
+| `ui` | The UI's input: whether it wants the mouse, the keys or text now, whether a menu or popup is open, and how many `ui.input` calls it has taken (the watch page's pointer and keys). |
+| `remoteview` | The remote view: whether it listens and its URL, the watcher, the video as encoded, frames captured, replaced, encoded and sent, the last second's times, what the watch page last reported (frames decoded, latency). Also `frame` (the size `view.pick`'s pixels are in), `control` (remote control: on, the channel open, calls run and failed, the last method, the log subscribed) and in `page` the watch page's layout, pointer and self-test. |
 
 ```sh
 jq 'select(.record == "render") | .value.passes' /tmp/records.jsonl
@@ -342,10 +354,12 @@ Set with `cvar <name> <value>` or `cvar.set`; list with the `cvars` record or `c
 | `render` (other) | `antialiasing`, `prepass`, `sky.on`, `upload.budgetMiB`, `geometry.limitMiB` |
 | `scene.purposes` | `guide`, `proxy` |
 | `view.camera` | `follow`, `followHeight` |
+| `view` (other) | `frameLimit` (frames a second for a headless run with no `--frames`; 0 for none) |
 | `tools.debugcamera` | `on`, `controlMain`, `lod`, `cull`, `shadows`, `trail` |
 | `tools.overlay` | `grid`, `origin`, `gizmos`, `aabbs`, `selectedAabb`, `culled`, `culledView`, `lightGizmos`, `cascadeFrusta` |
 | `tools.lod` | `labels`, `gizmo`, `gizmoAll`, `popFlash`, `colorByDepth` |
 | `tools.streaming` | `bounds`, `rings`, `ringsAll`, `labels` |
+| `remoteview` | `enabled`, `source` (`frame`, `pattern`), `address`, `port`, `height`, `fps`, `bitrateKbps`, `control`, `pageDir` |
 
 ## Other programs
 

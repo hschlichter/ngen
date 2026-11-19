@@ -132,11 +132,6 @@ struct StreamingToolState {
     std::optional<glm::vec3> debugCameraPosition;
     glm::vec3 cameraForward = glm::vec3(0.0f, 1.0f, 0.0f);
     glm::vec3 up = glm::vec3(0.0f, 0.0f, 1.0f);
-    // The flight: set by the application while one runs.
-    bool flying = false;
-    std::string flightText;
-    char flightPrefix[128] = "/cameras/flight_";
-    float flightSpeed = 30.0f;
     // The viewport's layers: the streaming view (the debug view the application sets), the roots' bounds in their state's colour, the
     // selected root's (or every root's) load and unload rings, labels.
     bool streamingView = false; // set by the application
@@ -145,8 +140,6 @@ struct StreamingToolState {
     std::optional<std::string> selectRequested;
     std::optional<std::string> frameRequested;
     bool resetRequested = false;
-    bool flyRequested = false;
-    bool flyStopRequested = false;
     struct RadiiRequest {
         std::string root;
         uint32_t heuristic = 0;

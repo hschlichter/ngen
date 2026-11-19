@@ -9,6 +9,7 @@ struct IntrospectionFlags {
     bool gpuScene = false;
     bool counters = false;
     bool shaders = false;
+    bool remoteView = false;
 
     // RenderDoc: set by main when the in-app API is loaded; the Debug menu raises requests.
     bool renderDocAvailable = false;

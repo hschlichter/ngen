@@ -36,6 +36,7 @@ the shadow cascades and the snapshot. `src/apps/view.cpp`'s loop calls its steps
 | | | `drawUi`: the windows drawn, and what they asked for carried out |
 | `buildSnapshot`, submit | the frame for the render thread; the render tools' requests added to it (`RenderTools::fillSnapshot`) | `fillSnapshot` (before submit): the tools' layers, the gizmos' lines and ImGui's draw data, each as its render extension's data |
 | `plotFrame` | the frame's numbers as profiler plots (`src/profile/README.md`, "Plots") | |
+| `limitFrameRate` | a view that nothing else paces waits here until its next frame is due (`view.frameLimit`, 60 a second; 0 for none): a headless run with no `--frames`, which goes on until stopped. A window is paced by its display; a run with `--frames` goes as fast as it can, so scripted runs and their timings are as before. The wait is the `FrameLimit` zone (group Wait) and is part of that frame's time; `FrameRateLimited` is logged at start | |
 
 **In the profiler** (`src/profile/README.md`) the frame is `MainFrame` (group Frame) on the Main track: each step is a zone of its own (the
 detail ones `AdvanceTime`, `ResetCameras`, `SendSceneInputs`, `CountLodPops`, `DrawCameraModes`, `ReadBack`), each hook call one named
@@ -67,7 +68,7 @@ endpoint's calls; an answer that needs a readback or the scene to be ready waits
 
 | File | Methods | Console commands | Records |
 |---|---|---|---|
-| `cameracommands.cpp` | `view.camera.set/get/orbit/list/use/fly/fly.stop/frame` | `camera`, `camera-frame`, `camera-use`, `camera-orbit`, `camera-follow`, `fly`, `fly-stop` | |
+| `cameracommands.cpp` | `view.camera.set/get/move/orbit/orbit.start/orbit.stop/list/use/fly/fly.stop/frame` | `camera`, `camera-move`, `orbit-start`, `orbit-stop`, `camera-frame`, `camera-use`, `camera-orbit`, `camera-follow`, `fly`, `fly-stop` | |
 | `scenecommands.cpp` | `view.select/transform/translate/pick/purposes/waitReady/repack/gotoAsset/assetsOf/quit` | `select`, `translate`, `pick`, `purposes`, `repack`, `goto-asset`, `assets-of`, `wait-ready`, `quit` | `status`, `scene`, `scenethread`, `gpuscene`, `instancers`, `variants`, `payloads`, `assets` |
 | `lodcommands.cpp` | `view.lod.set/reset/heuristic/override/override.reset/tuning`, `view.lodgroups`, `view.streaming.reset` | `lod`, `lod-*`, `streaming-reset` | `lod`, `streaming`, `lodgroups` |
 | `cvarcommands.cpp` | `cvar.get/set/reset` | `cvar`, `cvar-reset` and the short forms (`view`, `debugview`, `overlay`, `cull`, `sampler`, `shadow`, `prepass`, `aa`, `ambient`, `gpuscene`) | `config` |
@@ -255,7 +256,8 @@ do its instances: only where it is placed.
   (measure, load and unload radii in force), `state`, `resident` and why, `drawn`, `late`, `hole`, `reloads`, per level its name, whether it is
   requested, loaded, ready and drawn, what its placement waits for and its lead, and its authoring findings; whether its extent is in the view's
   frustum (what USD's query would go by); the measured totals.
-- **Flying a camera path** (`fly <camera path prefix> <speed m/s>`, `view.camera.fly`; `fly-stop`): the camera moves through the scene's
+- **Flying a camera path** (`fly <camera path prefix> <speed m/s>`, `view.camera.fly`; `fly-stop`; the Camera window's Fly; the `status`
+  record's `flight` while one runs): the camera moves through the scene's
   cameras whose paths start with the prefix, in path order, at the speed in metres a second of each frame's time, eye and direction
   interpolated; a script holds its clock while it flies, and the call answers at the last camera (`FlightStarted`, `FlightDone`). A test
   driver for streaming: it moves the camera and decides nothing. Its numbers depend on the build, the asset server's cache and the machine,

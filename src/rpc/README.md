@@ -66,7 +66,8 @@ process is gone, so a crashed process leaves nothing behind after the next listi
 3. Write the handler: parameters are checked before it runs, so it can read them with `get<>()`. Answer through the responder; use
    `rpc::appError` with a message for engine failures.
 4. If it should also be a console command, add it to the `ConsoleCommands` table beside the method (`console.add(name, method, parser)`), with a parser from
-   the script's text to the parameters. Script lines and live calls then run the same code.
+   the script's text to the parameters. Script lines and live calls then run the same code. `console.run {line}` runs a console
+   command from its text and answers with its method's result, for a caller that has a line and not parameters.
 5. `rpc.describe` lists the new method automatically.
 
 ngen-view's methods are registered by the layer that owns what they act on: the engine's by domain in `src/view/*commands.cpp` (the
@@ -103,7 +104,8 @@ Failing to listen or to write the discovery file are errors (`RpcListenFailed`, 
 
 ## Known gaps
 
-- Loopback only, no authentication: any local process can drive an endpoint.
+- Loopback only, no authentication: any local process can drive an endpoint. The one way in from another device is the remote view's
+  control channel (`src/remoteview/README.md`), off unless `remoteview.control` is set, which runs the same registry with no authentication either.
 - The log is the only subscription; records are polled.
 - Bulk results (screenshots, captures) travel as base64 or as files, not yet as attachments.
 - `--no-rpc` turns ngen-view's endpoint off. It's compiled out of `gamerelease` (`NGEN_INTROSPECTION`).

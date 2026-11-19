@@ -1,6 +1,7 @@
 #pragma once
 
 #include "rpcprotocol.h"
+#include "rpcresponder.h"
 
 #include <expected>
 #include <functional>
@@ -22,6 +23,8 @@ public:
     // Parses a console command's text and calls its method. Failures (an unknown console command, text that doesn't parse, the method's error) are
     // ScriptCommandFailed log errors, `<command>: <message>`.
     auto run(const RpcRegistry& registry, const std::string& name, const std::string& args) const -> void;
+    // The same for a caller that wants the answer: the method's result, or the failure as an error, through `responder`. Nothing is logged.
+    auto run(const RpcRegistry& registry, const std::string& name, const std::string& args, RpcResponder responder) const -> void;
 
     // `key=value,key=value` items, as several console commands take their arguments.
     static auto items(const std::string& args) -> std::vector<std::pair<std::string, std::string>>;

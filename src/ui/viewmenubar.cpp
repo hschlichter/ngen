@@ -116,6 +116,7 @@ auto drawViewMenuBar(ViewMenuBarState& state) -> void {
             ImGui::MenuItem("GPU Scene", nullptr, &state.introspection.gpuScene);
             ImGui::MenuItem("Counters", nullptr, &state.introspection.counters);
             ImGui::MenuItem("Memory", nullptr, &state.introspection.memory);
+            ImGui::MenuItem("Remote View", nullptr, &state.introspection.remoteView);
             ImGui::EndMenu();
         }
         ImGui::Separator();

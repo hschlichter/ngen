@@ -16,6 +16,7 @@
 #include "memorywindow.h"
 #include "overlays.h"
 #include "performancewindow.h"
+#include "remoteviewwindow.h"
 #include "renderdebugwindow.h"
 #include "statusbar.h"
 #include "streamingwindow.h"
@@ -25,6 +26,7 @@
 
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <span>
 #include <string>
@@ -78,9 +80,26 @@ public:
     auto onCounters(GpuCounters counters) -> void { addCountersFrame(countersState, std::move(counters)); }
     // The latest cull result, for the Culling and GPU Scene windows; the caller keeps it alive while the UI draws.
     auto setCullResult(const CullResult& cull) -> void { cullResult = &cull; }
+    // The remote view's status, for the Remote View window; the caller keeps it alive. None: a program without a remote view.
+    auto setRemoteViewStatus(const RemoteViewStatus* status) -> void { remoteViewStatus = status; }
+
+    // Input given to the UI by a call (ui.input, from the watch page), not by the window. What the UI wants of the input is known once
+    // the frame that took it has been drawn: a waiter is answered then, by answerInputWaiters after the UI's frame.
+    struct InputWants {
+        bool mouse = false;    // the pointer is over a window, a menu or a popup, or one holds it
+        bool keyboard = false; // a window takes the keys
+        bool text = false;     // a text field has the focus
+        bool popup = false;    // a menu or a popup is open
+    };
+    auto addInputWaiter(std::function<void(const InputWants&)> waiter) -> void;
+    auto answerInputWaiters() -> void;
+    auto inputWants() const -> InputWants;
+    auto countRemoteInput() -> void { remoteInputEvents++; }
+    auto remoteInputCount() const -> uint64_t { return remoteInputEvents; }
+    auto setRemoteControlStatus(const RemoteControlStatus* status) -> void { remoteControlStatus = status; }
 
     // The windows view.window opens and closes, by name.
-    static constexpr std::array windowNames = {"memory", "capture", "framedebugger", "gpuscene", "counters", "shaders", "culling", "assets", "lod", "streaming", "camera", "renderdebug", "framegraph", "performance", "cvars"};
+    static constexpr std::array windowNames = {"memory", "capture", "framedebugger", "gpuscene", "counters", "shaders", "remoteview", "culling", "assets", "lod", "streaming", "camera", "renderdebug", "framegraph", "performance", "cvars"};
     // Whether a window is open, by its name in windowNames; null for an unknown name.
     auto windowFlag(std::string_view name) -> bool*;
     // Opens or closes a window by its name in windowNames; false for an unknown name.
@@ -187,6 +206,10 @@ private:
     FrameDebuggerState frameDebuggerState;
     GpuSceneWindowState gpuSceneState;
     CountersWindowState countersState;
+    const RemoteViewStatus* remoteViewStatus = nullptr;
+    std::vector<std::function<void(const InputWants&)>> inputWaiters;
+    uint64_t remoteInputEvents = 0;
+    const RemoteControlStatus* remoteControlStatus = nullptr;
     DebugViewWindowState debugViewState;
     RenderDebugDrawState renderDebugDraws;
 };

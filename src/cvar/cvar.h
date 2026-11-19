@@ -20,6 +20,7 @@ enum class Type : uint8_t {
     Float,
     Enum,
     Vec3,
+    String,
 };
 
 auto typeName(Type type) -> const char*;
@@ -154,6 +155,24 @@ public:
 private:
     std::array<float, 3> value;
     std::array<float, 3> defaultValue;
+};
+
+// Text: an address, a name. Set from text as it is, with the space around it left out.
+class String : public Value {
+public:
+    String(std::string name, std::string defaultValue, std::string description);
+    auto get() const -> const std::string&;
+    auto set(std::string next) -> void;
+
+    auto type() const -> Type override { return Type::String; }
+    auto text() const -> std::string override { return value; }
+    auto defaultText() const -> std::string override { return defaultValue; }
+    auto setText(std::string_view text) -> std::expected<void, std::string> override;
+    auto reset() -> void override { set(defaultValue); }
+
+private:
+    std::string value;
+    std::string defaultValue;
 };
 
 // Every value declared, sorted by name.

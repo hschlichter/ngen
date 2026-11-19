@@ -124,6 +124,33 @@ auto drawCameraModes(CameraModesState& modes) -> void {
     }
 }
 
+// Flying the main camera through the scene's cameras: the prefix that names them, the speed, and the flight while it runs.
+auto drawFlight(CameraWindowState& state) -> void {
+    ImGui::TextUnformatted("Fly through cameras");
+    ImGui::SetNextItemWidth(190.0f);
+    ImGui::InputText("##flightprefix", state.flightPrefix, sizeof(state.flightPrefix));
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("The cameras to fly through: every camera the scene authors whose path starts with this, in path order.");
+    }
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(70.0f);
+    ImGui::InputFloat("m/s", &state.flightSpeed, 0.0f, 0.0f, "%.0f");
+    ImGui::SameLine();
+    if (state.flying) {
+        if (ImGui::Button("Stop flight")) {
+            state.flyStopRequested = true;
+        }
+    } else if (ImGui::Button("Fly")) {
+        state.flyRequested = true;
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Flies the camera through the cameras at the speed, by each frame's time (view.camera.fly, fly). A test driver:\nit moves the camera; what loads follows from where the camera is. Its numbers depend on the build, the cache and the machine.");
+    }
+    if (!state.flightText.empty()) {
+        ImGui::TextDisabled("%s", state.flightText.c_str());
+    }
+}
+
 } // namespace
 
 void drawCameraWindow(bool& show, Camera& camera, CameraWindowState& state, DebugCameraState& debug, CameraModesState& modes) {
@@ -172,6 +199,9 @@ void drawCameraWindow(bool& show, Camera& camera, CameraWindowState& state, Debu
     if (ImGui::Button("Frame selected")) {
         state.requestFrameSelected = true;
     }
+
+    ImGui::Separator();
+    drawFlight(state);
 
     ImGui::Separator();
     drawCameraModes(modes);

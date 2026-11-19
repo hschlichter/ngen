@@ -103,6 +103,8 @@ Each library documents its design and rules in a README next to the code:
   instance and per meshlet, occlusion culling, descriptor sets, frame graph rules, shadows, log events.
 - [`src/rendertools/README.md`](src/rendertools/README.md) — the renderer's instrumentation, a render extension: debug snapshots, the frame
   debugger, GPU counters, the texture inspector and dumps, screenshots.
+- [`src/remoteview/README.md`](src/remoteview/README.md) — the remote view: ngen-view's image as live H.264 video in a browser on another
+  device over WebRTC, for watching a session that runs elsewhere; capture as a render extension, the encode thread, the watch page.
 - [`src/log/README.md`](src/log/README.md) — the log: `LOG_EVENT`, the always-on ring per process, streaming events over RPC, conventions.
 - [`src/profile/README.md`](src/profile/README.md) — profiling: the markers, the built-in collector and GPU track behind the Performance window, and
   Tracy as a second sink.
@@ -148,10 +150,13 @@ is in [`docs/adr/`](docs/adr/README.md).
 | [Dear ImGui](https://github.com/ocornut/imgui) | The windows |
 | [OpenUSD](https://github.com/PixarAnimationStudios/OpenUSD) | Reading USD when packing (`ngen-packer-usd`) and in `ngen-worldcheck` / `ngen-usdcheck`; `ngen-view` doesn't link it |
 | [nlohmann/json](https://github.com/nlohmann/json) | JSON for RPC, records and packs |
+| [libdatachannel](https://github.com/paullouisageneau/libdatachannel) | WebRTC for the remote view (`src/remoteview`); uses the system's OpenSSL |
+| [OpenH264](https://github.com/cisco/openh264) | The remote view's H.264 encoder |
 | [tinyexr](https://github.com/syoyo/tinyexr) | Reading OpenEXR in `ngen-packer-exr` (a dome light's HDR sky) |
 | [meshoptimizer](https://github.com/zeux/meshoptimizer) | Welding and meshlets for the USD packer's meshes |
 
-GLM, stb, Dear ImGui, OpenUSD, nlohmann/json, tinyexr and meshoptimizer are git submodules in `external/`. SDL3 and the Vulkan SDK must be installed on the system.
+GLM, stb, Dear ImGui, OpenUSD, nlohmann/json, tinyexr, meshoptimizer, Tracy, libdatachannel and OpenH264 are git submodules in `external/`. SDL3, the
+Vulkan SDK and OpenSSL must be installed on the system.
 
 After cloning, initialize the submodules:
 
@@ -174,10 +179,31 @@ python3 external/openusd/build_scripts/build_usd.py \
   external/openusd_build
 ```
 
+## Building the remote view's libraries
+
+libdatachannel and OpenH264 (the remote view, [`src/remoteview/README.md`](src/remoteview/README.md)) are also built separately, once. Requires
+CMake, `make`, `nasm` and OpenSSL's headers.
+
+```bash
+git -C external/libdatachannel submodule update --init --depth 1 deps/libjuice deps/usrsctp deps/libsrtp deps/plog
+
+cmake -S external/libdatachannel -B external/libdatachannel_build/build \
+  -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+  -DNO_WEBSOCKET=ON -DNO_EXAMPLES=ON -DNO_TESTS=ON \
+  -DCMAKE_INSTALL_PREFIX="$PWD/external/libdatachannel_build"
+cmake --build external/libdatachannel_build/build -j$(nproc)
+cmake --install external/libdatachannel_build/build
+
+make -C external/openh264 -j$(nproc) BUILDTYPE=Release libopenh264.a
+make -C external/openh264 PREFIX="$PWD/external/openh264_build" SHARED= install-static
+```
+
+`git submodule update --init --recursive` has already fetched libdatachannel's own submodules; the first line is for a clone that left them out.
+
 ## Building
 
 The engine is built by its own self-hosted build system (`ngen-build`). Requires `clang++` with C++23 support, the Vulkan SDK and `glslc`. OpenUSD
-must be built first (see above).
+and the remote view's libraries must be built first (see above).
 
 Bootstrap `ngen-build` once (and again whenever `src/build/bootstrap.cpp` or the IR format in `src/build/ir/schema.hpp` changes), then build:
 
@@ -275,6 +301,9 @@ Forwarded tools replace the cli process, so their output, signals and exit code 
 | `--validation`, `--fail-on-validation` | Vulkan validation; with the second, exit nonzero on any validation error |
 | `--show-ui` | Keep the UI in screenshots |
 | `--no-wait-ready` | Count script frames from start-up instead of from the scene being ready |
+| `--remote-view[=<address>[:<port>]]` | The view's image as live video in a browser on another device ([`src/remoteview/README.md`](src/remoteview/README.md)); the log says where to open it |
+| `--remote-control[=<address>[:<port>]]` | The same, with the watch page allowed to drive the view: camera, picking, cvars, console, every method. No authentication |
+| `--cvar <name>=<value>` | Set a cvar from the start; repeatable |
 | `--renderdoc`, `--no-rpc`, `--render-debug`, `--geometry-limit=<MiB>`, `--select=<path>`, `--camera-frame=<path>` | RenderDoc capture, no endpoint, the render debug snapshot always on, the geometry pool's limit, a selection, framing a prim |
 
 `SDL_VIDEODRIVER=offscreen` runs it without a window. The console commands, records and methods are listed by `./ngen-cli introspect describe` against a
@@ -306,5 +335,6 @@ Every window is under **Windows**; the overlays, purposes and camera modes under
 | Scene | Where |
 |---|---|
 | `assets/three_cubes.usda` | In the repository: three cubes on a fourth flattened into the ground; it authors no light, so the engine adds its default sun |
+| `assets/three_cubes_flight.usda` | In the repository: the three cubes with three cameras, `/cameras/flight_00` to `_02`, to fly through (`fly /cameras/flight_ 20`) |
 | Intel's New Sponza | Not in the repository: `assets/main_sponza/NewSponza_Main_USD_Zup_003.usda` |
 | Eldermark | Not in the repository: a generated 10 km × 10 km world (about 24 GB), every cell a UsdLod root with payloaded levels, eleven authored cameras and a flight path, made by [world-generator](https://github.com/hschlichter/world-generator); `assets/streamtest-world/world/root.usda` |

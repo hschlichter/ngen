@@ -367,6 +367,8 @@ sense of a map; that is a scene.
 - **Plot** — a value over time sampled where produced (frame times, uploads, GPU busy), kept with the zones and sent to Tracy.
 - **Record** — one named piece of a process's data as JSON (`status`, `culling`, `streaming`, …), read with `introspect.get`. Data is a
   record, never a log event. `record <name> <file>` writes one at an exact frame.
+- **Remote view** — ngen-view's presented image as live video in a browser on another device (`src/remoteview`): captured from the GPU,
+  encoded as H.264, sent over WebRTC. One watcher, video only. Not a view running on another machine: the view runs here and is watched there.
 - **Responder** (`RpcResponder`) — how a handler answers, at once or frames later (a screenshot, a readback).
 - **Ring** — a process's always-on buffer of its last 65,536 log events.
 - **RPC** — JSON-RPC 2.0 over loopback TCP, frames with optional binary attachments; how processes and agents talk.
@@ -375,6 +377,12 @@ sense of a map; that is a scene.
 - **Source location** — a profiler marker: its name, file, line, function, group and level. Tracy's word.
 - **Track** — one thread's zones in the profiler (Main, Render, Scene, Worker N, RPC I/O, …), plus the GPU track.
 - **Tracy** — the external profiler, a second sink inside the collector for whole sessions; nothing in the engine reads back from it.
+- **Remote control** — the watch page driving the view (`remoteview.control`): its calls travel on the control channel and run through the
+  view's method registry on the main thread, as the loopback endpoint's do. No authentication.
+- **Control channel** — the WebRTC data channel named `control` on the watcher's connection, carrying JSON-RPC messages both ways.
+- **Watch page** — the HTML page the remote view serves, for a phone and a desktop browser; it plays the video, reports what the browser
+  decoded, and with remote control on shows panels made from what the engine describes and takes touch, mouse and keys for the camera.
+- **Watcher** — the one browser connected to the remote view.
 - **Zone** — a timed CPU or GPU range from a marker (`PROFILE_ZONE`, `PROFILE_GPU_ZONE`); frame-graph passes, RPC calls, jobs and render
   extension hooks get one by themselves.
 
@@ -421,8 +429,9 @@ sense of a map; that is a scene.
 | root | a LOD root; the root layer; the asset server's working directory (asset ids are relative to it) |
 | slot | an instance slot; a texture slot; a streaming root's slot (streaming view) |
 | snapshot | `SceneSnapshot` (scene thread → main); `RenderSnapshot` (main → render); a debug snapshot (render tools → main) |
+| source | a pack's source file; a source location (profiler marker); the remote view's source (`remoteview.source`: the frame or the test pattern) |
 | state | a resource state (RHI barriers); a streaming state (finest resident level); a tool's state struct |
 | tag | the LOD tag (normal alpha); a GPU zone's tag (its source location's id) |
 | variant | a build variant (platform/config); a USD variant (of a variant set) |
-| view | ngen-view; the `view` library; a culling view (camera, cascades, phase 2); a view mode (`view` console command) or debug view (`debugview` console command) |
+| view | ngen-view; the `view` library; a culling view (camera, cascades, phase 2); a view mode (`view` console command) or debug view (`debugview` console command); the remote view (ngen-view watched from another device) |
 | version | a World content's version (each compose); a pack rule's version; the IR and scene-pack format versions |

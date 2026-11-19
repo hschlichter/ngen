@@ -7,6 +7,10 @@
 #include "jobsystem.h"
 #include "log.h"
 #include "profile.h"
+#include "remotecontrol.h"
+#include "remoteview.h"
+#include "remoteviewcapture.h"
+#include "remoteviewcommands.h"
 #include "rendercvars.h"
 #include "renderdoccapture.h"
 #include "renderer.h"
@@ -180,6 +184,16 @@ auto pollInput(SDL_Window* window, ViewFrame& frame, ViewHooks& hooks, WindowInp
     SDL_GetMouseState(&frame.mouse.x, &frame.mouse.y);
 }
 
+// A cvar set by a start-up flag, before the first frame. An unknown name is an error: a misspelt flag must not start a run that
+// silently lacks what it asked for (and a configuration without the remote view has no remoteview.* values).
+auto setCvarAtStart(std::string_view name, std::string_view value) -> std::expected<void, std::string> {
+    auto* found = cvar::find(name);
+    if (found == nullptr) {
+        return std::unexpected(std::format("no cvar '{}' in this program", name));
+    }
+    return found->setText(value);
+}
+
 } // namespace
 
 auto main(int argc, char* argv[]) -> int {
@@ -224,6 +238,40 @@ auto main(int argc, char* argv[]) -> int {
             enableValidation = true;
         } else if (arg.starts_with("--geometry-limit=")) {
             (void) rendercvars::geometryLimitMiB.set((int64_t) std::stoull(flagValue(arg, "--geometry-limit=")));
+        } else if (arg.starts_with("--cvar=") || arg == "--cvar") {
+            // --cvar=<name>=<value>, or --cvar <name>=<value>: a cvar's value from the start, as `cvar <name> <value>` sets it later.
+            std::string setting = arg == "--cvar" ? (i + 1 < argc ? std::string(argv[++i]) : std::string()) : flagValue(arg, "--cvar=");
+            auto equals = setting.find('=');
+            if (equals == std::string::npos || equals == 0) {
+                std::println(stderr, "--cvar: expected <name>=<value>, got '{}'", setting);
+                return 1;
+            }
+            if (auto set = setCvarAtStart(setting.substr(0, equals), setting.substr(equals + 1)); !set) {
+                std::println(stderr, "--cvar: {}", set.error());
+                return 1;
+            }
+        } else if (arg == "--remote-view" || arg.starts_with("--remote-view=") || arg == "--remote-control" || arg.starts_with("--remote-control=")) {
+            // --remote-view[=<address>[:<port>]]: the remote view on from the start (src/remoteview/README.md), on every interface
+            // unless an address is given. --remote-control is the same with the watch page allowed to drive the view.
+            bool control = arg.starts_with("--remote-control");
+            std::string flag = control ? "--remote-control" : "--remote-view";
+            std::string where = arg == flag ? std::string() : flagValue(arg, (flag + "=").c_str());
+            auto colon = where.find(':');
+            std::string address = where.substr(0, colon);
+            std::expected<void, std::string> set = setCvarAtStart("remoteview.address", address.empty() ? "0.0.0.0" : address);
+            if (set && colon != std::string::npos) {
+                set = setCvarAtStart("remoteview.port", where.substr(colon + 1));
+            }
+            if (set && control) {
+                set = setCvarAtStart("remoteview.control", "on");
+            }
+            if (set) {
+                set = setCvarAtStart("remoteview.enabled", "on");
+            }
+            if (!set) {
+                std::println(stderr, "{}: {}", flag, set.error());
+                return 1;
+            }
         } else if (arg.starts_with("--frames=")) {
             maxFrames = std::stoull(flagValue(arg, "--frames="));
         } else if (arg.starts_with("--camera=")) {
@@ -393,6 +441,11 @@ auto main(int argc, char* argv[]) -> int {
         initialExtent = {.width = (uint32_t) w, .height = (uint32_t) h};
     }
     ImGuiBackendVulkan imguiBackend(window);
+#ifdef NGEN_INTROSPECTION
+    // The remote view (src/remoteview/README.md): tooling, as the RPC endpoint is. Off until remoteview.enabled is set.
+    RemoteView remoteView;
+    RemoteViewCapture remoteViewCapture(remoteView);
+#endif
     Renderer renderer;
     // What joins the renderer's frame from outside its core, in order: the instrumentation, the tools' gizmos, the UI (last on the
     // backbuffer). The UI shows the renderer's previews.
@@ -402,6 +455,10 @@ auto main(int argc, char* argv[]) -> int {
     renderer.addExtension(renderTools, "RenderTools");
     renderer.addExtension(gizmoRender, "Gizmos");
     renderer.addExtension(uiRender, "Ui");
+#ifdef NGEN_INTROSPECTION
+    // After the UI, so the image it captures is the one presented.
+    renderer.addExtension(remoteViewCapture, "RemoteViewCapture");
+#endif
     renderer.setPreviewTextures(&imguiBackend);
     renderTools.setValidationEnabled(enableValidation);
     renderTools.setScreenshotsShowUi(screenshotsShowUi);
@@ -443,6 +500,9 @@ auto main(int argc, char* argv[]) -> int {
     }
     viewUI.setAssetPrimCount([&scene](const std::string& assetId) { return scene.primCountUsing(assetId); });
     viewUI.bindTools(tools, frame.cameraModes);
+#ifdef NGEN_INTROSPECTION
+    viewUI.setRemoteViewStatus(&remoteView.status());
+#endif
     ToolsHooks toolsHooks(tools, gizmoRender);
     UiHooks uiHooks({
         .ui = viewUI,
@@ -498,12 +558,24 @@ auto main(int argc, char* argv[]) -> int {
         .autoFrame = frame.autoFrame,
         .sceneLabel = positional.size() >= 2 ? std::string(positional[1]) : std::string("(new scene)"),
     };
+    viewContext.controlledCamera = [&frame] {
+        return frame.cameras.controlled;
+    };
+    viewContext.startOrbit = [&frame](glm::uvec2 pixel) {
+        frame.startOrbit(pixel);
+    };
     // Each layer adds its methods, console commands and records: the engine's, the tools', the UI's.
     ConsoleCommands console;
     RpcRecords records;
     registerViewCommands(registry, console, records, viewContext);
     registerToolCommands(registry, console, records, viewContext, tools);
     registerUiCommands(registry, console, records, viewUI);
+#ifdef NGEN_INTROSPECTION
+    // Remote control (src/remoteview/README.md): the watch page's calls, run through the same registry. Off until remoteview.control is set.
+    RemoteControl remoteControl(remoteView, registry);
+    registerRemoteViewCommands(registry, console, records, remoteView, remoteControl);
+    viewUI.setRemoteControlStatus(&remoteControl.status());
+#endif
     registerRpcRecords(registry, records);
     // The endpoint is tooling: debug and release only (NGEN_INTROSPECTION), off with --no-rpc.
     RpcEndpoint endpoint;
@@ -527,6 +599,18 @@ auto main(int argc, char* argv[]) -> int {
         frame.frameTarget = startFrameTarget;
     }
 
+    // A headless view with no last frame goes on until it is stopped, and nothing paces it: it limits itself (view.frameLimit).
+    {
+        const char* driver = SDL_GetCurrentVideoDriver();
+        bool headless = driver != nullptr && (std::string_view(driver) == "offscreen" || std::string_view(driver) == "dummy");
+        frame.selfPaced = headless && maxFrames == 0;
+        if (frame.selfPaced) {
+            LOG_EVENT("Engine", "FrameRateLimited", "view")
+                .text(std::format("headless with no --frames: limited to {} frames a second (view.frameLimit)", viewcvars::frameLimit.get()))
+                .field("limit", viewcvars::frameLimit.get());
+        }
+    }
+
     // Main loop: the engine's steps in order, the commands after the scene update, the hooks between the steps.
     profile::registerThread("Main");
     WindowInput input = {.loggedWidth = loggedWindowWidth, .loggedHeight = loggedWindowHeight};
@@ -540,6 +624,9 @@ auto main(int argc, char* argv[]) -> int {
             hooks.afterScene(frame);
         }
         runFrameCommands(viewContext, session, registry, console, endpoint);
+#ifdef NGEN_INTROSPECTION
+        remoteControl.drain();
+#endif
         frame.advanceTime(SDL_GetTicksNS());
         frame.resetCameras();
         {
@@ -594,10 +681,20 @@ auto main(int argc, char* argv[]) -> int {
 
         hooks.drawUi(frame);
 
+#ifdef NGEN_INTROSPECTION
+        {
+            PROFILE_ZONE_DETAIL("RemoteView.update", Frame);
+            remoteView.update();
+        }
+#endif
+
         auto snapshot = frame.buildSnapshot();
         {
             PROFILE_ZONE_DETAIL("Hooks.fillSnapshot", Frame);
             renderTools.fillSnapshot(snapshot);
+#ifdef NGEN_INTROSPECTION
+            remoteViewCapture.fillSnapshot(snapshot);
+#endif
             hooks.fillSnapshot(frame, snapshot);
         }
         {
@@ -605,11 +702,15 @@ auto main(int argc, char* argv[]) -> int {
             renderThread.submitSnapshot(std::move(snapshot));
         }
         frame.plotFrame();
+        frame.limitFrameRate();
     }
 
     auto validationErrors = rhiDevice.validationErrorCount();
 
     renderThread.stop();
+#ifdef NGEN_INTROSPECTION
+    remoteView.shutdown();
+#endif
     profile::stopStallWatch();
     JobSystem::shutdown();
     bool pipelinesFailed = renderer.pipelinesFailed();

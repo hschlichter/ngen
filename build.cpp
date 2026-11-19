@@ -272,6 +272,29 @@ auto main(int argc, char** argv) -> int {
             .link(logLib)
             .link(profile);
 
+    // The remote view (src/remoteview/README.md): the view's image as live H.264 video for a browser on another device, over WebRTC.
+    // libdatachannel and OpenH264 are submodules built outside the build system, into external/libdatachannel_build and
+    // external/openh264_build, as OpenUSD is. Tooling: only ngen-view's NGEN_INTROSPECTION code uses it, so gamerelease links none of it.
+    auto remoteview =
+        cxx::static_library("remoteview")
+            .sources(glob({.include = "src/remoteview/*.cpp"}))
+            .public_include({"src/remoteview"})
+            .include({
+                "src/log",
+                "src/profile",
+                "src/rhi",
+                "src/rhi/vulkan",
+                "external/json/single_include",
+                "external/libdatachannel_build/include",
+                "external/openh264_build/include",
+            })
+            .define("RTC_STATIC")
+            .link(renderer)
+            .link(rpc)
+            .link(logLib)
+            .link(profile)
+            .link(cvar);
+
     // The view's runtime (src/view/README.md): the scene composed from the packs and placed for the renderer, picking, the camera modes, and
     // the frame's engine steps the main loop calls (ViewFrame) with the hooks the tools and the UI join it by.
     auto viewLib =
@@ -315,6 +338,7 @@ auto main(int argc, char** argv) -> int {
                 "src/view/cvarcommands.cpp",
                 "src/view/displaycommands.cpp",
                 "src/view/profilecommands.cpp",
+                "src/view/remoteviewcommands.cpp",
                 "src/view/viewdumps.cpp",
             })
             .include({
@@ -327,6 +351,7 @@ auto main(int argc, char** argv) -> int {
             })
             .link(viewLib)
             .link(rendertools)
+            .link(remoteview)
             .link(renderer)
             .link(rpc)
             .link(rpccore)
@@ -394,6 +419,7 @@ auto main(int argc, char** argv) -> int {
             })
             .link(toolsLib)
             .link(rendertools)
+            .link(remoteview)
             .link(renderer)
             .link(profile)
             .link(cvar)
@@ -564,6 +590,7 @@ auto main(int argc, char** argv) -> int {
             .link(viewCommands)
             .link(viewLib)
             .link(rendertools)
+            .link(remoteview)
             .link(ui)
             .link(imgui)
             .link(rpc)
@@ -572,6 +599,17 @@ auto main(int argc, char** argv) -> int {
             .link(worldLib)
             .link(packer)
             .link_flags(sdl3_libs)
+            .lib_search("external/libdatachannel_build/lib")
+            .lib_search("external/openh264_build/lib")
+            .link_flag("-ldatachannel")
+            .link_flag("-ljuice")
+            .link_flag("-lsrtp2")
+            .link_flag("-lusrsctp")
+            .link_flag("-lopenh264")
+            // libdatachannel's TLS, from the system; as-needed, so a configuration that uses no remote view doesn't load them.
+            .link_flag("-Wl,--as-needed")
+            .link_flag("-lssl")
+            .link_flag("-lcrypto")
             .depend_on(assetServer)
             .depend_on(scenePack);
 

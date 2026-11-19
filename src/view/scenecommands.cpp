@@ -107,6 +107,13 @@ auto statusRecord(const ViewContext& view) -> Json {
         {"selected", view.selectedPath},
         {"camera", {{"position", Json(view.cam.position)}, {"yaw", view.cam.yaw}, {"pitch", view.cam.pitch}, {"speed", view.cam.speed}}},
         {"cameraModes", cameraModesJson(view.cameraModes)},
+        {"flight",
+         view.flight.flying() ? Json{{"camera", view.flight.segment + 1},
+                                     {"cameras", view.flight.cameras.size()},
+                                     {"speed", view.flight.speed},
+                                     {"metres", view.flight.metres},
+                                     {"seconds", view.flight.seconds}}
+                              : Json(nullptr)},
         {"framing", view.autoFrame},
         {"startCamera", view.startCamera},
     };
@@ -587,7 +594,7 @@ auto registerSceneCommands(RpcRegistry& registry, ConsoleCommands& console, RpcR
     console.add("wait-ready", "view.waitReady", ConsoleCommands::none);
     console.add("quit", "view.quit", ConsoleCommands::none);
 
-    records.add("status", "frame counter, scene, selection, the main camera and the camera modes; the render settings are the cvars record's, the debug camera's the debugcamera record", [&view](RpcResponder responder) {
+    records.add("status", "frame counter, scene, selection, the main camera, the camera modes and the flight while one runs; the render settings are the cvars record's, the debug camera's the debugcamera record", [&view](RpcResponder responder) {
         responder.respond(statusRecord(view));
     });
     records.add("scene", "the open scene: its layer stack, up axis and units, prims (instances expanded), prototypes, instances, lights and LOD levels set", [&view](RpcResponder responder) {

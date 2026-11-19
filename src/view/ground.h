@@ -33,6 +33,9 @@ struct CameraModesState {
     glm::vec3 pivot = glm::vec3(0.0f);
     bool pivotPicked = false;
     float pivotDistanceMetres = 10.0f;
+    // Orbiting held by a caller that has no key to hold (view.camera.orbit.start, from the watch page): until this time, profile::now().
+    // The caller asks again while it holds, so an orbit whose caller went away ends by itself.
+    uint64_t remoteOrbitUntilNs = 0;
 };
 
 // The ground under a camera, for following it (src/view/README.md, "Camera modes"): the render geometry the main thread holds, tested

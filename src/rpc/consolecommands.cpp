@@ -34,6 +34,20 @@ auto ConsoleCommands::run(const RpcRegistry& registry, const std::string& name, 
     registry.invoke(found->second.method, *params, responder);
 }
 
+auto ConsoleCommands::run(const RpcRegistry& registry, const std::string& name, const std::string& args, RpcResponder responder) const -> void {
+    auto found = commands.find(name);
+    if (found == commands.end()) {
+        responder.fail(rpc::appError, std::format("unknown console command '{}'", name));
+        return;
+    }
+    auto params = found->second.parse(args);
+    if (!params) {
+        responder.fail(rpc::invalidParams, std::format("{}: {}", name, params.error()));
+        return;
+    }
+    registry.invoke(found->second.method, *params, responder);
+}
+
 auto ConsoleCommands::items(const std::string& args) -> std::vector<std::pair<std::string, std::string>> {
     std::vector<std::pair<std::string, std::string>> items;
     size_t start = 0;

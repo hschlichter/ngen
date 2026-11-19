@@ -1,6 +1,7 @@
 #include "viewcommands.h"
 
 #include "camera.h"
+#include "profile.h"
 #include "sessionscript.h"
 #include "viewscene.h"
 
@@ -78,6 +79,59 @@ auto parseCameraOrbit(const std::string& args) -> std::expected<Json, std::strin
     return out;
 }
 
+// "forward right up [yaw pitch] [main|debug]": metres, then degrees.
+auto parseCameraMove(const std::string& args) -> std::expected<Json, std::string> {
+    std::istringstream in(args);
+    float forward = 0.0f;
+    float right = 0.0f;
+    float up = 0.0f;
+    in >> forward >> right >> up;
+    if (in.fail()) {
+        return std::unexpected(std::format("expected 'forward right up [yaw pitch] [main|debug]', got '{}'", args));
+    }
+    Json out = {{"forward", forward}, {"right", right}, {"up", up}};
+    std::string next;
+    if (in >> next) {
+        if (next == "main" || next == "debug") {
+            out["camera"] = next;
+            return out;
+        }
+        float yaw = 0.0f;
+        float pitch = 0.0f;
+        std::istringstream angles(next);
+        angles >> yaw;
+        in >> pitch;
+        if (angles.fail() || in.fail()) {
+            return std::unexpected(std::format("expected 'forward right up [yaw pitch] [main|debug]', got '{}'", args));
+        }
+        out["yaw"] = yaw;
+        out["pitch"] = pitch;
+        std::string camera;
+        if (in >> camera) {
+            if (camera != "main" && camera != "debug") {
+                return std::unexpected(std::format("expected main or debug, got '{}'", camera));
+            }
+            out["camera"] = camera;
+        }
+    }
+    return out;
+}
+
+// "x y": the framebuffer pixel the pivot is picked under; nothing holds an orbit that is on.
+auto parseOrbitStart(const std::string& args) -> std::expected<Json, std::string> {
+    if (args.empty()) {
+        return Json::object();
+    }
+    std::istringstream in(args);
+    uint32_t x = 0;
+    uint32_t y = 0;
+    in >> x >> y;
+    if (in.fail()) {
+        return std::unexpected(std::format("expected 'x y' in framebuffer pixels, or nothing, got '{}'", args));
+    }
+    return Json{{"x", x}, {"y", y}};
+}
+
 auto parseCameraFollow(const std::string& args) -> std::expected<Json, std::string> {
     std::istringstream in(args);
     std::string first;
@@ -101,6 +155,9 @@ auto namedCamera(ViewContext& view, const Json& p) -> Camera* {
 }
 
 const std::vector<std::string> cameraNames = {"main", "debug"};
+const std::vector<std::string> movedCameraNames = {"main", "debug", "controlled"};
+// How long an orbit started by a call holds without the caller asking again.
+constexpr uint64_t remoteOrbitHoldNs = 2'000'000'000ull;
 
 } // namespace
 
@@ -244,7 +301,104 @@ auto registerCameraCommands(RpcRegistry& registry, ConsoleCommands& console, Vie
             responder.respond(Json::object());
         });
 
+    registry.add(
+        {
+            .name = "view.camera.move",
+            .summary = "The controls as a call: what the keys, the mouse and the wheel do to a camera, from where it is. Metres along its "
+                       "forward, its right and the world's up (the keys); degrees of yaw and pitch (mouse look: in place, or around the pivot "
+                       "while orbiting); wheel steps (the fly speed, 1.25 times a step, or toward the pivot while orbiting). Stops a flight. "
+                       "Following the ground, forward is the heading across it and up changes the height above it.",
+            .params =
+                {
+                    optionalField("forward", RpcType::Float, "metres along the view direction"),
+                    optionalField("right", RpcType::Float, "metres to the right"),
+                    optionalField("up", RpcType::Float, "metres along the world's up"),
+                    optionalField("yaw", RpcType::Float, "degrees, clockwise seen from above"),
+                    optionalField("pitch", RpcType::Float, "degrees upward, clamped at 89 either way"),
+                    optionalField("wheel", RpcType::Float, "wheel steps, positive away from the user"),
+                    {.name = "camera",
+                     .type = RpcType::Enum,
+                     .required = false,
+                     .description = "which camera: main by default; controlled is the one the keys and the mouse move (the debug camera when it has the controls)",
+                     .enumValues = movedCameraNames},
+                },
+            .result = "{x, y, z, yaw, pitch, speed, orbiting}: where the camera is now, its fly speed, and whether it is orbiting",
+        },
+        [&view](const Json& p, RpcResponder responder) {
+            auto* camera = p.value("camera", std::string("main")) == "controlled" ? (view.controlledCamera ? view.controlledCamera() : &view.cam) : namedCamera(view, p);
+            if (camera == nullptr) {
+                responder.fail(rpc::appError, "the debug camera is off (view.camera.debug {on: true})");
+                return;
+            }
+            if (camera == &view.cam && view.flight.flying()) {
+                stopFlight(view.flight);
+            }
+            bool orbiting = view.cameraModes.orbiting;
+            if (orbiting) {
+                // Holding the orbit is the caller's: each move while it orbits holds it a little longer.
+                view.cameraModes.remoteOrbitUntilNs = std::max(view.cameraModes.remoteOrbitUntilNs, profile::now() + remoteOrbitHoldNs);
+            }
+            float yaw = p.value("yaw", 0.0f);
+            float pitch = p.value("pitch", 0.0f);
+            if (orbiting) {
+                camera->orbit(view.cameraModes.pivot, yaw, pitch);
+            } else {
+                camera->yaw += yaw;
+                camera->pitch = std::clamp(camera->pitch + pitch, -89.0f, 89.0f);
+            }
+            float wheel = p.value("wheel", 0.0f);
+            if (wheel != 0.0f && orbiting) {
+                camera->dolly(view.cameraModes.pivot, wheel);
+            } else if (wheel != 0.0f) {
+                camera->scaleSpeed(wheel);
+            }
+            auto right = camera->right();
+            auto forward = camera->forward();
+            float up = p.value("up", 0.0f);
+            if (camera->followHeight) {
+                forward = glm::cross(camera->worldUp, right);
+                *camera->followHeight = std::max(0.0f, *camera->followHeight + up);
+                up = 0.0f;
+            }
+            camera->position += forward * p.value("forward", 0.0f);
+            camera->position += right * p.value("right", 0.0f);
+            camera->position += camera->worldUp * up;
+            responder.respond({{"x", camera->position.x},
+                               {"y", camera->position.y},
+                               {"z", camera->position.z},
+                               {"yaw", camera->yaw},
+                               {"pitch", camera->pitch},
+                               {"speed", camera->speed},
+                               {"orbiting", orbiting}});
+        });
+    registry.add(
+        {
+            .name = "view.camera.orbit.start",
+            .summary = "Hold Left Alt, as a call: start orbiting around the surface under a framebuffer pixel, so that mouse look "
+                       "(view.camera.move's yaw and pitch) turns around it and the wheel moves toward it. It holds for two seconds; calling "
+                       "it again without a pixel, or moving the camera, holds it longer, so an orbit whose caller went away ends by itself.",
+            .params = {optionalField("x", RpcType::Int, "pixel column; with y, where the pivot is picked"), optionalField("y", RpcType::Int, "pixel row")},
+            .result = "{orbiting}",
+        },
+        [&view](const Json& p, RpcResponder responder) {
+            if (p.contains("x") && p.contains("y") && view.startOrbit) {
+                view.startOrbit(glm::uvec2(p["x"].get<uint32_t>(), p["y"].get<uint32_t>()));
+            }
+            if (view.cameraModes.orbiting) {
+                view.cameraModes.remoteOrbitUntilNs = profile::now() + remoteOrbitHoldNs;
+            }
+            responder.respond({{"orbiting", view.cameraModes.orbiting}});
+        });
+    registry.add({.name = "view.camera.orbit.stop", .summary = "Release Left Alt, as a call: orbiting ends with the next frame.", .result = "{}"},
+                 [&view](const Json&, RpcResponder responder) {
+                     view.cameraModes.remoteOrbitUntilNs = 0;
+                     responder.respond(Json::object());
+                 });
+
     console.add("camera", "view.camera.set", parseCamera);
+    console.add("camera-move", "view.camera.move", parseCameraMove);
+    console.add("orbit-start", "view.camera.orbit.start", parseOrbitStart);
+    console.add("orbit-stop", "view.camera.orbit.stop", ConsoleCommands::none);
     console.add("camera-frame", "view.camera.frame", parseTarget);
     console.add("camera-use", "view.camera.use", parseCameraPath);
     console.add("camera-orbit", "view.camera.orbit", parseCameraOrbit);

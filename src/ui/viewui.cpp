@@ -259,6 +259,10 @@ auto ViewUI::draw(const PrimPathOf& primPath,
         updateDebugViewCursor(debugViewState);
         drawDebugViewWindow(static_cast<DebugView>(rendercvars::debugView.get()), debugViewState, instancePath);
     }
+    if (introspectionFlags.remoteView) {
+        PROFILE_ZONE("RemoteViewWindow", Ui);
+        drawRemoteViewWindow(introspectionFlags.remoteView, remoteViewStatus, remoteControlStatus);
+    }
     if (introspectionFlags.counters) {
         PROFILE_ZONE("CountersWindow", Ui);
         drawCountersWindow(introspectionFlags.counters, countersState);
@@ -368,6 +372,8 @@ auto ViewUI::windowFlag(std::string_view name) -> bool* {
         return &introspectionFlags.counters;
     } else if (name == "shaders") {
         return &introspectionFlags.shaders;
+    } else if (name == "remoteview") {
+        return &introspectionFlags.remoteView;
     } else if (name == "culling") {
         return &showCullingWindow;
     } else if (name == "assets") {
@@ -457,4 +463,30 @@ auto ViewUI::takeTextureDumpRequest() -> std::optional<TextureInspectRequest> {
     }
     renderDebugDraws.dumpRequested = false;
     return renderDebugDraws.inspect;
+}
+
+auto ViewUI::addInputWaiter(std::function<void(const InputWants&)> waiter) -> void {
+    inputWaiters.push_back(std::move(waiter));
+}
+
+auto ViewUI::inputWants() const -> InputWants {
+    const auto& io = ImGui::GetIO();
+    return {
+        .mouse = io.WantCaptureMouse,
+        .keyboard = io.WantCaptureKeyboard,
+        .text = io.WantTextInput,
+        .popup = ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel),
+    };
+}
+
+auto ViewUI::answerInputWaiters() -> void {
+    if (inputWaiters.empty()) {
+        return;
+    }
+    auto wants = inputWants();
+    auto waiters = std::move(inputWaiters);
+    inputWaiters.clear();
+    for (auto& waiter : waiters) {
+        waiter(wants);
+    }
 }

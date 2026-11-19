@@ -112,6 +112,9 @@ public:
     auto setDrawLogEnabled(bool enabled) -> void { drawLogEnabled = enabled; }
     // Waits until the frame just submitted has finished on the GPU (an extension's afterSubmit).
     auto waitForFrame() -> void;
+    // Whether the frame last submitted on a frame context has finished on the GPU, asked without waiting: an extension reads that frame's
+    // readback as soon as this says so, without waiting for the context to come round (its afterFence). False for the context being recorded.
+    auto frameContextDone(uint32_t frameContext) const -> bool;
     // A frame context's command buffer: what its frame recorded, read after its fence (pipeline statistics).
     auto commandBuffer(uint32_t slot) const -> RhiCommandBuffer* { return cmdBuffers[slot]; }
     // The most each geometry pool buffer may take, in bytes; 0 for the device's largest buffer (GpuScene::setGeometryLimit). Before the

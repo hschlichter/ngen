@@ -24,7 +24,8 @@ auto fieldJson(const FieldValue& value) -> rpc::Json {
     return std::get<std::string>(value);
 }
 
-// An event as it travels: the JSONL line's fields, plus seq.
+} // namespace
+
 auto eventJson(const Event& event) -> rpc::Json {
     auto fields = rpc::Json::object();
     for (const auto& field : event.fields) {
@@ -42,8 +43,6 @@ auto eventJson(const Event& event) -> rpc::Json {
         {"fields", std::move(fields)},
     };
 }
-
-} // namespace
 
 LogStream::LogStream(RpcServer& rpcServer, std::string processName) : server(rpcServer), process(std::move(processName)) {
     thread = std::thread([this] { loop(); });

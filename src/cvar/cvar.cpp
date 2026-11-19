@@ -73,6 +73,8 @@ auto typeName(Type type) -> const char* {
             return "enum";
         case Type::Vec3:
             return "vec3";
+        case Type::String:
+            return "string";
     }
     return "unknown";
 }
@@ -313,6 +315,28 @@ auto Vec3::setText(std::string_view text) -> std::expected<void, std::string> {
         }
     }
     set(parsed);
+    return {};
+}
+
+String::String(std::string name, std::string defaultValue, std::string description)
+    : Value(std::move(name), std::move(description)), value(defaultValue), defaultValue(std::move(defaultValue)) {
+}
+
+auto String::get() const -> const std::string& {
+    checkThread();
+    return value;
+}
+
+auto String::set(std::string next) -> void {
+    checkThread();
+    if (next != value) {
+        value = std::move(next);
+        changed();
+    }
+}
+
+auto String::setText(std::string_view text) -> std::expected<void, std::string> {
+    set(std::string(trim(text)));
     return {};
 }
 
