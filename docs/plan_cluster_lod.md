@@ -13,8 +13,9 @@ continuous LOD (progressive meshes, vertex splits, geomorphing) was considered a
   `src/asset/pack/scenepacktypes.h`). The task shader (`shaders/meshlet.task`) tests each meshlet work item against the frustum, the cone and the
   depth pyramid, and packs the survivors into mesh workgroups. See `src/renderer/README.md`, "Meshlets", and [ADR 64](adr/0064_meshlets_on_mesh_shaders.md).
 - **LOD.** UsdLod is the only LOD convention ([ADR 50](adr/0050_usdlod_only_lod_convention.md)). A root with payload levels streams by residency
-  ([ADR 70](adr/0070_residency_from_streaming_radii.md)). A root with inline levels is render LOD: `LodSelect` picks the level per group per frame on
-  the GPU, from the live main camera ([ADR 68](adr/0068_render_lod_on_gpu.md), [ADR 72](adr/0072_main_camera_decides.md)).
+  ([ADR 70](adr/0070_residency_from_streaming_radii.md)). A root with inline levels is a LOD-group root: where it is placed it is a LOD group
+  (`RenderLodGroup`), and `LodSelect` picks each group's level per frame on the GPU, from the live main camera
+  ([ADR 68](adr/0068_render_lod_on_gpu.md), [ADR 72](adr/0072_main_camera_decides.md)).
 - **What is missing.** A level is one fixed mesh. A large mesh draws all its triangles at any distance, unless meshlet culling removes them. A level
   switch is a pop or a dither fade over a band ([ADR 69](adr/0069_lod_heuristics_and_dither_fade.md)). Nothing reduces detail inside one mesh, and
   ADR 50 records "there is no automatic LOD generation" as a consequence.
@@ -30,7 +31,7 @@ In:
 - Runtime: the task shader rejects the clusters that the error test does not select, before the frustum test. The test uses one eye for every view,
   the main camera's (`RenderSnapshot::lodEye`).
 - The whole DAG of a mesh is resident whenever the mesh is. No new residency.
-- Tuning, records, RPC, verbs, a debug view and LOD window and Culling window sections (Visibility).
+- Two cvars, records, a debug view, and LOD window and Culling window sections (Visibility).
 
 Out:
 - Per-mesh control, opting in or out (Deferred / follow-ups).
@@ -76,7 +77,7 @@ Consequences:
   computed for every mesh at pack time. The landing ADR says so.
 - **"Authored, not computed" holds where it was made.** That rule governs the streaming structure ([plan_streaming_lod.md](plan_streaming_lod.md)
   decision 3), and decision 3 here leaves it unchanged. Detail inside one mesh is not streaming structure.
-- **Authored decimation chains become redundant.** A render-LOD root whose levels are simplified copies of one mesh (the test world's `lod0`–`lod2`
+- **Authored decimation chains become redundant.** A LOD-group root whose levels are simplified copies of one mesh (the test world's `lod0`–`lod2`
   per prop, Caldera's `modelLod`) still works. Each level gets its own DAG, and the level switch still pops or fades. Content made for the engine
   needs only `lod0`; the guidance goes in `src/world/README.md`.
 - **UsdLod keeps what a DAG cannot do.** Payload levels keep far content out of memory. Merged proxies and impostors replace many meshes with one.
@@ -122,17 +123,18 @@ clusters draw at any distance.
 
 ### 5. One eye for every view: the main camera's
 
-**Locked** (2026-11-19). The cascades and the camera select clusters from the same eye, `RenderSnapshot::lodEye`. This is the rule that render LOD
-already follows ([ADR 68](adr/0068_render_lod_on_gpu.md), [ADR 72](adr/0072_main_camera_decides.md)). The shadow caster is then the same surface
+**Locked** (2026-11-19). The cascades and the camera select clusters from the same eye, `RenderSnapshot::lodEye`. This is the rule that LOD groups
+already follow ([ADR 68](adr/0068_render_lod_on_gpu.md), [ADR 72](adr/0072_main_camera_decides.md)). The shadow caster is then the same surface
 that the camera sees, which prevents self-shadowing acne between two cuts. A debug camera that renders from elsewhere shows the main camera's cut.
 
 Rejected for now: per view (the cascade's own projection). Fewer shadow triangles far away, but the caster and the receiver differ. A follow-up
 with a trigger.
 
-### 6. The threshold is in pixels, view-local
+### 6. The threshold is in pixels, a cvar
 
-**Locked** (2026-11-19). `clusterLodThreshold` is set in pixels at the render target's height and converted to the view-height fraction in the
-culling parameters. The default is 1 pixel. It is view tuning, like `lod-bias`: never saved, reachable by RPC and verb.
+**Locked** (2026-11-19). The threshold is set in pixels at the render target's height and converted to the view-height fraction in the culling
+parameters (`clusterLodThreshold`). The default is 1 pixel. It and the runtime switch are cvars, as the renderer's other settings are
+(`src/cvar/README.md`): `render.clusterLod.threshold` and `render.clusterLod.enabled`.
 
 ### 7. LOD data on the GPU: a parallel table at the meshlet pool's positions
 
@@ -214,7 +216,7 @@ Done when the run starts, before any code changes.
   `.params = {{"clusterLod", "on"}}`; `scenePackFormatVersion` (`src/asset/pack/scenepacktypes.h`) from 5 to 6. The rule version makes the asset
   server pack again (its job key hashes it); the format version makes a reader that opens an old file directly, such as `ngen-packdump`, refuse it.
 - `src/apps/packerusd.cpp` reads `args->param("clusterLod", "on")` and passes it to the USD packer (`src/asset/pack/usd/usdpacker.cpp`), which
-  calls `buildClusterLod` when on and `buildMeshlets` when off. A trace event `ClusterLodBuilt` gives the mesh, its submeshes, depths, clusters
+  calls `buildClusterLod` when on and `buildMeshlets` when off. A log event (`LOG_EVENT`, category `Asset`) `ClusterLodBuilt` gives the mesh, its submeshes, depths, clusters
   per depth, triangles at depth 0 and at the coarsest depth, and milliseconds.
 - `src/asset/pack/scenepack.cpp`: write and read `meshletLods`; validate one entry per meshlet or none, `selfError <= parentError`, and `depth <
   clusterLodDepths`.
@@ -253,7 +255,7 @@ Done when the run starts, before any code changes.
 - `shaders/meshlet.task`: for an instance with `gpuInstanceClusterLod`, a work item that is not selected does not survive. It is counted as
   `lodRejected`, never as culled, before the frustum test. With cluster LOD off at runtime, only depth-0 clusters are selected (the original
   geometry).
-- Classify mode (`meshletcull`): rejected clusters are left out, as the levels that render LOD does not draw are left out.
+- Classify mode (`meshletcull`): rejected clusters are left out, as the levels that a LOD group does not draw are left out.
 - `MeshletCounts` (`src/renderer/drawlists.h`) gains `lodRejected`. A per-depth histogram of drawn meshlets, up to 16 depths, is counted for the
   camera's geometry pass only.
 - `CullResult::sceneMeshlets` counts every cluster of every live instance, as it is `DrawLists::liveMeshletCount`, the CPU count that also sizes
@@ -267,19 +269,28 @@ Done when the run starts, before any code changes.
   baseline. No record shows it by that name today: read it from the `memory` record if that lists the buffer, otherwise add `workItemCapacity`
   to the `culling` record. Sizing it to the meshlets drawn is the existing roadmap follow-up, taken up only if the size hurts.
 
-### 4. Tuning, records, the debug view and windows
+### 4. Cvars, records, the debug view and windows
 
-- `src/view/lodcommands.cpp`: `view.clusterLod.tuning {enabled, thresholdPixels}`, and the verbs `clusterlod on|off` and `clusterlod-threshold
-  <px>`. Both reach `RenderSnapshot`, as `lod-bias` does.
-- The `culling` record's meshlet counts gain `lodRejected` and the per-depth histogram. A `clusterLod` object in the `lod` record holds the tuning,
-  meshes by number of depths, resident clusters per depth, and the pool memory of the LOD records.
-- A `clusterlod` debug view (`debugview.mesh`): every drawn meshlet coloured by its DAG depth, on the `lodlevel` ramp, with a meshlet-edge tint.
-- The LOD window gets a Cluster LOD section: on and off, threshold, and the drawn-per-depth histogram. The Culling window gets the
-  LOD-rejected column.
+- The renderer declares two cvars, named in `src/renderer/rendercvars.h`:
+
+  ```cpp
+  cvar::Bool clusterLodEnabled{"render.clusterLod.enabled", true, "Pick each mesh's clusters by their projected error; off draws every mesh at full detail (DAG depth 0)."};
+  cvar::Float clusterLodThreshold{"render.clusterLod.threshold", 1.0, "Pixels of simplification error a cluster may show before a finer one is drawn.", {.min = 0.0, .max = 1000.0}};
+  ```
+
+  `ViewFrame` hands them to the render thread in the `RenderSnapshot`, as the other render cvars. They are read and set through the `cvars`
+  record, the `cvar.*` methods, the `cvar` console command (`cvar render.clusterLod.threshold 8`) and the Cvars window. No new RPC method or
+  console command.
+- The `culling` record's meshlet counts gain `lodRejected` and the per-depth histogram. A `clusterLod` object in the `lod` record holds meshes by
+  number of depths, resident clusters per depth, and the pool memory of the LOD records.
+- A `clusterlod` choice in the debug view (`render.view.debug`, `debugview clusterlod`; drawn by `debugview.mesh`): every drawn meshlet coloured by
+  its DAG depth, on the `lodlevel` ramp, with a meshlet-edge tint.
+- The LOD window gets a Cluster LOD section: the two cvars (a `cvarCheckbox`, and a slider on `cvarFloat`; `src/ui/cvarwindow.h`) and
+  the drawn-per-depth histogram. The Culling window gets the LOD-rejected column.
 
 ### 5. Documentation
 
-- `src/renderer/README.md`: a "Cluster LOD" section after "Render LOD", which says where selection sits in the frame (the task shader, after
+- `src/renderer/README.md`: a "Cluster LOD" section after "LOD groups", which says where selection sits in the frame (the task shader, after
   `LodSelect` and instance culling, before the frustum test).
 - `src/asset/README.md`: the DAG in the mesh pack, the `clusterLod` parameter, and the memory factor.
 - `src/world/README.md`: what UsdLod levels are for now that every mesh has a DAG (decision 2's consequences): structure, memory and other
@@ -290,12 +301,12 @@ Done when the run starts, before any code changes.
 
 ## Visibility
 
-- **Records.** `culling`: `meshlets.lodRejected`, `meshlets.drawnByDepth[]`, `sceneMeshlets` (now every cluster), `sceneOriginalMeshlets`. `lod`: `clusterLod {enabled,
-  thresholdPixels, meshesByDepths[], residentByDepth[], lodRecordBytes}`. `gpuscene`: the pool's LOD record use. `asset rules`: the `usd` rule's
-  `clusterLod` parameter.
-- **RPC and verbs.** `view.clusterLod.tuning`; `clusterlod on|off`, `clusterlod-threshold <px>`; `debugview clusterlod`.
-- **Trace.** `ClusterLodBuilt` per mesh in the asset server's trace.
-- **Windows.** The LOD window's Cluster LOD section, the Culling window's LOD-rejected column, and the `clusterlod` debug view. `ngen-packdump`
+- **Records.** `culling`: `meshlets.lodRejected`, `meshlets.drawnByDepth[]`, `sceneMeshlets` (now every cluster), `sceneOriginalMeshlets`. `lod`: `clusterLod
+  {meshesByDepths[], residentByDepth[], lodRecordBytes}`. `cvars`: `render.clusterLod.enabled`, `render.clusterLod.threshold`. `gpuscene`: the
+  pool's LOD record use. `asset rules`: the `usd` rule's `clusterLod` parameter.
+- **RPC and console commands.** None new: the cvars go through `cvar.*` and `cvar <name> <value>`; `debugview clusterlod`.
+- **Log.** `ClusterLodBuilt` per mesh in the asset server's log.
+- **Windows.** The LOD window's Cluster LOD section, the Cvars window, the Culling window's LOD-rejected column, and the `clusterlod` debug view. `ngen-packdump`
   shows the DAG per mesh.
 - **Where in the flow.** The mesh pack (pack time) → the geometry pool (upload) → `LodSelect` (the UsdLod level) → instance culling → the task
   shader (cluster selection, then frustum, cone and occlusion) → the mesh shaders. The renderer README's section states this.
@@ -310,14 +321,15 @@ Test assets: Sponza (`assets/main_sponza/`, git-ignored), the streaming test wor
 1. **Off is unchanged.** With `clusterLod=off` in `pack.cpp`, Sponza at the default camera: the screenshot is byte-identical to one taken before
    the change, and `ngen-packdump` prints the same meshlets per mesh.
 2. **The DAG packs.** With `clusterLod=on`, `ngen-packdump` on Sponza shows for every mesh: depth 0's triangles equal the mesh's triangles. A mesh of
-   one cluster has one depth. A mesh with more depths has fewer triangles at each depth. The trace has one `ClusterLodBuilt` per mesh and no
+   one cluster has one depth. A mesh with more depths has fewer triangles at each depth. The log has one `ClusterLodBuilt` per mesh and no
    warnings.
-3. **Depth 0 is the mesh.** With `clusterLod=on` and `clusterlod off` at runtime, Sponza at the default camera: `culling.sceneTriangles` equals the
+3. **Depth 0 is the mesh.** With `clusterLod=on` and `cvar render.clusterLod.enabled off`, Sponza at the default camera: `culling.sceneTriangles` equals the
    value with `clusterLod=off`, and at most 0.01% of pixels differ from the off screenshot (depth ties from another meshlet order, as in
    [plan_meshlets.md](plan_meshlets.md)).
 4. **No cracks.** The sphere with the camera outside it, at thresholds of 1, 8, 32 and 128 pixels: the screenshot has no sky pixels inside a
    rectangle that lies within the sphere's silhouette at every threshold.
-5. **Detail falls with distance.** Sponza at the default camera, `clusterlod off`, then `clusterlod on` at 1 pixel, then at 8 pixels:
+5. **Detail falls with distance.** Sponza at the default camera, `render.clusterLod.enabled` off, then on at a threshold of 1 pixel, then of 8
+   pixels:
    `culling.triangles` falls strictly at each step, and `meshlets.lodRejected` is 0 when off and above 0 when on.
 6. **Counts agree.** In every recorded frame, the sum of `meshlets.drawnByDepth` equals the camera's `meshlets.drawn`.
 7. **One eye.** With the debug camera placed 100 m away and rendered from, each cascade's drawn triangles are unchanged from the frame before it
@@ -325,9 +337,9 @@ Test assets: Sponza (`assets/main_sponza/`, git-ignored), the streaming test wor
 8. **The test world fits.** A flight over the test world (`fly /cameras/flight_ 30`) with `clusterLod=on` logs no `GeometryPoolFull` warning at
    the default pool limit. Recorded and reported, not pass or fail: the `gpuscene` pool use, the GPU frame time at `flight_10`, and cold-cache
    pack time of Sponza and the test world, each with `clusterLod=on` and `off`.
-9. **Image quality at 1 pixel.** Against `clusterlod off` at the same camera, the share of pixels that differ by more than a set number of levels is
+9. **Image quality at 1 pixel.** Against `render.clusterLod.enabled` off at the same camera, the share of pixels that differ by more than a set number of levels is
    below a set share. Both numbers are set at the first measurement (Open questions).
-10. **Visibility.** The records, RPC method, verbs, debug view and window sections from Visibility each answer, through `./ngen-cli introspect`
+10. **Visibility.** The records, cvars, debug view and window sections from Visibility each answer, through `./ngen-cli introspect`
     and a `--show-ui` screenshot.
 
 ## Open questions
@@ -353,6 +365,6 @@ Test assets: Sponza (`assets/main_sponza/`, git-ignored), the streaming test wor
 - **Foliage.** `simplify_dilate_borders` for open meshes such as leaves. With every mesh simplified, this is more likely to be needed. Trigger:
   foliage thins visibly with cluster LOD on.
 - **Skinned meshes.** Trigger: animation (vertical slice step 6) with dense skinned meshes.
-- **Decimation-chain findings.** An authoring finding (as the `streaming` record's `findings`) for render-LOD roots whose levels only simplify one
+- **Decimation-chain findings.** An authoring finding (as the `streaming` record's `findings`) for LOD-group roots whose levels only simplify one
   mesh. Trigger: content authored for the engine that still carries such chains.
 - **Generating UsdLod levels from the DAG**, for tools that read UsdLod. Trigger: a tool or exporter that needs the engine's LOD as USD.
